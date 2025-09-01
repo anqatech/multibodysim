@@ -72,25 +72,47 @@ class SatelliteSimulator:
         xd[3:] = ud
         return xd
 
-    def run(self, q_initial, u_initial, p_values, t_span, t_eval):
+    # def run(self, q_initial, u_initial, p_values, t_span, nb_timesteps):
+    def run(self, q_initial, u_initial, p_values, sim_parameters):
         print("Running numerical simulation...\n")
+
+        # Complete the initial speeds dictionary if necessary
+        u_final = u_initial.copy()
+        if 'u1' not in u_final and 'u2' not in u_final and 'u3' in u_final:
+            print("Calculating initial u1 and u2 for zero linear momentum...")
+            u1_0, u2_0 = self.calculate_initial_speeds(
+                q_initial["q3"], u_final["u3"],
+                p_values["D"], p_values["L"], p_values["m_r"], p_values["m_l"], p_values["m_b"]
+            )
+            u_final['u1'] = u1_0
+            u_final['u2'] = u2_0
+        
         # Assemble the initial state vector x0 in the correct order
         x0 = np.array([
             q_initial['q1'], q_initial['q2'], q_initial['q3'],
-            u_initial['u1'], u_initial['u2'], u_initial['u3']
+            u_final['u1'], u_final['u2'], u_final['u3']
         ])
 
+        # Assemble model parameters in the correct order
         p_vec = [
             p_values["D"], p_values["L"], p_values["m_r"], 
             p_values["m_l"], p_values["m_b"], p_values["tau"]
         ]
+
+        # Generate the simulation timesteps vector
+        t_start, t_end = sim_parameters["t_start"], sim_parameters["t_end"]
+        t_points = np.linspace(
+            t_start, 
+            t_end, 
+            num=sim_parameters["nb_timesteps"]
+        )
         
         # Run the ODE solver
         self.result = solve_ivp(
             fun=self._rhs,
-            t_span=t_span,
+            t_span=(t_start, t_end),
             y0=x0,
-            t_eval=t_eval,
+            t_eval=t_points,
             args=(p_vec,),
             rtol=1e-6,
             atol=1e-6
