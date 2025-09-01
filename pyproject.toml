@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=70.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "multibodysim"
+version = "0.1.0"
+authors = [
+  { name="Jalal El Hazzat", email="jalal@anqatech.com" },
+]
+description = "This package enables multibody dynamics in space."
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/my_project"
+Issues = "https://github.com/yourusername/my_project/issues"
