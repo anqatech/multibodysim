@@ -7,6 +7,7 @@ class SatelliteSymbolicModel:
         self._define_symbols()
         self._define_kinematics()
         self._derive_generalized_forces()
+        self._formulate_eom()
         print("\nSymbolic model setup complete.")
 
     def _define_symbols(self):
@@ -15,6 +16,7 @@ class SatelliteSymbolicModel:
         self.q1, self.q2, self.q3 = me.dynamicsymbols('q1, q2, q3')
         self.u1, self.u2, self.u3 = me.dynamicsymbols('u1, u2, u3')
         self.q = sm.Matrix([self.q1, self.q2, self.q3])
+        self.qd = self.q.diff(me.dynamicsymbols._t)
         self.u = sm.Matrix([self.u1, self.u2, self.u3])
         self.ud = self.u.diff(me.dynamicsymbols._t)
 
@@ -145,3 +147,27 @@ class SatelliteSymbolicModel:
                           w_C_partials[i].dot(Ts_C) +
                           w_E_partials[i].dot(Ts_E))
             self.Generalised_Inertia_Forces[i] = Fr_inertia
+
+    def _formulate_eom(self):
+        print("Step 4: Assembling final equations of motion...")
+        # Utility dictionaries
+        qd_zero = {qdi: 0 for qdi in self.qd}
+        ud_zero = {udi: 0 for udi in self.ud}
+
+        # Kinematic differential equation
+        fk = sm.Matrix([
+            self.u1 - self.q1.diff(),
+            self.u2 - self.q2.diff(),
+            self.u3 - self.q3.diff(),
+        ])
+
+        # Generation of Matrix Mk and vector gk
+        self.Mk = fk.jacobian(self.qd)
+        self.gk = fk.xreplace(qd_zero)
+
+        # Dynamic differential equation
+        kane_eq = (self.Generalised_Active_Forces + self.Generalised_Inertia_Forces)
+
+        # Generation of Matrix Md and vector gd
+        self.Md = kane_eq.jacobian(self.ud)
+        self.gd = kane_eq.xreplace(ud_zero)
