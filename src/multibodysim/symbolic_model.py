@@ -8,7 +8,6 @@ class SatelliteSymbolicModel:
         self._define_kinematics()
         self._derive_generalized_forces()
         self._formulate_eom()
-        print("\nSymbolic model setup complete.")
 
     def _define_symbols(self):
         print("Step 1: Setting up symbolic model...")
