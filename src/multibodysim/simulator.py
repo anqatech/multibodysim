@@ -72,9 +72,13 @@ class SatelliteSimulator:
         xd[3:] = ud
         return xd
 
-    # def run(self, q_initial, u_initial, p_values, t_span, nb_timesteps):
-    def run(self, q_initial, u_initial, p_values, sim_parameters):
-        print("Running numerical simulation...\n")
+    def run(self, config):
+        # Unpack and pre-process the configuration data
+        p_values = config['p_values']
+        q_initial = config['q_initial']
+        q_initial["q3"] = np.deg2rad(q_initial["q3"])
+        u_initial = config['initial_speeds']
+        sim_parameters = config['sim_parameters']
 
         # Complete the initial speeds dictionary if necessary
         u_final = u_initial.copy()
@@ -108,6 +112,7 @@ class SatelliteSimulator:
         )
         
         # Run the ODE solver
+        print("Running the simulation...")
         self.result = solve_ivp(
             fun=self._rhs,
             t_span=(t_start, t_end),
@@ -115,7 +120,9 @@ class SatelliteSimulator:
             t_eval=t_points,
             args=(p_vec,),
             rtol=1e-6,
-            atol=1e-6
+            atol=1e-6,
+            method='RK45',
+            vectorized=False
         )
-        print(f"Simulation finished successfully: {self.result.message}")
+        print(f"\nSimulation finished successfully: {self.result.message}")
 
