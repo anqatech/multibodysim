@@ -11,12 +11,89 @@ authors = [
 description = "This package enables multibody dynamics in space."
 readme = "README.md"
 requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.21.0",
+    "scipy>=1.7.0", 
+    "sympy>=1.9.0",
+]
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
 
+[project.optional-dependencies]
+test = [
+    "pytest>=6.0.0",
+    "pytest-cov>=3.0.0",
+    "pytest-xdist>=2.0.0",  # For parallel test execution
+]
+dev = [
+    "pytest>=6.0.0",
+    "pytest-cov>=3.0.0", 
+    "pytest-xdist>=2.0.0",
+    "black>=22.0.0",        # Code formatting
+    "isort>=5.0.0",         # Import sorting
+    "flake8>=4.0.0",        # Linting
+]
+
 [project.urls]
-Homepage = "https://github.com/yourusername/my_project"
-Issues = "https://github.com/yourusername/my_project/issues"
+Homepage = "https://github.com/yourusername/multibodysim"
+Issues = "https://github.com/yourusername/multibodysim/issues"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+python_classes = ["Test*"]
+addopts = [
+    "--strict-markers",
+    "--strict-config", 
+    "--verbose",
+    "--tb=short",
+    "--cov=multibodysim",
+    "--cov-report=term-missing",
+    "--cov-report=html:htmlcov",
+    "--cov-report=xml:coverage.xml",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "tests/*",
+    "setup.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+]
+
+[tool.black]
+line-length = 88
+target-version = ['py310']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  \.git
+  | \.pytest_cache
+  | \.coverage
+  | htmlcov
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["multibodysim"]
