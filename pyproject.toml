@@ -26,15 +26,12 @@ classifiers = [
 test = [
     "pytest>=6.0.0",
     "pytest-cov>=3.0.0",
-    "pytest-xdist>=2.0.0",  # For parallel test execution
+    "pytest-xdist>=2.0.0",
 ]
 dev = [
     "pytest>=6.0.0",
     "pytest-cov>=3.0.0", 
     "pytest-xdist>=2.0.0",
-    "black>=22.0.0",        # Code formatting
-    "isort>=5.0.0",         # Import sorting
-    "flake8>=4.0.0",        # Linting
 ]
 
 [project.urls]
@@ -48,52 +45,31 @@ python_functions = ["test_*"]
 python_classes = ["Test*"]
 addopts = [
     "--strict-markers",
-    "--strict-config", 
+#     "--strict-config", 
     "--verbose",
-    "--tb=short",
+#     "--tb=short",
     "--cov=multibodysim",
-    "--cov-report=term-missing",
-    "--cov-report=html:htmlcov",
-    "--cov-report=xml:coverage.xml",
+#     "--cov-report=term-missing",
+#     "--cov-report=html:htmlcov",
+#     "--cov-report=xml:coverage.xml",
 ]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "integration: marks tests as integration tests",
-    "unit: marks tests as unit tests",
+    # "integration: marks tests as integration tests",
+    # "unit: marks tests as unit tests",
 ]
 
 [tool.coverage.run]
 source = ["src"]
 omit = [
     "tests/*",
-    "setup.py",
+    # "setup.py",
 ]
 
 [tool.coverage.report]
 exclude_lines = [
-    "pragma: no cover",
-    "def __repr__",
+    # "pragma: no cover",
+    # "def __repr__",
     "raise AssertionError",
     "raise NotImplementedError",
 ]
-
-[tool.black]
-line-length = 88
-target-version = ['py310']
-include = '\.pyi?$'
-extend-exclude = '''
-/(
-  \.git
-  | \.pytest_cache
-  | \.coverage
-  | htmlcov
-  | build
-  | dist
-)/
-'''
-
-[tool.isort]
-profile = "black"
-multi_line_output = 3
-line_length = 88
-known_first_party = ["multibodysim"]
