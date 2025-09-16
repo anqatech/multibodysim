@@ -16,6 +16,7 @@ class FlexibleSymbolicDynamics:
         self._define_kinematics()
         self._define_constraints()
         self._define_kinematic_equations()
+        self._define_speeds_constraints()
         self._setup_velocities()
         self._derive_generalized_forces()
         self._formulate_eom()
@@ -136,6 +137,34 @@ class FlexibleSymbolicDynamics:
         loop = self.m_l * self.eta_l * self.E.y + self.m_r * self.eta_r * self.C.y
         self.fh = sm.Matrix([loop.dot(self.B.y).simplify()])
     
+    def _define_kinematic_equations(self):
+        # Kinematical differential equations
+        self.fk = sm.Matrix([
+            self.q1.diff(self.t) - self.u1,
+            self.q2.diff(self.t) - self.u2,
+            self.q3.diff(self.t) - self.u3,
+            self.eta_r.diff(self.t) - self.u4,
+            self.eta_l.diff(self.t) - self.u5,
+        ])
+        
+        self.Mk = self.fk.jacobian(self.qdN)
+        self.gk = self.fk.xreplace(self.qdN_zero)
+        
+        qdN_sol = -self.Mk.LUsolve(self.gk)
+        self.qd_repl = dict(zip(self.qdN, qdN_sol))
+        self.qdd_repl = {q.diff(self.t): u.diff(self.t) for q, u in self.qd_repl.items()}
+            
+    def _define_speeds_constraints(self):
+        # Differentiate holonomic constraints
+        self.fhd = self.fh.diff(self.t).xreplace(self.qd_repl)
+        self.fhd = sm.trigsimp(self.fhd)
+        
+        self.Mhd = self.fhd.jacobian(self.ur)
+        self.ghd = self.fhd.xreplace(self.ur_zero)
+        
+        ur_sol = sm.trigsimp(-self.Mhd.LUsolve(self.ghd))
+        self.ur_repl = dict(zip(self.ur, ur_sol))
+
     def _setup_velocities(self):
         # Angular velocities
         self.B.set_ang_vel(self.N, self.u3 * self.N.z)
@@ -254,37 +283,10 @@ class FlexibleSymbolicDynamics:
             Fr_star_E[i] = sm.integrate(integrand_E, (self.s, 0, self.L))
         
         self.Fr_star = Fr_star_B + Fr_star_C + Fr_star_E
-    
-    def _define_kinematic_equations(self):
-        # Kinematical differential equations (Part 5)
-        self.fk = sm.Matrix([
-            self.q1.diff(self.t) - self.u1,
-            self.q2.diff(self.t) - self.u2,
-            self.q3.diff(self.t) - self.u3,
-            self.eta_r.diff(self.t) - self.u4,
-            self.eta_l.diff(self.t) - self.u5,
-        ])
-        
-        self.Mk = self.fk.jacobian(self.qdN)
-        self.gk = self.fk.xreplace(self.qdN_zero)
-        
-        qdN_sol = -self.Mk.LUsolve(self.gk)
-        self.qd_repl = dict(zip(self.qdN, qdN_sol))
-        self.qdd_repl = {q.diff(self.t): u.diff(self.t) for q, u in self.qd_repl.items()}
-        
-        # Differentiate holonomic constraints (Part 6)
-        self.fhd = self.fh.diff(self.t).xreplace(self.qd_repl)
-        self.fhd = sm.trigsimp(self.fhd)
-        
-        self.Mhd = self.fhd.jacobian(self.ur)
-        self.ghd = self.fhd.xreplace(self.ur_zero)
-        
-        ur_sol = sm.trigsimp(-self.Mhd.LUsolve(self.ghd))
-        self.ur_repl = dict(zip(self.ur, ur_sol))
-        
-        self.gk = self.gk.xreplace(self.ur_repl)
-    
+
     def _formulate_eom(self):
+        self.gk = self.gk.xreplace(self.ur_repl)
+
         # Dynamic differential equation
         self.kane_eq = (self.Generalised_Active_Forces + self.Fr_star)
         self.Md = self.kane_eq.jacobian(self.ud)

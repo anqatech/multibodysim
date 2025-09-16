@@ -9,6 +9,7 @@ class RigidSymbolicDynamics:
 
         self._define_symbols()
         self._define_kinematics()
+        self._define_kinematic_equations()
         self._setup_velocities()
         self._derive_generalized_forces()
         self._formulate_eom()
@@ -17,7 +18,6 @@ class RigidSymbolicDynamics:
         self._create_lambdified_functions()
 
     def _define_symbols(self):
-        print("Step 1: Setting up symbolic model...")
         # Generalized coordinates and speeds
         self.q1, self.q2, self.q3 = me.dynamicsymbols('q1, q2, q3')
         self.u1, self.u2, self.u3 = me.dynamicsymbols('u1, u2, u3')
@@ -41,7 +41,6 @@ class RigidSymbolicDynamics:
         self.ud_zero = {udi: 0 for udi in self.ud}
 
     def _define_kinematics(self):
-        print("Step 2: Defining system kinematics...")
         # Reference Frames
         self.N = me.ReferenceFrame('N') # Inertial frame
         self.B = me.ReferenceFrame('B') # Bus frame
@@ -75,6 +74,22 @@ class RigidSymbolicDynamics:
         G = self.O.locatenew('G', r_G)
         self.r_GB = self.Bus_cm.pos_from(G)
 
+    def _define_kinematic_equations(self):
+        # Kinematic differential equation
+        fk = sm.Matrix([
+            self.u1 - self.q1.diff(),
+            self.u2 - self.q2.diff(),
+            self.u3 - self.q3.diff(),
+        ])
+
+        # Generation of Matrix Mk and vector gk
+        self.Mk = fk.jacobian(self.qd)
+        self.gk = fk.xreplace(self.qd_zero)
+
+        qd_sol = -self.Mk.LUsolve(self.gk)
+        self.qd_repl = dict(zip(self.qd, qd_sol))
+        self.qdd_repl = {q.diff(self.t): u.diff(self.t) for q, u in self.qd_repl.items()}
+
     def _setup_velocities(self):
         # Velocities
         self.B.set_ang_vel(self.N, self.u3 * self.N.z)
@@ -89,7 +104,6 @@ class RigidSymbolicDynamics:
         self.Panel_Left_cm.v2pt_theory(self.Joint_Left, self.N, self.E)
     
     def _derive_generalized_forces(self):
-        print("Step 3: Formulating generalized forces...")
         # Velocities of Interest
         velocities = (
             self.B.ang_vel_in(self.N),
@@ -161,18 +175,6 @@ class RigidSymbolicDynamics:
             self.Generalised_Inertia_Forces[i] = Fr_inertia
 
     def _formulate_eom(self):
-        print("Step 4: Assembling final equations of motion...")
-        # Kinematic differential equation
-        fk = sm.Matrix([
-            self.u1 - self.q1.diff(),
-            self.u2 - self.q2.diff(),
-            self.u3 - self.q3.diff(),
-        ])
-
-        # Generation of Matrix Mk and vector gk
-        self.Mk = fk.jacobian(self.qd)
-        self.gk = fk.xreplace(self.qd_zero)
-
         # Dynamic differential equation
         kane_eq = (self.Generalised_Active_Forces + self.Generalised_Inertia_Forces)
 
@@ -181,15 +183,10 @@ class RigidSymbolicDynamics:
         self.gd = kane_eq.xreplace(self.ud_zero)
 
     def _create_lambdified_functions(self):
-        """Create lambdified functions for numerical evaluation"""
         self.eval_kinematics = sm.lambdify((self.q, self.u, self.p_symbols), (self.Mk, self.gk))
         self.eval_differentials = sm.lambdify((self.q, self.u, self.p_symbols), (self.Md, self.gd))
     
     def get_parameter_values(self):
-        """
-        Extract parameter values from config in the order expected by lambdified functions
-        This is the key new method that reads from config
-        """
         p_values = self.config['p_values']
         
         return np.array([
