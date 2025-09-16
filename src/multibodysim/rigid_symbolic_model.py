@@ -1,23 +1,26 @@
+import numpy as np
 import sympy as sm
 import sympy.physics.mechanics as me
-me.init_vprinting()
 
 class RigidSymbolicDynamics:
-    def __init__(self):
+    def __init__(self, config):
+        self.config = config
+        me.init_vprinting()
+
         self._define_symbols()
         self._define_kinematics()
+        self._setup_velocities()
         self._derive_generalized_forces()
         self._formulate_eom()
+
+        # Create numerical evaluation functions
+        self._create_lambdified_functions()
 
     def _define_symbols(self):
         print("Step 1: Setting up symbolic model...")
         # Generalized coordinates and speeds
         self.q1, self.q2, self.q3 = me.dynamicsymbols('q1, q2, q3')
         self.u1, self.u2, self.u3 = me.dynamicsymbols('u1, u2, u3')
-        self.q = sm.Matrix([self.q1, self.q2, self.q3])
-        self.qd = self.q.diff(me.dynamicsymbols._t)
-        self.u = sm.Matrix([self.u1, self.u2, self.u3])
-        self.ud = self.u.diff(me.dynamicsymbols._t)
 
         # System parameters
         self.D, self.L = sm.symbols('D, L')
@@ -25,8 +28,17 @@ class RigidSymbolicDynamics:
         self.tau = me.dynamicsymbols('tau')
         self.t = me.dynamicsymbols._t
 
-        # Parameter vector for lambdification
-        self.p = sm.Matrix([self.D, self.L, self.m_r, self.m_l, self.m_b, self.tau])
+        # Vectors definition
+        self.p_symbols = sm.Matrix([self.D, self.L, self.m_b, self.m_r, self.m_l, self.tau])
+
+        self.q = sm.Matrix([self.q1, self.q2, self.q3])
+        self.qd = self.q.diff(me.dynamicsymbols._t)
+        self.u = sm.Matrix([self.u1, self.u2, self.u3])
+        self.ud = self.u.diff(me.dynamicsymbols._t)
+
+        # Zero replacement dictionaries
+        self.qd_zero = {qdi: 0 for qdi in self.qd}
+        self.ud_zero = {udi: 0 for udi in self.ud}
 
     def _define_kinematics(self):
         print("Step 2: Defining system kinematics...")
@@ -41,40 +53,41 @@ class RigidSymbolicDynamics:
         self.E.orient_axis(self.N, self.q3 + sm.pi, self.N.z)
 
         # Points
-        O = me.Point('O')
+        self.O = me.Point('O')
         self.Bus_cm = me.Point('B_cm')
-        Joint_Right = me.Point('J_R')
-        Joint_Left = me.Point('J_L')
+        self.Joint_Right = me.Point('J_R')
+        self.Joint_Left = me.Point('J_L')
         self.Panel_Right_cm = me.Point('R_cm')
         self.Panel_Left_cm = me.Point('L_cm')
 
         # Position Chain
-        self.Bus_cm.set_pos(O, self.q1 * self.N.x + self.q2 * self.N.y)
-        Joint_Right.set_pos(self.Bus_cm, (self.D / 2) * self.B.x)
-        Joint_Left.set_pos(self.Bus_cm, -(self.D / 2) * self.B.x)
-        self.Panel_Right_cm.set_pos(Joint_Right, (self.L / 2) * self.C.x)
-        self.Panel_Left_cm.set_pos(Joint_Left, (self.L / 2) * self.E.x)
+        self.Bus_cm.set_pos(self.O, self.q1 * self.N.x + self.q2 * self.N.y)
+        self.Joint_Right.set_pos(self.Bus_cm, (self.D / 2) * self.B.x)
+        self.Joint_Left.set_pos(self.Bus_cm, -(self.D / 2) * self.B.x)
+        self.Panel_Right_cm.set_pos(self.Joint_Right, (self.L / 2) * self.C.x)
+        self.Panel_Left_cm.set_pos(self.Joint_Left, (self.L / 2) * self.E.x)
 
+        # System Center of Mass (useful for initial conditions later)
+        M = self.m_b + self.m_r + self.m_l
+        r_G = (self.m_b * self.Bus_cm.pos_from(self.O) +
+               self.m_r * self.Panel_Right_cm.pos_from(self.O) +
+               self.m_l * self.Panel_Left_cm.pos_from(self.O)) / M
+        G = self.O.locatenew('G', r_G)
+        self.r_GB = self.Bus_cm.pos_from(G)
+
+    def _setup_velocities(self):
         # Velocities
         self.B.set_ang_vel(self.N, self.u3 * self.N.z)
         self.C.set_ang_vel(self.N, self.u3 * self.N.z)
         self.E.set_ang_vel(self.N, self.u3 * self.N.z)
 
-        O.set_vel(self.N, 0)
+        self.O.set_vel(self.N, 0)
         self.Bus_cm.set_vel(self.N, self.u1 * self.N.x + self.u2 * self.N.y)
-        Joint_Right.v2pt_theory(self.Bus_cm, self.N, self.B)
-        Joint_Left.v2pt_theory(self.Bus_cm, self.N, self.B)
-        self.Panel_Right_cm.v2pt_theory(Joint_Right, self.N, self.C)
-        self.Panel_Left_cm.v2pt_theory(Joint_Left, self.N, self.E)
-
-        # System Center of Mass (useful for initial conditions later)
-        M = self.m_b + self.m_r + self.m_l
-        r_G = (self.m_b * self.Bus_cm.pos_from(O) +
-               self.m_r * self.Panel_Right_cm.pos_from(O) +
-               self.m_l * self.Panel_Left_cm.pos_from(O)) / M
-        G = O.locatenew('G', r_G)
-        self.r_GB = self.Bus_cm.pos_from(G)
-
+        self.Joint_Right.v2pt_theory(self.Bus_cm, self.N, self.B)
+        self.Joint_Left.v2pt_theory(self.Bus_cm, self.N, self.B)
+        self.Panel_Right_cm.v2pt_theory(self.Joint_Right, self.N, self.C)
+        self.Panel_Left_cm.v2pt_theory(self.Joint_Left, self.N, self.E)
+    
     def _derive_generalized_forces(self):
         print("Step 3: Formulating generalized forces...")
         # Velocities of Interest
@@ -149,10 +162,6 @@ class RigidSymbolicDynamics:
 
     def _formulate_eom(self):
         print("Step 4: Assembling final equations of motion...")
-        # Utility dictionaries
-        qd_zero = {qdi: 0 for qdi in self.qd}
-        ud_zero = {udi: 0 for udi in self.ud}
-
         # Kinematic differential equation
         fk = sm.Matrix([
             self.u1 - self.q1.diff(),
@@ -162,11 +171,101 @@ class RigidSymbolicDynamics:
 
         # Generation of Matrix Mk and vector gk
         self.Mk = fk.jacobian(self.qd)
-        self.gk = fk.xreplace(qd_zero)
+        self.gk = fk.xreplace(self.qd_zero)
 
         # Dynamic differential equation
         kane_eq = (self.Generalised_Active_Forces + self.Generalised_Inertia_Forces)
 
         # Generation of Matrix Md and vector gd
         self.Md = kane_eq.jacobian(self.ud)
-        self.gd = kane_eq.xreplace(ud_zero)
+        self.gd = kane_eq.xreplace(self.ud_zero)
+
+    def _create_lambdified_functions(self):
+        """Create lambdified functions for numerical evaluation"""
+        self.eval_kinematics = sm.lambdify((self.q, self.u, self.p_symbols), (self.Mk, self.gk))
+        self.eval_differentials = sm.lambdify((self.q, self.u, self.p_symbols), (self.Md, self.gd))
+    
+    def get_parameter_values(self):
+        """
+        Extract parameter values from config in the order expected by lambdified functions
+        This is the key new method that reads from config
+        """
+        p_values = self.config['p_values']
+        
+        return np.array([
+            p_values['D'],      # Bus side length
+            p_values['L'],      # Panel length  
+            p_values['m_b'],    # Bus mass
+            p_values['m_r'],    # Right panel mass
+            p_values['m_l'],    # Left panel mass
+            p_values['tau']     # External torque
+        ])
+    
+    def get_initial_conditions(self):
+        # Extract initial states
+        initial_states = self.config.get("q_initial", {})
+
+        # Extract initial speeds
+        initial_speeds = self.config.get('initial_speeds', {})
+        u3_initial = initial_speeds.get('u3', 0.0)
+        
+        # Extract parameters
+        parameters = self.config.get("p_values", {})
+        
+        # Center of mass position vector
+        rho = self.r_GB.express(self.B).simplify()
+        rho_vector = sm.Matrix([
+            [rho.dot(self.B.x)],
+            [rho.dot(self.B.y)],
+        ])
+                
+        # Skew matrix S
+        S = sm.Matrix([
+            [0, -1],
+            [1, 0],
+        ])
+
+        # Rotation matrix R_theta
+        R_theta = np.array([
+            [np.cos(initial_states["q3"]), -np.sin(initial_states["q3"])],
+            [np.sin(initial_states["q3"]),  np.cos(initial_states["q3"])]
+        ])
+        
+        # Calculate initial generalized speeds constraints: u3 * S * R_theta * rho_vector
+        initial_generalised_speeds_constraints = u3_initial * S @ R_theta @ rho_vector
+        
+        u_init_func = sm.lambdify(
+            (self.q1, self.q2, self.q3, self.u3, self.D, self.L, self.m_b, self.m_l, self.m_r), 
+            [initial_generalised_speeds_constraints[0], initial_generalised_speeds_constraints[1]], 
+            'numpy'
+        )
+
+        u1_consistent, u2_consistent = u_init_func(
+            initial_states["q1"], 
+            initial_states["q2"], 
+            initial_states["q3"], 
+            u3_initial, 
+            parameters["D"],
+            parameters["L"],
+            parameters["m_b"],
+            parameters["m_l"],
+            parameters["m_r"],
+        )
+        
+        u_vals = np.array([u1_consistent, u2_consistent, u3_initial])
+        
+        # Combine into state vector
+        x0 = np.array([
+            initial_states["q1"], 
+            initial_states["q2"], 
+            initial_states["q3"], 
+            u1_consistent, 
+            u2_consistent,
+            u3_initial
+        ])
+        
+        print(f"\nInitial conditions set (with momentum conservation):")
+        print(f"  Positions: q1={initial_states["q1"]:.3f}, q2={initial_states["q2"]:.3f}, q3={np.rad2deg(initial_states["q3"]):.3f}°")
+        print(f"  Velocities: u1={u1_consistent:.6f}, u2={u2_consistent:.6f}, u3={u3_initial:.3f}\n")
+        
+        return x0

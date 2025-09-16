@@ -8,8 +8,6 @@ from .flexible_beam import CantileverBeam
 class FlexibleSymbolicDynamics:
     def __init__(self, config):
         self.config = config
-        
-        # Initialize symbolic computation
         me.init_vprinting()
         
         # Build symbolic model following package blueprint
