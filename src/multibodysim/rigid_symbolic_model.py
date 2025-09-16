@@ -2,7 +2,7 @@ import sympy as sm
 import sympy.physics.mechanics as me
 me.init_vprinting()
 
-class SatelliteSymbolicModel:
+class RigidSymbolicDynamics:
     def __init__(self):
         self._define_symbols()
         self._define_kinematics()

@@ -3,7 +3,7 @@ import sympy as sm
 from scipy.integrate import solve_ivp
 
 
-class SatelliteSimulator:
+class RigidSimulator:
     def __init__(self, symbolic_model):
         print("Step 5: Compiling symbolic EOM matrices into a numerical function...")
         self._model = symbolic_model
