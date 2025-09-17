@@ -229,7 +229,7 @@ class RigidSymbolicDynamics:
             [np.sin(initial_states["q3"]),  np.cos(initial_states["q3"])]
         ])
         
-        # Calculate initial generalized speeds constraints: u3 * S * R_theta * rho_vector
+        # Calculate initial generalized speeds constraints
         initial_generalised_speeds_constraints = u3_initial * S @ R_theta @ rho_vector
         
         u_init_func = sm.lambdify(
@@ -249,8 +249,6 @@ class RigidSymbolicDynamics:
             parameters["m_l"],
             parameters["m_r"],
         )
-        
-        u_vals = np.array([u1_consistent, u2_consistent, u3_initial])
         
         # Combine into state vector
         x0 = np.array([
