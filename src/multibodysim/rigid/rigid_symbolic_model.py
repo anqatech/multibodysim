@@ -21,12 +21,13 @@ class RigidSymbolicDynamics:
         # Generalized coordinates and speeds
         self.q1, self.q2, self.q3 = me.dynamicsymbols('q1, q2, q3')
         self.u1, self.u2, self.u3 = me.dynamicsymbols('u1, u2, u3')
+        # External torque
+        self.tau = me.dynamicsymbols('tau')
+        self.t = me.dynamicsymbols._t
 
         # System parameters
         self.D, self.L = sm.symbols('D, L')
         self.m_b, self.m_l, self.m_r = sm.symbols('m_b, m_l, m_r')
-        self.tau = me.dynamicsymbols('tau')
-        self.t = me.dynamicsymbols._t
 
         # Vectors definition
         self.p_symbols = sm.Matrix([self.D, self.L, self.m_b, self.m_r, self.m_l, self.tau])
