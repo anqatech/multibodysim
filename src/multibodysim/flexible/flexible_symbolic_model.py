@@ -2,7 +2,7 @@ import numpy as np
 import sympy as sm
 import sympy.physics.mechanics as me
 from scipy.optimize import fsolve
-from .flexible_beam import CantileverBeam
+from ..beam.cantilever_beam import CantileverBeam
 
 
 class FlexibleSymbolicDynamics:
