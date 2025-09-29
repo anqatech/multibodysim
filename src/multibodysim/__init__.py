@@ -6,6 +6,7 @@ from .beam.cantilever_beam import CantileverBeam
 from .beam.clamped_clamped_beam import ClampedClampedBeam
 from .flexible.flexible_symbolic_model import FlexibleSymbolicDynamics
 from .flexible.flexible_simulator import FlexibleSimulator
+from .flexible.flexible_symbolic_non_symmetric import FlexibleSymbolicNonSymmetricDynamics
 
 
 __version__ = "0.1.0"
