@@ -57,7 +57,6 @@ class FlexibleSimulator:
         nb_timesteps = sim_params['nb_timesteps']
         
         # Create time evaluation points
-        fps = nb_timesteps / (t_end - t_start)
         t_eval = np.linspace(t_start, t_end, nb_timesteps)
         
         # Integration settings

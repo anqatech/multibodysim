@@ -62,6 +62,7 @@ class RigidSimulator:
         
         print(f"\nStarting simulation from t={t_start} to t={t_end}")
         print(f"Integration method: {integration_options['method']}\n")
+        print(f"Tolerances: rtol={integration_options['rtol']}, atol={integration_options['atol']}")
         
         # Integrate equations of motion
         result = solve_ivp(

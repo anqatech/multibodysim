@@ -199,6 +199,7 @@ class FlexibleSymbolicNonSymmetricDynamics:
         # Modal stiffness for the first mode of a cantilever beam
         # Use the beam class for modal stiffness calculation
         k_modal = self.beam.modal_stiffness_symbolic()
+
         k_r = k_modal
         k_l = k_modal
         
@@ -220,7 +221,7 @@ class FlexibleSymbolicNonSymmetricDynamics:
         N_w_B = self.B.ang_vel_in(self.N).xreplace(self.qd_repl)
         N_alpha_B = N_w_B.dt(self.N).xreplace(self.qdd_repl).xreplace(self.qd_repl)
         Ts_B = -(N_alpha_B.dot(I_b) + me.cross(N_w_B, I_b.dot(N_w_B)))
-        
+
         # Partial velocities
         v_B_partials = me.partial_velocity([self.Bus_cm.vel(self.N).xreplace(self.qd_repl)], self.u, self.N)[0]
         w_B_partials = me.partial_velocity([N_w_B], self.u, self.N)[0]
@@ -299,7 +300,7 @@ class FlexibleSymbolicNonSymmetricDynamics:
             self.config['initial_speeds']['u5']
         ])
         
-        x0 = np.zeros(9)
+        x0 = np.zeros(10)
         x0[:5] = q_vals
         x0[5:] = u_vals
         
