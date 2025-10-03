@@ -121,6 +121,7 @@ class FlexibleSymbolicNonSymmetricDynamics:
             self.m_l * self.Point_E_cm.pos_from(self.O)
         ) / M
         self.G = self.O.locatenew('G', r_G)
+        self.r_GB = self.Bus_cm.pos_from(self.G)
 
     def _define_kinematic_equations(self):
         # Kinematical differential equations
@@ -284,24 +285,82 @@ class FlexibleSymbolicNonSymmetricDynamics:
         ])
     
     def get_initial_conditions(self):
-        q_vals = np.array([
-            self.config['q_initial']['q1'],
-            self.config['q_initial']['q2'],
-            np.deg2rad(self.config['q_initial']['q3']),
-            self.config['q_initial']['eta_r'],
-            self.config['q_initial']['eta_l']
+        # Extract initial states
+        initial_states = self.config.get("q_initial", {})
+        eta_r_initial = initial_states["eta_r"]
+        eta_l_initial = initial_states["eta_l"]
+
+        # Extract initial speeds
+        initial_speeds = self.config.get('initial_speeds', {})
+        u3_initial = initial_speeds.get('u3', 0.0)
+        u4_initial = initial_speeds.get('u4', 0.0)
+        u5_initial = initial_speeds.get('u5', 0.0)
+
+        # Extract parameters
+        parameters = self.config.get("p_values", {})
+        M = parameters["m_b"] + parameters["m_r"] + parameters["m_l"]
+        
+        # Center of mass position vector
+        rho = self.r_GB.express(self.B).simplify()
+        rho_vector = sm.Matrix([
+            [rho.dot(self.B.x)],
+            [rho.dot(self.B.y)],
+        ])
+                
+        # Skew matrix S
+        S = sm.Matrix([
+            [0, -1],
+            [1, 0],
+        ])
+
+        # Rotation matrix R_theta
+        R_theta = np.array([
+            [np.cos(initial_states["q3"]), -np.sin(initial_states["q3"])],
+            [np.sin(initial_states["q3"]),  np.cos(initial_states["q3"])]
         ])
         
-        u_vals = np.array([
-            self.config['initial_speeds']['u1'],
-            self.config['initial_speeds']['u2'],
-            self.config['initial_speeds']['u3'],
-            self.config['initial_speeds']['u4'],
-            self.config['initial_speeds']['u5']
+        # Calculate initial generalized speeds constraints
+        rho_derivative = -( self.phi1_mean / M) * (parameters["m_r"] * eta_r_initial - parameters["m_l"] * eta_l_initial) * np.array([[0.0], [1.0]])
+        initial_generalised_speeds_constraints = u3_initial * S @ R_theta @ rho_vector + R_theta @ rho_derivative
+
+        u_init_func = sm.lambdify(
+            (self.q1, self.q2, self.q3, self.eta_r, self.eta_l, self.u3, self.D, self.L, self.m_b, self.m_r, self.m_l, self.E_mod, self.I_area), 
+            [initial_generalised_speeds_constraints[0], initial_generalised_speeds_constraints[1]], 
+            'numpy'
+        )
+
+        u1_consistent, u2_consistent = u_init_func(
+            initial_states["q1"], 
+            initial_states["q2"], 
+            initial_states["q3"], 
+            initial_states["eta_r"], 
+            initial_states["eta_l"], 
+            u3_initial, 
+            parameters["D"],
+            parameters["L"],
+            parameters["m_b"],
+            parameters["m_r"],
+            parameters["m_l"],
+            parameters["E_mod"],
+            parameters["I_area"],
+        )
+
+        # Combine into state vector
+        x0 = np.array([
+            initial_states["q1"], 
+            initial_states["q2"], 
+            initial_states["q3"], 
+            initial_states["eta_r"], 
+            initial_states["eta_l"], 
+            u1_consistent, 
+            u2_consistent,
+            u3_initial,
+            u4_initial,
+            u5_initial
         ])
         
-        x0 = np.zeros(10)
-        x0[:5] = q_vals
-        x0[5:] = u_vals
+        print(f"\nInitial conditions set (with momentum conservation):")
+        print(f"  Positions: q1={initial_states["q1"]:.3f}, q2={initial_states["q2"]:.3f}, q3={np.rad2deg(initial_states["q3"]):.3f}°, eta_r={np.rad2deg(initial_states["eta_r"]):.3f}, eta_l={np.rad2deg(initial_states["eta_l"]):.3f}")
+        print(f"  Velocities: u1={u1_consistent:.6f}, u2={u2_consistent:.6f}, u3={u3_initial:.3f}, , u4={u4_initial:.3f}, , u5={u5_initial:.3f}\n")
         
         return x0

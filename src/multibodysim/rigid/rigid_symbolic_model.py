@@ -72,8 +72,8 @@ class RigidSymbolicDynamics:
         r_G = (self.m_b * self.Bus_cm.pos_from(self.O) +
                self.m_r * self.Panel_Right_cm.pos_from(self.O) +
                self.m_l * self.Panel_Left_cm.pos_from(self.O)) / M
-        G = self.O.locatenew('G', r_G)
-        self.r_GB = self.Bus_cm.pos_from(G)
+        self.G = self.O.locatenew('G', r_G)
+        self.r_GB = self.Bus_cm.pos_from(self.G)
 
     def _define_kinematic_equations(self):
         # Kinematic differential equation
