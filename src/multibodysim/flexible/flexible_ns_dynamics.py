@@ -1,3 +1,4 @@
+from collections import deque
 import numpy as np
 import sympy as sm
 import sympy.physics.mechanics as me
