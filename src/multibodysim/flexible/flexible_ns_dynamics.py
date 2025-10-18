@@ -429,3 +429,97 @@ class FlexibleNonSymmetricDynamics:
 
     def get_parameter_values(self):
         return self.config['p_values'].values()
+
+    def get_initial_conditions(self):
+        # ---------- Setup ---------- 
+        state_dimension = len(self.u)
+        x0 = np.zeros(2 * state_dimension)
+        
+        # ---------- Extract initial states ---------- 
+        initial_states = self.config.get("q_initial", {})
+        for i, value in enumerate(initial_states.values()):
+            x0[i] = value
+        
+        # ---------- Extract initial speeds ----------
+        initial_speeds = self.config.get('initial_speeds', {})
+        for i, value in enumerate(initial_speeds.values()):
+            x0[i+state_dimension+2] = value
+
+        # ---------- Extract parameters ---------- 
+        parameters = self.config.get("p_values", {})
+        M = 0.0
+        for key, value in parameters.items():
+            if key.startswith("m_"):
+                M += value
+
+        # ---------- Center of mass position vector ---------- 
+        central_body_frame = self.frames[self.central_body]
+        rho = self.r_GB.express(central_body_frame).simplify()
+        self.rho_vector = sm.Matrix([
+            [rho.dot(central_body_frame.x)],
+            [rho.dot(central_body_frame.y)],
+        ])
+
+        # ---------- Skew matrix S ---------- 
+        S = sm.Matrix([
+            [0, -1],
+            [1,  0],
+        ])
+
+        # ---------- Rotation matrix R_theta ---------- 
+        R_theta = np.array([
+            [np.cos(initial_states["q3"]), -np.sin(initial_states["q3"])],
+            [np.sin(initial_states["q3"]),  np.cos(initial_states["q3"])]
+        ])
+        
+        # ---------- Calculate initial generalized speeds constraints ---------- 
+        M_symbol = sm.Float(0)
+        for key, value in self.p_symbols.items():
+            if key.startswith("m_"):
+                M_symbol += value
+                
+        self.rho_derivative = sm.Matrix([[0], [0]])
+        for key, value in self.flexible_bodies.items():
+            self.rho_derivative = self.rho_derivative + self.p_symbols[f"m_{key}"] * value["zeta"] * sm.Matrix([
+                    [self.frames[key].y.dot(self.frames[self.central_body].x)],
+                    [self.frames[key].y.dot(self.frames[self.central_body].y)],
+                ])
+        self.rho_derivative = (self.phi1_mean / M_symbol) * self.rho_derivative
+
+        self.initial_generalised_speeds_constraints = initial_speeds["u3"] * S @ R_theta @ self.rho_vector + R_theta @ self.rho_derivative
+
+        state_symbols = [state for state in self.q]
+        speed_symbols = [self.u_angle] + [param["zeta"] for param in self.flexible_bodies.values()]
+        param_symbols  = [param for key, param in self.p_symbols.items() if key != "tau"]
+        
+        arg_syms = tuple(state_symbols + speed_symbols + param_symbols)
+
+        self.u_init_func = sm.lambdify(
+            arg_syms, 
+            [self.initial_generalised_speeds_constraints[0], self.initial_generalised_speeds_constraints[1]], 
+            'numpy'
+        )
+
+        args = list(initial_states.values()) + list(initial_speeds.values()) + [value for key, value in parameters.items() if key != "tau"]
+        u1_consistent, u2_consistent = self.u_init_func(*args)
+        
+        x0[state_dimension] = u1_consistent
+        x0[state_dimension+1] = u2_consistent
+
+        print(f"\nInitial conditions set (with momentum conservation):")
+        
+        output_string = (
+            f"  Positions: q1={initial_states["q1"]:.3f}, q2={initial_states["q2"]:.3f}, "
+            f"q3={np.rad2deg(initial_states["q3"]):.3f}°, "
+        )
+        for i in range(len(self.flexible_bodies.keys())):
+            output_string = output_string + f"eta{i+1}={initial_states[f"eta{i+1}"]:.3f}, "
+        print(output_string)
+
+        
+        output_string = f"  Velocities: u1={u1_consistent:.6f}, u2={u2_consistent:.6f}, u3={initial_speeds["u3"]:.3f}, "
+        for i in range(len(self.flexible_bodies.keys())):
+            output_string = output_string + f"zeta{i+1}={initial_speeds[f"zeta{i+1}"]:.3f}, "
+        print(output_string)
+        
+        return x0
