@@ -2,7 +2,6 @@ from collections import deque
 import numpy as np
 import sympy as sm
 import sympy.physics.mechanics as me
-from scipy.optimize import fsolve
 from ..beam.cantilever_beam import CantileverBeam
 
 
@@ -325,11 +324,11 @@ class FlexibleNonSymmetricDynamics:
 
     def _define_generalized_active_forces(self):
         # ---------- Setup ----------
-        state_reference_dimension = len(self.u_reference)
-        state_dimension = len(self.u)
-        self.generalised_active_forces = sm.zeros(state_dimension, 1)
+        self.state_reference_dimension = len(self.u_reference)
+        self.state_dimension = len(self.u)
+        self.generalised_active_forces = sm.zeros(self.state_dimension, 1)
         
-        for i in range(state_dimension):
+        for i in range(self.state_dimension):
             for body in self.parents.keys():
                 v_partial = self.partial_linear_velocities[body][i]
                 w_partial = self.partial_angular_velocities[body][i]
@@ -349,17 +348,16 @@ class FlexibleNonSymmetricDynamics:
         
         i = 0
         for body, states in self.flexible_bodies.items():
-            self.generalised_active_forces[i+state_reference_dimension] += - V_strain.diff(states["eta"])
+            self.generalised_active_forces[i+self.state_reference_dimension] += - V_strain.diff(states["eta"])
             i += 1
 
 
     def _define_generalized_inertia_forces(self):
         # ---------- Setup ----------
-        state_dimension = len(self.u)
-        self.generalised_inertia_forces = sm.zeros(state_dimension, 1)
+        self.generalised_inertia_forces = sm.zeros(self.state_dimension, 1)
         
         # ---------- Contribution from rigid bodies ---------- 
-        for i in range(state_dimension):
+        for i in range(self.state_dimension):
             for body in self.rigid_bodies.keys():
                 v_partial = self.partial_linear_velocities[body][i]
                 w_partial = self.partial_angular_velocities[body][i]
@@ -378,7 +376,7 @@ class FlexibleNonSymmetricDynamics:
                 self.generalised_inertia_forces[i] += v_partial.dot(R_star_body) + w_partial.dot(T_star_body)
            
         # ---------- Contribution from flexible bodies ---------- 
-        for i in range(state_dimension):
+        for i in range(self.state_dimension):
             for body in self.flexible_bodies.keys():
                 v_partial = self.partial_linear_velocities[body][i]
                 w_partial = self.partial_angular_velocities[body][i]
@@ -432,8 +430,7 @@ class FlexibleNonSymmetricDynamics:
 
     def get_initial_conditions(self):
         # ---------- Setup ---------- 
-        state_dimension = len(self.u)
-        x0 = np.zeros(2 * state_dimension)
+        x0 = np.zeros(2 * self.state_dimension)
         
         # ---------- Extract initial states ---------- 
         initial_states = self.config.get("q_initial", {})
@@ -443,7 +440,7 @@ class FlexibleNonSymmetricDynamics:
         # ---------- Extract initial speeds ----------
         initial_speeds = self.config.get('initial_speeds', {})
         for i, value in enumerate(initial_speeds.values()):
-            x0[i+state_dimension+2] = value
+            x0[i+self.state_dimension+2] = value
 
         # ---------- Extract parameters ---------- 
         parameters = self.config.get("p_values", {})
@@ -503,8 +500,8 @@ class FlexibleNonSymmetricDynamics:
         args = list(initial_states.values()) + list(initial_speeds.values()) + [value for key, value in parameters.items() if key != "tau"]
         u1_consistent, u2_consistent = self.u_init_func(*args)
         
-        x0[state_dimension] = u1_consistent
-        x0[state_dimension+1] = u2_consistent
+        x0[self.state_dimension] = u1_consistent
+        x0[self.state_dimension+1] = u2_consistent
 
         print(f"\nInitial conditions set (with momentum conservation):")
         
@@ -513,13 +510,13 @@ class FlexibleNonSymmetricDynamics:
             f"q3={np.rad2deg(initial_states["q3"]):.3f}°, "
         )
         for i in range(len(self.flexible_bodies.keys())):
-            output_string = output_string + f"eta{i+1}={initial_states[f"eta{i+1}"]:.3f}, "
+            output_string = output_string + f"eta{i+1}={initial_states[f"eta{i+1}"]:.3f}, \n"
         print(output_string)
 
         
         output_string = f"  Velocities: u1={u1_consistent:.6f}, u2={u2_consistent:.6f}, u3={initial_speeds["u3"]:.3f}, "
         for i in range(len(self.flexible_bodies.keys())):
-            output_string = output_string + f"zeta{i+1}={initial_speeds[f"zeta{i+1}"]:.3f}, "
+            output_string = output_string + f"zeta{i+1}={initial_speeds[f"zeta{i+1}"]:.3f}, \n"
         print(output_string)
         
         return x0
