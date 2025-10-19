@@ -57,25 +57,20 @@ class FlexibleSymbolicNonSymmetricDynamics:
 
     def _define_mode_shapes(self):
         # Create cantilever beam instance
-        beam_params = self.config.get('beam_parameters', {})
+        beam_params = self.config['beam_parameters']
+        p_values = self.config['p_values']
         self.beam = CantileverBeam(
-            length=self.config['p_values']['L'],
-            E=self.config['p_values']['E_mod'],
-            I=self.config['p_values']['I_area'],
-            beta1=beam_params['beta1'],
-            sigma1=beam_params['sigma1'],
-            s=self.s
+            length=p_values["L"],
+            E=p_values["E_mod"],
+            I=p_values["I_area"],
+            n=beam_params["nb_modes"]
         )
         
-        # Shape function (First mode of a uniform cantilever beam) - symbolic
-        self.beta1 = self.beam.beta1
-        self.sigma1 = self.beam.sigma1
-        arg = self.beta1 * self.s / self.L
-        self.phi1 = (sm.cosh(arg) - sm.cos(arg) - 
-                     self.sigma1 * (sm.sinh(arg) - sm.sin(arg)))
-        
-        # Calculate mass-averaged deflection using the beam class
-        n_points = beam_params.get('n_integration_points', 200)
+        # ---------- Shape function ----------
+        self.phi1 = self.beam.mode_shape_symbolic(self.s, 1)
+
+        # ---------- Average deflection ----------
+        n_points = beam_params.get('nb_integration_points', 200)
         self.phi1_mean = self.beam.mode_shape_mean(n_points)
 
     def _define_kinematics(self):
@@ -197,9 +192,8 @@ class FlexibleSymbolicNonSymmetricDynamics:
             self.Generalised_Active_Forces[i] = Active_Force
         self.Generalised_Active_Forces = sm.Matrix(self.Generalised_Active_Forces)
         
-        # Modal stiffness for the first mode of a cantilever beam
-        # Use the beam class for modal stiffness calculation
-        k_modal = self.beam.modal_stiffness_symbolic()
+        # ---------- Modal stiffness for the first mode of a cantilever beam ----------
+        k_modal = self.beam.modal_stiffness(1)
 
         k_r = k_modal
         k_l = k_modal
