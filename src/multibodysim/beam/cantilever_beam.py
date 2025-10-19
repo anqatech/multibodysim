@@ -5,34 +5,43 @@ from scipy.optimize import root_scalar
 
 
 class CantileverBeam:
-    def __init__(self, length, E, I, s):
+    def __init__(self, length, E, I, n):
         self.L = length
         self.E = E
         self.I = I
-        self.s = s
 
-        self.beta1 = self._generate_betas(n=1).item()
-        self.sigma1 = self._generate_sigmas(self.beta1)
-        
-    def mode_shape(self, s):
-        arg = self.beta1 * s / self.L
-        phi1 = (np.cosh(arg) - np.cos(arg) - self.sigma1 * (np.sinh(arg) - np.sin(arg)))
+        self.nb_modes = n
+
+        self.betas = self._generate_betas(n=self.nb_modes)
+        self.sigmas = self._generate_sigmas()
+
+        # self.beta1 = self.betas[0]
+        # self.sigma1 = self.sigmas[0]
+
+    def mode_shape_symbolic(self, s, mode):
+        arg = self.betas[mode - 1] * s / self.L
+        phi = ( sm.cosh(arg) - sm.cos(arg) - self.sigmas[mode - 1] * ( sm.sinh(arg) - sm.sin(arg) ) )
+        return phi
+
+    def mode_shape(self, s, mode):
+        arg = self.betas[mode - 1] * s / self.L
+        phi1 = (np.cosh(arg) - np.cos(arg) - self.sigmas[mode - 1] * (np.sinh(arg) - np.sin(arg)))
         return phi1
     
     def mode_shape_mean(self, n_points=200):
         s_vals = np.linspace(0, self.L, n_points)
-        phi1_vals = self.mode_shape(s_vals)
+        phi1_vals = self.mode_shape(s_vals, 1)
         return trapezoid(phi1_vals, s_vals) / self.L
     
-    def modal_stiffness_symbolic(self):
+    def modal_stiffness(self, mode):
         # Create symbolic mode shape using beam's own parameters
-        arg = self.beta1 * self.s / self.L
-        phi1 = (sm.cosh(arg) - sm.cos(arg) - 
-                self.sigma1 * (sm.sinh(arg) - sm.sin(arg)))
+        s = sm.Symbol('s')
+        arg = self.betas[mode - 1] * s / self.L
+        phi = (sm.cosh(arg) - sm.cos(arg) - self.sigmas[mode - 1] * (sm.sinh(arg) - sm.sin(arg)))
         
         # Calculate modal stiffness
-        phi1_dd = phi1.diff(self.s, 2)
-        k_modal = sm.integrate(self.E * self.I * (phi1_dd)**2, (self.s, 0, self.L))
+        phi_dd = phi.diff(s, 2)
+        k_modal = sm.integrate(self.E * self.I * (phi_dd)**2, (s, 0, self.L))
         return k_modal
 
     def _generate_betas(self, n=5):
@@ -47,7 +56,7 @@ class CantileverBeam:
             k += 1
         return np.array(betas)
 
-    def _generate_sigmas(self, betas):
-        num = np.cosh(betas) + np.cos(betas)
-        den = np.sinh(betas) + np.sin(betas)
+    def _generate_sigmas(self):
+        num = np.cosh(self.betas) + np.cos(self.betas)
+        den = np.sinh(self.betas) + np.sin(self.betas)
         return num / den

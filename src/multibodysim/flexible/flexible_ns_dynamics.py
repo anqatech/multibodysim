@@ -112,15 +112,12 @@ class FlexibleNonSymmetricDynamics:
             length=p_values["L"],
             E=p_values["E_mod"],
             I=p_values["I_area"],
-            s=self.s
+            n=beam_params["nb_modes"]
         )
         
         # ---------- Shape function ----------
-        self.beta1 = self.beam.beta1
-        self.sigma1 = self.beam.sigma1
-        arg = self.beta1 * self.s / self.p_symbols["L"]
-        self.phi1 = ( sm.cosh(arg) - sm.cos(arg) - self.sigma1 * ( sm.sinh(arg) - sm.sin(arg) ) )
-        
+        self.phi1 = self.beam.mode_shape_symbolic(self.s, 1)
+
         # ---------- Average deflection ----------
         n_points = beam_params.get('nb_integration_points', 200)
         self.phi1_mean = self.beam.mode_shape_mean(n_points)
@@ -337,7 +334,7 @@ class FlexibleNonSymmetricDynamics:
                 self.generalised_active_forces[i] += v_partial.dot(force) + w_partial.dot(torque)
 
         # ---------- Modal stiffness for the first mode of a cantilever beam ----------
-        k_modal = self.beam.modal_stiffness_symbolic()
+        k_modal = self.beam.modal_stiffness(1)
 
         # ---------- Strain potential energy stored in the flexible panels ---------- 
         V_strain = sm.Float(0)
