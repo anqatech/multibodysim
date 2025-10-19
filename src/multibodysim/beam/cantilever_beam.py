@@ -25,9 +25,9 @@ class CantileverBeam:
         phi = (np.cosh(arg) - np.cos(arg) - self.sigmas[mode - 1] * (np.sinh(arg) - np.sin(arg)))
         return phi
     
-    def mode_shape_mean(self, n_points=200):
+    def mode_shape_mean(self, n_points=200, mode=1):
         s_vals = np.linspace(0, self.L, n_points)
-        phi_vals = self.mode_shape(s_vals, 1)
+        phi_vals = self.mode_shape(s_vals, mode)
         return trapezoid(phi_vals, s_vals) / self.L
     
     def modal_stiffness(self, mode):
