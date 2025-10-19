@@ -135,7 +135,7 @@ class FlexibleNonSymmetricDynamics:
                     n=params["nb_modes"]
                 )
             else:
-                raise Error(f"Unrecognised beam type: {beam_type}")
+                raise TypeError(f"Unrecognised beam type: {beam_type}")
 
             self.flexible_bodies[body]["beam"] = beam
             self.flexible_bodies[body]["phi"] = beam.mode_shape_symbolic(self.s, 1)
