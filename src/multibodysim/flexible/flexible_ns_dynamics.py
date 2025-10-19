@@ -3,6 +3,7 @@ import numpy as np
 import sympy as sm
 import sympy.physics.mechanics as me
 from ..beam.cantilever_beam import CantileverBeam
+from ..beam.clamped_clamped_beam import ClampedClampedBeam
 
 
 class FlexibleNonSymmetricDynamics:
@@ -121,14 +122,7 @@ class FlexibleNonSymmetricDynamics:
                     n=params["nb_modes"]
                 )
             elif beam_type == "clamped-clamped":
-                # !!!!!!!!!!!!!!!!!! To be replaced after refactoring ClampedClampedBeam !!!!!!!!!!!!!!!!!!
-                # beam = ClampedClampedBeam(
-                #     length=p_values["L"],
-                #     E=p_values["E_mod"],
-                #     I=p_values["I_area"],
-                #     n=params["nb_modes"]
-                # )
-                beam = CantileverBeam(
+                beam = ClampedClampedBeam(
                     length=p_values["L"],
                     E=p_values["E_mod"],
                     I=p_values["I_area"],
@@ -197,11 +191,13 @@ class FlexibleNonSymmetricDynamics:
             if self.body_type[child].startswith("flexible-"):
                 frame      =  self.frames[child]
                 amplitude  =  self.flexible_bodies[child]["eta"]
-                dm         =  self.s * frame.x + self.flexible_bodies[child]["phi"] * amplitude * frame.y
+                phi        = self.flexible_bodies[child]["phi"]
+                dm         =  self.s * frame.x + phi * amplitude * frame.y
                 dm_point   =  self.points[f"joint_{child}_{parent}"].locatenew(f"dm_{child}", dm)
                 self.points[f"dm_{child}"] = dm_point
-        
-                dm_cm = (self.p_symbols["L"] / 2) * frame.x + self.flexible_bodies[child]["phi_mean"] * amplitude * frame.y
+
+                phi_mean = self.flexible_bodies[child]["phi_mean"]
+                dm_cm = (self.p_symbols["L"] / 2) * frame.x + phi_mean * amplitude * frame.y
                 dm_cm_point = self.points[f"joint_{child}_{parent}"].locatenew(f"dm_center_of_mass_{child}", dm_cm)
                 self.points[f"dm_center_of_mass_{child}"] = dm_cm_point
         
@@ -272,8 +268,9 @@ class FlexibleNonSymmetricDynamics:
             child_point.v2pt_theory(parent_point, inertial_frame, parent_frame)
         
             if self.body_type[child].startswith("flexible-"):
+                phi = self.flexible_bodies[child]["phi"]
                 self.points[f"dm_{child}"].set_vel(
-                    self.frames[child], self.flexible_bodies[child]["phi"] * self.flexible_bodies[child]["zeta"] * self.frames[child].y
+                    self.frames[child], phi * self.flexible_bodies[child]["zeta"] * self.frames[child].y
                 )
                 dm_vel = self.points[f"dm_{child}"].v1pt_theory(child_point, inertial_frame, self.frames[child])
                 self.linear_velocities[child] = dm_vel.xreplace(self.qdd_repl).xreplace(self.qd_repl)
@@ -283,8 +280,9 @@ class FlexibleNonSymmetricDynamics:
         # ---------- Flexible center of mass velocities ----------
         # !!! Not used at the moment --> TBD if it is to be kept
         for item in self.flexible_bodies:
+            phi_mean = self.flexible_bodies[child]["phi_mean"]
             self.points[f"dm_center_of_mass_{item}"].set_vel(
-                self.frames[item], self.flexible_bodies[child]["phi_mean"] * self.flexible_bodies[item]["zeta"] * self.frames[item].y
+                self.frames[item], phi_mean * self.flexible_bodies[item]["zeta"] * self.frames[item].y
             )
             dm_center_of_mass_velocity = self.points[f"dm_center_of_mass_{item}"].v1pt_theory(
                 self.points[f"joint_{item}_{self.central_body}"], inertial_frame, self.frames[item]
@@ -528,7 +526,6 @@ class FlexibleNonSymmetricDynamics:
             output_string = output_string + f"eta{i+1}={initial_states[f"eta{i+1}"]:.3f}, \n"
         print(output_string)
 
-        
         output_string = f"  Velocities: u1={u1_consistent:.6f}, u2={u2_consistent:.6f}, u3={initial_speeds["u3"]:.3f}, "
         for i in range(len(self.flexible_bodies.keys())):
             output_string = output_string + f"zeta{i+1}={initial_speeds[f"zeta{i+1}"]:.3f}, \n"
