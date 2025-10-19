@@ -72,28 +72,52 @@ class FlexibleNonSymmetricDynamics:
         }
         
          # ---------- Flexible bodies ----------
-        eta_list = []
-        zeta_list = []
-
+        eta_all = []
+        zeta_all = []
+        
         flexible_types = self.config["flexible_types"]
-        for i, body in enumerate(self.flexible_bodies.keys()):
-            eta_i = me.dynamicsymbols(f"eta{i+1}")
-            eta_list.append(eta_i)
-            zeta_i = me.dynamicsymbols(f"zeta{i+1}")
-            zeta_list.append(zeta_i)
-            self.flexible_bodies[body] = {"eta": eta_i, "zeta": zeta_i, "beam_type": flexible_types[body]}
+        beam_params = self.config["beam_parameters"]
+        
+        # NEW: keep a flat ordering + indices for (body,mode)
+        self.flex_eta_index  = {}   # (body, k) -> flat index among flexible coordinates
+        self.flex_zeta_index = {}
+        flat_eta_idx = 0
+        flat_zeta_idx = 0
+        
+        for i_body, body in enumerate(self.flexible_bodies.keys()):
+            btype = flexible_types[body]
+            n_modes = beam_params[btype]["nb_modes"]
+        
+            eta_list  = [me.dynamicsymbols(f"eta{i_body+1}_{k+1}")  for k in range(n_modes)]
+            zeta_list = [me.dynamicsymbols(f"zeta{i_body+1}_{k+1}") for k in range(n_modes)]
+        
+            self.flexible_bodies[body] = {
+                "beam_type": btype,
+                "eta_list": eta_list,
+                "zeta_list": zeta_list
+            }
+        
+            # record indices in the same order we extend the flat vectors
+            for k in range(n_modes):
+                self.flex_eta_index[(body, k)]  = flat_eta_idx
+                self.flex_zeta_index[(body, k)] = flat_zeta_idx
+                flat_eta_idx  += 1
+                flat_zeta_idx += 1
+        
+            eta_all.extend(eta_list)
+            zeta_all.extend(zeta_list)
 
-         # ---------- Auxiliary variables ----------
+        # ---------- Auxiliary variables ----------
         # Position along the beam for integration
         self.s = sm.Symbol('s')
 
         # Time symbol
         self.t = me.dynamicsymbols._t
         
-        # ---------- Flat state vectors ----------
-        self.q = sm.Matrix([*self.q_reference.values(), *eta_list])
+        # # ---------- Flat state vectors ----------
+        self.q = sm.Matrix([*self.q_reference.values(), *eta_all])
         self.qd = self.q.diff(self.t)
-        self.u = sm.Matrix([*self.u_reference.values(), *zeta_list])
+        self.u = sm.Matrix([*self.u_reference.values(), *zeta_all])
         self.ud = self.u.diff(self.t)
 
         # Zero replacement dictionaries
@@ -132,19 +156,25 @@ class FlexibleNonSymmetricDynamics:
                 raise TypeError(f"Unrecognised beam type: {beam_type}")
 
             self.flexible_bodies[body]["beam"] = beam
-            self.flexible_bodies[body]["phi"] = beam.mode_shape_symbolic(self.s, 1)
-            self.flexible_bodies[body]["phi_mean"] = beam.mode_shape_mean(params["nb_points"])
-            self.flexible_bodies[body]["k_modal"] = beam.modal_stiffness(1)
+            n_modes = self.config["beam_parameters"][beam_type]["nb_modes"]
+            nb_pts  = self.config["beam_parameters"][beam_type]["nb_points"]
             
+            phi_list       = [beam.mode_shape_symbolic(self.s, k+1) for k in range(n_modes)]
+            phi_mean_list  = [beam.mode_shape_mean(nb_pts, mode=k+1) for k in range(n_modes)]
+            k_modal_list   = [beam.modal_stiffness(k+1) for k in range(n_modes)]
+            
+            self.flexible_bodies[body]["phi_list"]      = phi_list
+            self.flexible_bodies[body]["phi_mean_list"] = phi_mean_list
+            self.flexible_bodies[body]["k_modal_list"]  = k_modal_list
 
     def _get_offset_vector(self, parent, child):
         parent_type = self.body_type[parent]
         child_type = self.body_type[child]
     
-        # default: no offset
+        # ---------- Default: no offset ---------- 
         offset = 0 * self.frames[parent].x
     
-        # bus (rigid) → panel (flexible-<side>)
+        # ---------- Offset ---------- 
         if parent_type.startswith("rigid") and child_type.startswith("flexible-"):
             sign = -1 if child_type.endswith("-left") else 1
             offset = sign * (self.p_symbols["D"] / 2) * self.frames[parent].x
@@ -190,17 +220,19 @@ class FlexibleNonSymmetricDynamics:
         
             if self.body_type[child].startswith("flexible-"):
                 frame      =  self.frames[child]
-                amplitude  =  self.flexible_bodies[child]["eta"]
-                phi        = self.flexible_bodies[child]["phi"]
-                dm         =  self.s * frame.x + phi * amplitude * frame.y
-                dm_point   =  self.points[f"joint_{child}_{parent}"].locatenew(f"dm_{child}", dm)
+                eta_list  = self.flexible_bodies[child]["eta_list"]
+                phi_list  = self.flexible_bodies[child]["phi_list"]
+                phi_sum   = sum(phi_k * eta_k for (phi_k, eta_k) in zip(phi_list, eta_list))
+                
+                dm   = self.s * frame.x + phi_sum * frame.y
+                dm_point = self.points[f"joint_{child}_{parent}"].locatenew(f"dm_{child}", dm)
                 self.points[f"dm_{child}"] = dm_point
-
-                phi_mean = self.flexible_bodies[child]["phi_mean"]
-                dm_cm = (self.p_symbols["L"] / 2) * frame.x + phi_mean * amplitude * frame.y
+                
+                phi_mean_list = self.flexible_bodies[child]["phi_mean_list"]
+                phi_mean_sum  = sum(pm * eta_k for (pm, eta_k) in zip(phi_mean_list, eta_list))
+                dm_cm = (self.p_symbols["L"] / 2) * frame.x + phi_mean_sum * frame.y
                 dm_cm_point = self.points[f"joint_{child}_{parent}"].locatenew(f"dm_center_of_mass_{child}", dm_cm)
                 self.points[f"dm_center_of_mass_{child}"] = dm_cm_point
-        
                 if not self.inertial_position[child]:
                     self.inertial_position[child] = dm_cm_point.pos_from(self.O)
             else:
@@ -268,10 +300,14 @@ class FlexibleNonSymmetricDynamics:
             child_point.v2pt_theory(parent_point, inertial_frame, parent_frame)
         
             if self.body_type[child].startswith("flexible-"):
-                phi = self.flexible_bodies[child]["phi"]
+                phi_list  = self.flexible_bodies[child]["phi_list"]
+                zeta_list = self.flexible_bodies[child]["zeta_list"]
+                phi_zeta_sum = sum(phi_k * zeta_k for (phi_k, zeta_k) in zip(phi_list, zeta_list))
+                
                 self.points[f"dm_{child}"].set_vel(
-                    self.frames[child], phi * self.flexible_bodies[child]["zeta"] * self.frames[child].y
+                    self.frames[child], phi_zeta_sum * self.frames[child].y
                 )
+
                 dm_vel = self.points[f"dm_{child}"].v1pt_theory(child_point, inertial_frame, self.frames[child])
                 self.linear_velocities[child] = dm_vel.xreplace(self.qdd_repl).xreplace(self.qd_repl)
             else:
@@ -279,13 +315,17 @@ class FlexibleNonSymmetricDynamics:
 
         # ---------- Flexible center of mass velocities ----------
         # !!! Not used at the moment --> TBD if it is to be kept
-        for item in self.flexible_bodies:
-            phi_mean = self.flexible_bodies[child]["phi_mean"]
+        for item, fb in self.flexible_bodies.items():
+            phi_mean_list = fb["phi_mean_list"]
+            zeta_list     = fb["zeta_list"]
+            phi_mean_zeta_sum = sum(pm * z for pm, z in zip(phi_mean_list, zeta_list))
+        
             self.points[f"dm_center_of_mass_{item}"].set_vel(
-                self.frames[item], phi_mean * self.flexible_bodies[item]["zeta"] * self.frames[item].y
+                self.frames[item], phi_mean_zeta_sum * self.frames[item].y
             )
-            dm_center_of_mass_velocity = self.points[f"dm_center_of_mass_{item}"].v1pt_theory(
-                self.points[f"joint_{item}_{self.central_body}"], inertial_frame, self.frames[item]
+            parent = self.parents[item]  # not always central body once you generalize!
+            _ = self.points[f"dm_center_of_mass_{item}"].v1pt_theory(
+                self.points[f"joint_{item}_{parent}"], inertial_frame, self.frames[item]
             )
 
     def _setup_accelerations(self):
@@ -350,20 +390,23 @@ class FlexibleNonSymmetricDynamics:
                 torque = self.torques[body]
     
                 self.generalised_active_forces[i] += v_partial.dot(force) + w_partial.dot(torque)
-
-        # ---------- Modal stiffness for the first mode of a cantilever beam ----------
-        k_modal = self.flexible_bodies["panel_1"]["k_modal"]
-
-        # ---------- Strain potential energy stored in the flexible panels ---------- 
-        V_strain = sm.Float(0)
-        for body, states in self.flexible_bodies.items():
-            V_strain += (1/2) * k_modal * states["eta"]**2
         
-        i = 0
-        for body, states in self.flexible_bodies.items():
-            self.generalised_active_forces[i+self.state_reference_dimension] += - V_strain.diff(states["eta"])
-            i += 1
-
+        # ---------- Strain potential energy stored in the flexible panels ---------- 
+        V_strain = sm.S.Zero
+        for body, fb in self.flexible_bodies.items():
+            eta_list     = fb["eta_list"]
+            k_modal_list = fb["k_modal_list"]
+            for k, (eta_k, Kk) in enumerate(zip(eta_list, k_modal_list)):
+                V_strain += sm.Rational(1, 2) * Kk * eta_k**2
+        
+        # ---------- Flexible contribution to generalised active forces ---------- 
+        for body, fb in self.flexible_bodies.items():
+            eta_list     = fb["eta_list"]
+            k_modal_list = fb["k_modal_list"]
+            for k, (eta_k, Kk) in enumerate(zip(eta_list, k_modal_list)):
+                flat_eta = self.flex_eta_index[(body, k)]
+                row = self.state_reference_dimension + flat_eta
+                self.generalised_active_forces[row] += -(Kk * eta_k)
 
     def _define_generalized_inertia_forces(self):
         # ---------- Setup ----------
@@ -489,17 +532,21 @@ class FlexibleNonSymmetricDynamics:
                 M_symbol += value
                 
         self.rho_derivative = sm.Matrix([[0], [0]])
-        for key, value in self.flexible_bodies.items():
-            self.rho_derivative = self.rho_derivative + self.p_symbols[f"m_{key}"] * value["zeta"] * value["phi_mean"] * sm.Matrix([
-                    [self.frames[key].y.dot(self.frames[self.central_body].x)],
-                    [self.frames[key].y.dot(self.frames[self.central_body].y)],
-                ])
+        for body, fb in self.flexible_bodies.items():
+            pm_list = fb["phi_mean_list"]
+            z_list  = fb["zeta_list"]
+            pmz_sum = sum(pm * z for pm, z in zip(pm_list, z_list))
+            self.rho_derivative += self.p_symbols[f"m_{body}"] * pmz_sum * sm.Matrix([
+                [self.frames[body].y.dot(self.frames[self.central_body].x)],
+                [self.frames[body].y.dot(self.frames[self.central_body].y)],
+            ])
+        
         self.rho_derivative = self.rho_derivative / M
-
+        
         self.initial_generalised_speeds_constraints = initial_speeds["u3"] * S @ R_theta @ self.rho_vector + R_theta @ self.rho_derivative
 
         state_symbols = [state for state in self.q]
-        speed_symbols = [self.u_angle] + [param["zeta"] for param in self.flexible_bodies.values()]
+        speed_symbols = [self.u_angle] + [z for fb in self.flexible_bodies.values() for z in fb["zeta_list"]]
         param_symbols  = [param for key, param in self.p_symbols.items() if key != "tau"]
         
         arg_syms = tuple(state_symbols + speed_symbols + param_symbols)
@@ -510,25 +557,60 @@ class FlexibleNonSymmetricDynamics:
             'numpy'
         )
 
-        args = list(initial_states.values()) + list(initial_speeds.values()) + [value for key, value in parameters.items() if key != "tau"]
+        # 1) states in the order of self.q
+        state_args = []
+        for q_symbol in self.q:                       # [q1, q2, q3, eta1_1, eta1_2, eta2_1, ...]
+            name = str(q_symbol)
+            state_args.append(self.config["q_initial"].get(name, 0.0))
+        
+        # 2) speeds in the order of speed_symbols = [u3] + all zeta_list (flattened)
+        speed_args = []
+        speed_args.append(self.config["initial_speeds"].get("u3", 0.0))
+        for fb in self.flexible_bodies.values():
+            for z_symbol in fb["zeta_list"]:
+                z_name = str(z_symbol)                 # e.g. "zeta1_1", "zeta1_2", "zeta2_1", ...
+                speed_args.append(self.config["initial_speeds"].get(z_name, 0.0))
+        
+        # 3) parameters in the SAME order used to build param_symbols
+        param_args = []
+        for key, symbol in self.p_symbols.items():
+            if key == "tau":
+                continue
+            param_args.append(self.config["p_values"][key])
+        
+        args = state_args + speed_args + param_args
+        
         u1_consistent, u2_consistent = self.u_init_func(*args)
         
         x0[self.state_dimension] = u1_consistent
         x0[self.state_dimension+1] = u2_consistent
 
-        print(f"\nInitial conditions set (with momentum conservation):")
-        
-        output_string = (
-            f"  Positions: q1={initial_states["q1"]:.3f}, q2={initial_states["q2"]:.3f}, "
-            f"q3={np.rad2deg(initial_states["q3"]):.3f}°, "
-        )
-        for i in range(len(self.flexible_bodies.keys())):
-            output_string = output_string + f"eta{i+1}={initial_states[f"eta{i+1}"]:.3f}, \n"
-        print(output_string)
+        print("\nInitial conditions set (with momentum conservation):\n")
 
-        output_string = f"  Velocities: u1={u1_consistent:.6f}, u2={u2_consistent:.6f}, u3={initial_speeds["u3"]:.3f}, "
-        for i in range(len(self.flexible_bodies.keys())):
-            output_string = output_string + f"zeta{i+1}={initial_speeds[f"zeta{i+1}"]:.3f}, \n"
-        print(output_string)
+        # --- Positions ---
+        pos_parts = [
+            f"q1={initial_states.get('q1', 0.0):.3f}",
+            f"q2={initial_states.get('q2', 0.0):.3f}",
+            f"q3={np.degrees(initial_states.get('q3', 0.0)):.3f}°",
+        ]
+        for body, fb in self.flexible_bodies.items():
+            for eta_sym in fb["eta_list"]:
+                name = str(eta_sym)  # e.g. "eta1_1"
+                pos_parts.append(f"{name}={initial_states.get(name, 0.0):.3f}")
+        
+        print("  Positions: " + ", ".join(pos_parts) + "\n")
+        
+        # --- Velocities ---
+        vel_parts = [
+            f"u1={u1_consistent:.6f}",
+            f"u2={u2_consistent:.6f}",
+            f"u3={initial_speeds.get('u3', 0.0):.3f}",
+        ]
+        for body, fb in self.flexible_bodies.items():
+            for zeta_sym in fb["zeta_list"]:
+                name = str(zeta_sym)  # e.g. "zeta1_1"
+                vel_parts.append(f"{name}={initial_speeds.get(name, 0.0):.3f}")
+        
+        print("  Velocities: " + ", ".join(vel_parts) + "\n")
         
         return x0

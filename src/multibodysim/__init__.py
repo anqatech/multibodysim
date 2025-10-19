@@ -10,7 +10,7 @@ from .flexible.flexible_symbolic_non_symmetric import FlexibleSymbolicNonSymmetr
 from .flexible.flexible_simulator_non_symmetric import FlexibleNonSymmetricSimulator
 
 from .flexible.flexible_ns_dynamics import FlexibleNonSymmetricDynamics
-from .flexible.flexible_ns_simulator import FlexibleNonSymmetricSimulatorNew
+from .flexible.flexible_ns_simulator import FlexibleNonSymmetricSimulator
 
 
 __version__ = "0.1.0"

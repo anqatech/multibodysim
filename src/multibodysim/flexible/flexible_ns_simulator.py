@@ -3,7 +3,7 @@ from scipy.integrate import solve_ivp
 from .flexible_ns_dynamics import FlexibleNonSymmetricDynamics
 
 
-class FlexibleNonSymmetricSimulatorNew:
+class FlexibleNonSymmetricSimulator:
     def __init__(self, config):
         self.config = config
         
