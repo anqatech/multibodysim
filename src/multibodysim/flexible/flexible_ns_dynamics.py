@@ -112,8 +112,6 @@ class FlexibleNonSymmetricDynamics:
             length=p_values["L"],
             E=p_values["E_mod"],
             I=p_values["I_area"],
-            beta1=beam_params["beta1"],
-            sigma1=beam_params["sigma1"],
             s=self.s
         )
         

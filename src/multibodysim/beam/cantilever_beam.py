@@ -5,13 +5,14 @@ from scipy.optimize import root_scalar
 
 
 class CantileverBeam:
-    def __init__(self, length, E, I, beta1, sigma1, s):
+    def __init__(self, length, E, I, s):
         self.L = length
         self.E = E
         self.I = I
-        self.beta1 = beta1
-        self.sigma1 = sigma1
         self.s = s
+
+        self.beta1 = self._generate_betas(n=1).item()
+        self.sigma1 = self._generate_sigmas(self.beta1)
         
     def mode_shape(self, s):
         arg = self.beta1 * s / self.L
@@ -34,7 +35,7 @@ class CantileverBeam:
         k_modal = sm.integrate(self.E * self.I * (phi1_dd)**2, (self.s, 0, self.L))
         return k_modal
 
-    def betas_cantilever(n=5):
+    def _generate_betas(self, n=5):
         def f(b): return np.cosh(b) * np.cos(b) + 1.0
         betas = []
         k = 0
@@ -45,3 +46,8 @@ class CantileverBeam:
             betas.append(sol.root)
             k += 1
         return np.array(betas)
+
+    def _generate_sigmas(self, betas):
+        num = np.cosh(betas) + np.cos(betas)
+        den = np.sinh(betas) + np.sin(betas)
+        return num / den
