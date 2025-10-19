@@ -17,7 +17,7 @@ class CantileverBeam:
 
     def mode_shape_symbolic(self, s, mode):
         arg = self.betas[mode - 1] * s / self.L
-        phi = ( sm.cosh(arg) - sm.cos(arg) - self.sigmas[mode - 1] * ( sm.sinh(arg) - sm.sin(arg) ) )
+        phi = sm.cosh(arg) - sm.cos(arg) - self.sigmas[mode - 1] * ( sm.sinh(arg) - sm.sin(arg) )
         return phi
 
     def mode_shape(self, s, mode):
@@ -40,20 +40,21 @@ class CantileverBeam:
         phi_dd = phi.diff(s, 2)
         k_modal = sm.integrate(self.E * self.I * (phi_dd)**2, (s, 0, self.L))
         return k_modal
-
+    
     def _generate_betas(self, n=5):
         def f(b): return np.cosh(b) * np.cos(b) + 1.0
         betas = []
         k = 0
         eps = 1e-12
         while len(betas) < n:
-            a, b = k * np.pi + eps, (k + 1) * np.pi - eps
+            a = k * np.pi + eps
+            b = (k + 1.0) * np.pi - eps
             sol = root_scalar(f, bracket=(a, b), method="brentq", xtol=eps, rtol=eps, maxiter=200)
             betas.append(sol.root)
             k += 1
         return np.array(betas)
 
     def _generate_sigmas(self):
-        den = np.cosh(self.betas) + np.cos(self.betas)
-        num = np.sinh(self.betas) - np.sin(self.betas)
+        num = np.cosh(self.betas) + np.cos(self.betas)
+        den = np.sinh(self.betas) + np.sin(self.betas)
         return num / den
