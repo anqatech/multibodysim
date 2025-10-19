@@ -73,13 +73,14 @@ class FlexibleNonSymmetricDynamics:
          # ---------- Flexible bodies ----------
         eta_list = []
         zeta_list = []
-        
+
+        flexible_types = self.config["flexible_types"]
         for i, body in enumerate(self.flexible_bodies.keys()):
             eta_i = me.dynamicsymbols(f"eta{i+1}")
             eta_list.append(eta_i)
             zeta_i = me.dynamicsymbols(f"zeta{i+1}")
             zeta_list.append(zeta_i)
-            self.flexible_bodies[body] = {"eta": eta_i, "zeta": zeta_i}
+            self.flexible_bodies[body] = {"eta": eta_i, "zeta": zeta_i, "beam_type": flexible_types[body]}
 
          # ---------- Auxiliary variables ----------
         # Position along the beam for integration
@@ -105,22 +106,42 @@ class FlexibleNonSymmetricDynamics:
             self.p_symbols[key] = symbol
 
     def _define_mode_shapes(self):
-        # ---------- Create cantilever beam instance ----------
-        beam_params = self.config['beam_parameters']
-        p_values = self.config['p_values']
-        self.beam = CantileverBeam(
-            length=p_values["L"],
-            E=p_values["E_mod"],
-            I=p_values["I_area"],
-            n=beam_params["nb_modes"]
-        )
+        # ---------- Setup ----------
+        beam_params = self.config["beam_parameters"]
+        p_values = self.config["p_values"]
         
-        # ---------- Shape function ----------
-        self.phi1 = self.beam.mode_shape_symbolic(self.s, 1)
+        for body, values in self.flexible_bodies.items():
+            beam_type = values["beam_type"]
+            params = beam_params[beam_type]
+            if beam_type == "cantilever":
+                beam = CantileverBeam(
+                    length=p_values["L"],
+                    E=p_values["E_mod"],
+                    I=p_values["I_area"],
+                    n=params["nb_modes"]
+                )
+            elif beam_type == "clamped-clamped":
+                # !!!!!!!!!!!!!!!!!! To be replaced after refactoring ClampedClampedBeam !!!!!!!!!!!!!!!!!!
+                # beam = ClampedClampedBeam(
+                #     length=p_values["L"],
+                #     E=p_values["E_mod"],
+                #     I=p_values["I_area"],
+                #     n=params["nb_modes"]
+                # )
+                beam = CantileverBeam(
+                    length=p_values["L"],
+                    E=p_values["E_mod"],
+                    I=p_values["I_area"],
+                    n=params["nb_modes"]
+                )
+            else:
+                raise Error(f"Unrecognised beam type: {beam_type}")
 
-        # ---------- Average deflection ----------
-        n_points = beam_params.get('nb_integration_points', 200)
-        self.phi1_mean = self.beam.mode_shape_mean(n_points)
+            self.flexible_bodies[body]["beam"] = beam
+            self.flexible_bodies[body]["phi"] = beam.mode_shape_symbolic(self.s, 1)
+            self.flexible_bodies[body]["phi_mean"] = beam.mode_shape_mean(params["nb_points"])
+            self.flexible_bodies[body]["k_modal"] = beam.modal_stiffness(1)
+            
 
     def _get_offset_vector(self, parent, child):
         parent_type = self.body_type[parent]
@@ -145,11 +166,8 @@ class FlexibleNonSymmetricDynamics:
             frame = me.ReferenceFrame(f"frame_{body}")
             self.frames[body] = frame
 
-            if body not in self.flexible_bodies:
-                frame.orient_axis(N, self.q_angle, N.z)
-            else:
-                angle = self.q_angle + sm.pi if self.body_type[body].endswith('-left') else self.q_angle
-                frame.orient_axis(N, angle, N.z)
+            angle = self.q_angle + sm.pi if self.body_type[body].endswith('-left') else self.q_angle
+            frame.orient_axis(N, angle, N.z)
         
         # ---------- Points ----------
         self.points = {}
@@ -166,10 +184,11 @@ class FlexibleNonSymmetricDynamics:
         self.points[self.central_body] = self.central_cm
         self.inertial_position[self.central_body] = self.central_cm.pos_from(self.O)
 
+        # Remainder of points
         for child, parent in self.parents.items():
             if child == self.central_body:
                 continue  # central_cm already placed
-        
+
             attach = self._get_offset_vector(parent, child)
             parent_point = self.points[parent]
             child_point  = parent_point.locatenew(f"joint_{child}_{parent}", attach)
@@ -178,11 +197,11 @@ class FlexibleNonSymmetricDynamics:
             if self.body_type[child].startswith("flexible-"):
                 frame      =  self.frames[child]
                 amplitude  =  self.flexible_bodies[child]["eta"]
-                dm         =  self.s * frame.x + self.phi1 * amplitude * frame.y
+                dm         =  self.s * frame.x + self.flexible_bodies[child]["phi"] * amplitude * frame.y
                 dm_point   =  self.points[f"joint_{child}_{parent}"].locatenew(f"dm_{child}", dm)
                 self.points[f"dm_{child}"] = dm_point
         
-                dm_cm = (self.p_symbols["L"] / 2) * frame.x + self.phi1_mean * amplitude * frame.y
+                dm_cm = (self.p_symbols["L"] / 2) * frame.x + self.flexible_bodies[child]["phi_mean"] * amplitude * frame.y
                 dm_cm_point = self.points[f"joint_{child}_{parent}"].locatenew(f"dm_center_of_mass_{child}", dm_cm)
                 self.points[f"dm_center_of_mass_{child}"] = dm_cm_point
         
@@ -205,6 +224,7 @@ class FlexibleNonSymmetricDynamics:
         G = self.O.locatenew('G', r_G)
         self.r_GB = self.points[self.central_body].pos_from(G)
         self.points["center_of_mass"] = G
+
 
     def _define_kinematic_equations(self):
         # ---------- Kinematical differential equations ----------
@@ -253,7 +273,7 @@ class FlexibleNonSymmetricDynamics:
         
             if self.body_type[child].startswith("flexible-"):
                 self.points[f"dm_{child}"].set_vel(
-                    self.frames[child], self.phi1 * self.flexible_bodies[child]["zeta"] * self.frames[child].y
+                    self.frames[child], self.flexible_bodies[child]["phi"] * self.flexible_bodies[child]["zeta"] * self.frames[child].y
                 )
                 dm_vel = self.points[f"dm_{child}"].v1pt_theory(child_point, inertial_frame, self.frames[child])
                 self.linear_velocities[child] = dm_vel.xreplace(self.qdd_repl).xreplace(self.qd_repl)
@@ -264,7 +284,7 @@ class FlexibleNonSymmetricDynamics:
         # !!! Not used at the moment --> TBD if it is to be kept
         for item in self.flexible_bodies:
             self.points[f"dm_center_of_mass_{item}"].set_vel(
-                self.frames[item], self.phi1_mean * self.flexible_bodies[item]["zeta"] * self.frames[item].y
+                self.frames[item], self.flexible_bodies[child]["phi_mean"] * self.flexible_bodies[item]["zeta"] * self.frames[item].y
             )
             dm_center_of_mass_velocity = self.points[f"dm_center_of_mass_{item}"].v1pt_theory(
                 self.points[f"joint_{item}_{self.central_body}"], inertial_frame, self.frames[item]
@@ -293,7 +313,7 @@ class FlexibleNonSymmetricDynamics:
                 self.linear_accelerations[child] = self.points[f"dm_{child}"].acc(inertial_frame).xreplace(self.qdd_repl).xreplace(self.qd_repl)
             else:
                 self.linear_accelerations[child] = self.points[child].acc(inertial_frame).xreplace(self.qdd_repl).xreplace(self.qd_repl)
-        
+
     def _get_forces(self):
         forces = {}
         for name, frame in self.frames.items():
@@ -334,7 +354,7 @@ class FlexibleNonSymmetricDynamics:
                 self.generalised_active_forces[i] += v_partial.dot(force) + w_partial.dot(torque)
 
         # ---------- Modal stiffness for the first mode of a cantilever beam ----------
-        k_modal = self.beam.modal_stiffness(1)
+        k_modal = self.flexible_bodies["panel_1"]["k_modal"]
 
         # ---------- Strain potential energy stored in the flexible panels ---------- 
         V_strain = sm.Float(0)
@@ -472,11 +492,11 @@ class FlexibleNonSymmetricDynamics:
                 
         self.rho_derivative = sm.Matrix([[0], [0]])
         for key, value in self.flexible_bodies.items():
-            self.rho_derivative = self.rho_derivative + self.p_symbols[f"m_{key}"] * value["zeta"] * sm.Matrix([
+            self.rho_derivative = self.rho_derivative + self.p_symbols[f"m_{key}"] * value["zeta"] * value["phi_mean"] * sm.Matrix([
                     [self.frames[key].y.dot(self.frames[self.central_body].x)],
                     [self.frames[key].y.dot(self.frames[self.central_body].y)],
                 ])
-        self.rho_derivative = (self.phi1_mean / M_symbol) * self.rho_derivative
+        self.rho_derivative = self.rho_derivative / M
 
         self.initial_generalised_speeds_constraints = initial_speeds["u3"] * S @ R_theta @ self.rho_vector + R_theta @ self.rho_derivative
 
