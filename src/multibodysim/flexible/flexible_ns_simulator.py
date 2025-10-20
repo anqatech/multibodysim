@@ -17,8 +17,8 @@ class FlexibleNonSymmetricSimulator:
         self.results = None
 
     def eval_rhs(self, t, x):
-        q = x[:5]
-        u = x[5:]
+        q = x[:self.dynamics.state_dimension]
+        u = x[self.dynamics.state_dimension:]
 
         try:
             # ---------- Evaluate kinematic equations ---------- 
@@ -71,8 +71,8 @@ class FlexibleNonSymmetricSimulator:
             t_eval=t_eval,
             **integration_options
         )
-        
-        # ---------- Process results ---------- 
+
+        # ---------- Process results ----------
         xs = np.transpose(result.y)
         ts = result.t
         
@@ -80,34 +80,35 @@ class FlexibleNonSymmetricSimulator:
         print(f"Message: {result.message}")
         print(f"Number of function evaluations: {result.nfev}\n")
         
-        # ---------- Store results ---------- 
+        def _name(sym):
+            return str(getattr(sym, "func", sym))
+        
+        q_syms = list(self.dynamics.q)
+        u_syms = list(self.dynamics.u)
+        q_names = [_name(s) for s in q_syms]
+        u_names = [_name(s) for s in u_syms]
+        
+        nq = len(q_syms)
+        nu = len(u_syms)
+        
         self.results = {
-            'time': ts,
-            'states': xs,
-            'success': result.success,
-            'message': result.message,
-            'nfev': result.nfev,
-            'njev': result.njev if hasattr(result, 'njev') else None,
-            'nlu': result.nlu if hasattr(result, 'nlu') else None,
-            
-            # ---------- Reference generalized coordinates ---------- 
-            'q1': xs[:, 0],      # Central bus geometric center x-position [m]
-            'q2': xs[:, 1],      # Central bus geometric center y-position [m]
-            'q3': xs[:, 2],      # Central bus rotation [rad]
-            
-            # ---------- Reference generalized speeds ---------- 
-            'u1': xs[:, 5],      # Bus x-velocity [m/s]
-            'u2': xs[:, 6],      # Bus y-velocity [m/s]
-            'u3': xs[:, 7],      # Bus angular velocity [rad/s]
-            
-            # ---------- Configuration ---------- 
-            'config': self.config.copy()
+            "time": ts,
+            "states": xs,
+            "success": result.success,
+            "message": result.message,
+            "nfev": result.nfev,
+            "njev": result.njev if hasattr(result, "njev") else None,
+            "nlu": result.nlu if hasattr(result, "nlu") else None,
+            "config": self.config.copy(),
         }
-
-        # ---------- Flexible generalized coordinates and speeds ---------- 
-        for i in range(self.dynamics.state_reference_dimension, self.dynamics.state_dimension):
-            self.results[f"eta_{i-2}"] = xs[:, i]                                  # Solar panel modal amplitude [-]
-            self.results[f"zeta_{i-2}"] = xs[:, i+self.dynamics.state_dimension]   # Solar panel modal velocity [-]
+        
+        # ---------- Save all generalized coordinates with their real names ----------
+        for i, name in enumerate(q_names):
+            self.results[name] = xs[:, i]
+        
+        # ---------- Save all generalized speeds with their real names ----------
+        for i, name in enumerate(u_names):
+            self.results[name] = xs[:, nq + i]
 
         return self.results
 
