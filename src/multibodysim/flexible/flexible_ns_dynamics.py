@@ -173,9 +173,42 @@ class FlexibleNonSymmetricDynamics:
     
         # ---------- Default: no offset ---------- 
         offset = 0 * self.frames[parent].x
-    
-        # ---------- Offset ---------- 
-        if parent_type.startswith("rigid") and child_type.startswith("flexible-"):
+
+        # Convenience flags (e.g., "flexible-left", "flexible-right")
+        parent_is_rigid = parent_type.startswith("rigid-")
+        parent_is_flex  = parent_type.startswith("flexible-")
+        child_is_rigid  = child_type.startswith("rigid-")
+        child_is_flex   = child_type.startswith("flexible-")
+
+        # ---- Unsupported case: panel attaching to panel ----
+        if parent_is_flex and child_is_flex:
+            raise NotImplementedError(
+                f"Offset between two flexible bodies (e.g., panel→panel) "
+                f"not implemented: parent='{parent_type}', child='{child_type}'."
+            )
+
+        # ---- Unsupported case: bus attaching to bus ----
+        if parent_is_rigid and child_is_rigid:
+            raise NotImplementedError(
+                f"Offset between two rigid bodies not implemented: "
+                f"parent='{parent_type}', child='{child_type}'."
+            )
+        
+        # ---- Supported case: bus attaching to panel ----
+        if parent_is_flex and child_is_rigid:
+            frame    = self.frames[parent]
+            L        = self.p_symbols["L"]
+            eta_list = self.flexible_bodies[parent]["eta_list"]
+            phi_list = self.flexible_bodies[parent]["phi_list"]
+
+            phi_L = 0
+            for phi_k, eta_k in zip(phi_list, eta_list):
+                phi_L += phi_k.subs(self.s, L) * eta_k
+
+            offset = L * frame.x + phi_L * frame.y            
+        
+        # ---- Supported case: panel attaching to bus ----
+        if parent_is_rigid and child_is_flex:
             sign = -1 if child_type.endswith("-left") else 1
             offset = sign * (self.p_symbols["D"] / 2) * self.frames[parent].x
 
@@ -213,13 +246,22 @@ class FlexibleNonSymmetricDynamics:
             if child == self.central_body:
                 continue  # central_cm already placed
 
+            parent_type = self.body_type[parent]
+            child_type = self.body_type[child]
+
             attach = self._get_offset_vector(parent, child)
-            parent_point = self.points[parent]
+
+            if parent_type.startswith("rigid-"):
+                parent_point = self.points[parent]
+            else:
+                joint_name = "joint_" + parent + "_" + self.parents[parent]
+                parent_point = self.points[joint_name]
+
             child_point  = parent_point.locatenew(f"joint_{child}_{parent}", attach)
             self.points[f"joint_{child}_{parent}"] = child_point
         
             if self.body_type[child].startswith("flexible-"):
-                frame      =  self.frames[child]
+                frame     =  self.frames[child]
                 eta_list  = self.flexible_bodies[child]["eta_list"]
                 phi_list  = self.flexible_bodies[child]["phi_list"]
                 phi_sum   = sum(phi_k * eta_k for (phi_k, eta_k) in zip(phi_list, eta_list))
@@ -233,10 +275,19 @@ class FlexibleNonSymmetricDynamics:
                 dm_cm = (self.p_symbols["L"] / 2) * frame.x + phi_mean_sum * frame.y
                 dm_cm_point = self.points[f"joint_{child}_{parent}"].locatenew(f"dm_center_of_mass_{child}", dm_cm)
                 self.points[f"dm_center_of_mass_{child}"] = dm_cm_point
+
                 if not self.inertial_position[child]:
                     self.inertial_position[child] = dm_cm_point.pos_from(self.O)
             else:
-                self.points[child] = child_point
+                frame  =  self.frames[child]
+                sign = -1 if child_type.endswith("-left") else 1
+                offset = sign * (self.p_symbols["D"] / 2) * frame.x
+
+                child_cm_point  = self.points[f"joint_{child}_{parent}"].locatenew(f"{child}_cm", offset)
+                self.points[child] = child_cm_point
+
+                if not self.inertial_position[child]:
+                    self.inertial_position[child] = child_cm_point.pos_from(self.O)
 
         # System center of mass
         M = sm.Float(0)
@@ -289,29 +340,47 @@ class FlexibleNonSymmetricDynamics:
             if child == self.central_body:
                 continue
 
-            parent_point = self.points[parent]
-            parent_frame = self.frames[parent]
-        
-            joint_name = f"joint_{child}_{parent}"
-            child_point = self.points.get(joint_name)
-            if child_point is None:
-                raise KeyError(f"Missing joint point '{joint_name}' for child '{child}' (check _define_kinematics).")
-        
-            child_point.v2pt_theory(parent_point, inertial_frame, parent_frame)
-        
-            if self.body_type[child].startswith("flexible-"):
-                phi_list  = self.flexible_bodies[child]["phi_list"]
-                zeta_list = self.flexible_bodies[child]["zeta_list"]
-                phi_zeta_sum = sum(phi_k * zeta_k for (phi_k, zeta_k) in zip(phi_list, zeta_list))
-                
-                self.points[f"dm_{child}"].set_vel(
-                    self.frames[child], phi_zeta_sum * self.frames[child].y
-                )
+            parent_type = self.body_type[parent]
+            parent_is_rigid = parent_type.startswith("rigid-")
+            parent_is_flex  = parent_type.startswith("flexible-")
 
-                dm_vel = self.points[f"dm_{child}"].v1pt_theory(child_point, inertial_frame, self.frames[child])
-                self.linear_velocities[child] = dm_vel.xreplace(self.qdd_repl).xreplace(self.qd_repl)
-            else:
+            if parent_is_flex:
+                parent_of_parent = self.parents[parent]
+                reference_joint_name = f"joint_{parent}_{parent_of_parent}"
+                reference_joint_point = self.points.get(reference_joint_name)
+                child_joint_point = self.points.get(f"joint_{child}_{parent}")
+                child_joint_velocity = child_joint_point.v1pt_theory(reference_joint_point, inertial_frame, self.frames[parent])
+
+                child_point = self.points[child]
+                child_point.v2pt_theory(child_joint_point, inertial_frame, self.frames[child])
                 self.linear_velocities[child] = child_point.vel(inertial_frame).xreplace(self.qdd_repl).xreplace(self.qd_repl)
+
+            elif parent_is_rigid:
+                parent_point = self.points[parent]
+                parent_frame = self.frames[parent]
+            
+                joint_name = f"joint_{child}_{parent}"
+                child_point = self.points.get(joint_name)
+                if child_point is None:
+                    raise KeyError(f"Missing joint point '{joint_name}' for child '{child}' (check _define_kinematics).")
+            
+                child_point.v2pt_theory(parent_point, inertial_frame, parent_frame)
+            
+                if self.body_type[child].startswith("flexible-"):
+                    phi_list  = self.flexible_bodies[child]["phi_list"]
+                    zeta_list = self.flexible_bodies[child]["zeta_list"]
+                    phi_zeta_sum = sum(phi_k * zeta_k for (phi_k, zeta_k) in zip(phi_list, zeta_list))
+                    
+                    self.points[f"dm_{child}"].set_vel(
+                        self.frames[child], phi_zeta_sum * self.frames[child].y
+                    )
+
+                    dm_vel = self.points[f"dm_{child}"].v1pt_theory(child_point, inertial_frame, self.frames[child])
+                    self.linear_velocities[child] = dm_vel.xreplace(self.qdd_repl).xreplace(self.qd_repl)
+                else:
+                    self.linear_velocities[child] = child_point.vel(inertial_frame).xreplace(self.qdd_repl).xreplace(self.qd_repl)
+            else:
+                raise KeyError(f"Unknown parent type for '{parent}': {parent_type}")
 
         # ---------- Flexible center of mass velocities ----------
         # !!! Not used at the moment --> TBD if it is to be kept
