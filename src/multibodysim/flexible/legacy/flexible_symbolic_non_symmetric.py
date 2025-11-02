@@ -2,10 +2,10 @@ import numpy as np
 import sympy as sm
 import sympy.physics.mechanics as me
 from scipy.optimize import fsolve
-from ..beam.cantilever_beam import CantileverBeam
+from ...beam.cantilever_beam import CantileverBeam
 
 
-class FlexibleSymbolicNonSymmetricDynamics:
+class FlexibleSymbolicNonSymmetricDynamicsLegacy:
     def __init__(self, config):
         self.config = config
         me.init_vprinting()

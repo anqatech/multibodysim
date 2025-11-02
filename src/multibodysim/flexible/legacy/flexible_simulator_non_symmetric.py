@@ -1,15 +1,15 @@
 import numpy as np
 from scipy.integrate import solve_ivp
 from scipy.optimize import fsolve
-from .flexible_symbolic_non_symmetric import FlexibleSymbolicNonSymmetricDynamics
+from .flexible_symbolic_non_symmetric import FlexibleSymbolicNonSymmetricDynamicsLegacy
 
 
-class FlexibleNonSymmetricSimulator:
+class FlexibleNonSymmetricSimulatorLegacy:
     def __init__(self, config):
         self.config = config
         
         # Create symbolic dynamics model
-        self.dynamics = FlexibleSymbolicNonSymmetricDynamics(config)
+        self.dynamics = FlexibleSymbolicNonSymmetricDynamicsLegacy(config)
         
         # Extract parameter values
         self.p_vals = self.dynamics.get_parameter_values()
