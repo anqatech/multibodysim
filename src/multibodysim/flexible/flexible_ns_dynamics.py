@@ -347,8 +347,8 @@ class FlexibleNonSymmetricDynamics:
             if parent_is_flex:
                 parent_of_parent = self.parents[parent]
                 reference_joint_name = f"joint_{parent}_{parent_of_parent}"
-                reference_joint_point = self.points.get(reference_joint_name)
-                child_joint_point = self.points.get(f"joint_{child}_{parent}")
+                reference_joint_point = self.points[reference_joint_name]
+                child_joint_point = self.points[f"joint_{child}_{parent}"]
                 child_joint_velocity = child_joint_point.v1pt_theory(reference_joint_point, inertial_frame, self.frames[parent])
 
                 child_point = self.points[child]
@@ -360,7 +360,7 @@ class FlexibleNonSymmetricDynamics:
                 parent_frame = self.frames[parent]
             
                 joint_name = f"joint_{child}_{parent}"
-                child_point = self.points.get(joint_name)
+                child_point = self.points[joint_name]
                 if child_point is None:
                     raise KeyError(f"Missing joint point '{joint_name}' for child '{child}' (check _define_kinematics).")
             
@@ -558,17 +558,17 @@ class FlexibleNonSymmetricDynamics:
         x0 = np.zeros(2 * self.state_dimension)
         
         # ---------- Extract initial states ---------- 
-        initial_states = self.config.get("q_initial", {})
+        initial_states = self.config["q_initial"]
         for i, value in enumerate(initial_states.values()):
             x0[i] = value
         
         # ---------- Extract initial speeds ----------
-        initial_speeds = self.config.get('initial_speeds', {})
+        initial_speeds = self.config["initial_speeds"]
         for i, value in enumerate(initial_speeds.values()):
             x0[i+self.state_dimension+2] = value
 
         # ---------- Extract parameters ---------- 
-        parameters = self.config.get("p_values", {})
+        parameters = self.config["p_values"]
         M = 0.0
         for key, value in parameters.items():
             if key.startswith("m_"):
@@ -623,22 +623,22 @@ class FlexibleNonSymmetricDynamics:
         self.u_init_func = sm.lambdify(
             arg_syms, 
             [self.initial_generalised_speeds_constraints[0], self.initial_generalised_speeds_constraints[1]], 
-            'numpy'
+            "numpy"
         )
 
         # 1) states in the order of self.q
         state_args = []
         for q_symbol in self.q:                       # [q1, q2, q3, eta1_1, eta1_2, eta2_1, ...]
-            name = str(q_symbol)
-            state_args.append(self.config["q_initial"].get(name, 0.0))
+            name = str(q_symbol).replace("(t)", "")
+            state_args.append(self.config["q_initial"][name])
         
         # 2) speeds in the order of speed_symbols = [u3] + all zeta_list (flattened)
         speed_args = []
-        speed_args.append(self.config["initial_speeds"].get("u3", 0.0))
+        speed_args.append(self.config["initial_speeds"]["u3"])
         for fb in self.flexible_bodies.values():
-            for z_symbol in fb["zeta_list"]:
-                z_name = str(z_symbol)                 # e.g. "zeta1_1", "zeta1_2", "zeta2_1", ...
-                speed_args.append(self.config["initial_speeds"].get(z_name, 0.0))
+            for z_symbol in fb["zeta_list"]:          # e.g. "zeta1_1", "zeta1_2", "zeta2_1", ...
+                z_name = str(z_symbol).replace("(t)", "")
+                speed_args.append(self.config["initial_speeds"][z_name])
         
         # 3) parameters in the SAME order used to build param_symbols
         param_args = []
@@ -658,14 +658,14 @@ class FlexibleNonSymmetricDynamics:
 
         # --- Positions ---
         pos_parts = [
-            f"q1={initial_states.get('q1', 0.0):.3f}",
-            f"q2={initial_states.get('q2', 0.0):.3f}",
-            f"q3={np.degrees(initial_states.get('q3', 0.0)):.3f}°",
+            f"q1={initial_states["q1"]:.3f}",
+            f"q2={initial_states["q2"]:.3f}",
+            f"q3={np.degrees(initial_states["q3"]):.3f}°",
         ]
         for body, fb in self.flexible_bodies.items():
-            for eta_sym in fb["eta_list"]:
-                name = str(eta_sym)  # e.g. "eta1_1"
-                pos_parts.append(f"{name}={initial_states.get(name, 0.0):.3f}")
+            for eta_sym in fb["eta_list"]:            # e.g. "eta1_1"
+                name = str(eta_sym).replace("(t)", "")
+                pos_parts.append(f"{name}={initial_states[name]:.3f}")
         
         print("  Positions: " + ", ".join(pos_parts) + "\n")
         
@@ -673,12 +673,12 @@ class FlexibleNonSymmetricDynamics:
         vel_parts = [
             f"u1={u1_consistent:.6f}",
             f"u2={u2_consistent:.6f}",
-            f"u3={initial_speeds.get('u3', 0.0):.3f}",
+            f"u3={initial_speeds["u3"]:.3f}",
         ]
         for body, fb in self.flexible_bodies.items():
-            for zeta_sym in fb["zeta_list"]:
-                name = str(zeta_sym)  # e.g. "zeta1_1"
-                vel_parts.append(f"{name}={initial_speeds.get(name, 0.0):.3f}")
+            for zeta_sym in fb["zeta_list"]:          # e.g. "zeta1_1"
+                name = str(zeta_sym).replace("(t)", "")
+                vel_parts.append(f"{name}={initial_speeds[name]:.3f}")
         
         print("  Velocities: " + ", ".join(vel_parts) + "\n")
         
