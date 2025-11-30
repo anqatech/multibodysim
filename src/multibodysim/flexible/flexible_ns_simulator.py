@@ -11,14 +11,58 @@ class FlexibleNonSymmetricSimulator:
         self.dynamics = FlexibleNonSymmetricDynamics(config)
         
         # ---------- Extract parameter values ---------- 
-        self.p_vals = self.dynamics.get_parameter_values()
+        # self.p_vals = self.dynamics.get_parameter_values()
+        self.p_vals = np.array(list(self.dynamics.get_parameter_values()), dtype=float)
+
+        # index of tau in the parameter vector
+        self.p_keys = list(self.config["p_values"].keys())
+        try:
+            self.tau_index = self.p_keys.index("tau")
+        except ValueError:
+            raise KeyError("Config p_values must contain tau entry for the bus torque.")
+
+        # --------- PD attitude control settings ---------
+        self.use_attitude_pd    = False        # flag
+        self.theta_target       = 0.0          # desired bus angle [rad]
+        self.theta_dot_target   = 0.0          # desired bus angular velocity [rad/s]
+        self.Kp                 = 0.0          # Proportional gain
+        self.Kd                 = 0.0          # Derivative gain
         
         # ---------- Initialize results storage ---------- 
         self.results = None
 
+    def set_attitude_manoeuver(self, theta_target, theta_dot_target, Kp, Kd):
+        self.theta_target      = theta_target
+        self.theta_dot_target  = theta_dot_target
+        self.Kp                = Kp
+        self.Kd                = Kd
+        self.use_attitude_pd   = True
+
+
     def eval_rhs(self, t, x):
         q = x[:self.dynamics.state_dimension]
         u = x[self.dynamics.state_dimension:]
+
+        # ---- compute PD torque if enabled ----
+        if self.use_attitude_pd:
+            # identify indices of the bus attitude and angular_velocity
+            q_ref = list(self.dynamics.q_reference.keys())
+            u_ref = list(self.dynamics.u_reference.keys())
+
+            i_theta_q_index = q_ref.index("theta")
+            i_theta_u_index = u_ref.index("theta")
+
+            theta     = q[i_theta_q_index]
+            theta_dot = u[i_theta_u_index]
+
+            # Errors for PD law
+            err     = self.theta_target - theta
+            err_dot = self.theta_dot_target - theta_dot
+
+            tau_pd  = self.Kp * err + self.Kd * err_dot
+
+            # overwrite the tau parameter entry
+            self.p_vals[self.tau_index] = tau_pd
 
         try:
             # ---------- Evaluate kinematic equations ---------- 
@@ -109,6 +153,36 @@ class FlexibleNonSymmetricSimulator:
         # ---------- Save all generalized speeds with their real names ----------
         for i, name in enumerate(u_names):
             self.results[name] = xs[:, nq + i]
+
+        q = xs[:, :self.dynamics.state_dimension]
+        u = xs[:, self.dynamics.state_dimension:]
+
+        u_ref = list(self.dynamics.u_reference.keys())
+        theta_index = u_ref.index("theta")
+
+        J_eff = np.zeros_like(ts)
+        tau_pd = np.zeros_like(ts)
+        for k, (qk, uk) in enumerate(zip(q, u)):
+            # Evaluate Kane's dynamic mass matrix at this state
+            Md, gd = self.dynamics.eval_differentials(qk, uk, self.p_vals)
+            Md = np.asarray(Md, dtype=float)
+
+            # Effective inertia for the attitude DOF
+            J_eff[k] = np.abs(Md[theta_index, theta_index])
+
+            if self.use_attitude_pd:
+                theta = qk[theta_index]
+                theta_dot = uk[theta_index]
+
+                err     = self.theta_target - theta
+                err_dot = self.theta_dot_target - theta_dot
+
+                tau_pd[k]  = self.Kp * err + self.Kd * err_dot
+            else:
+                tau_pd[k]  = self.p_vals[self.tau_index]
+
+        self.results["J_eff"] = J_eff
+        self.results["tau_PD"] = tau_pd
 
         return self.results
 
