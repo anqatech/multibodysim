@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.integrate import solve_ivp
 from .flexible_ns_dynamics import FlexibleNonSymmetricDynamics
+from ..inputshaping.zv_input_shaping import InputShaper
 
 
 class FlexibleNonSymmetricSimulator:
@@ -27,17 +28,46 @@ class FlexibleNonSymmetricSimulator:
         self.theta_dot_target   = 0.0          # desired bus angular velocity [rad/s]
         self.Kp                 = 0.0          # Proportional gain
         self.Kd                 = 0.0          # Derivative gain
+
+        # --------- Input Shaping settings ---------
+        self.use_input_shaping = False
+        self.shaper = None
+        self.manoeuvre_start_time = None
+        self.theta_start = None
+        self.theta_final = None
+        self.delta_theta = None
+        self.Tr = 0.0
         
         # ---------- Initialize results storage ---------- 
         self.results = None
 
-    def set_attitude_manoeuver(self, theta_target, theta_dot_target, Kp, Kd):
+    def set_attitude_manoeuver(self, theta_target, theta_dot_target, Kp, Kd, Tr, omega, zeta, shaping_flag):
         self.theta_target      = theta_target
         self.theta_dot_target  = theta_dot_target
         self.Kp                = Kp
         self.Kd                = Kd
         self.use_attitude_pd   = True
 
+        self.set_input_shaping(omega, zeta, Tr, shaping_flag)
+    
+    def smooth_step_5th_order(self, t, Tr):
+        # return foes from 0 to 1 with zero velocity and zero acceleration at endpoints
+        if t <= 0.0: return 0.0
+        if t >= Tr:  return 1.0
+        s = t/Tr
+        return 10*s**3 - 15*s**4 + 6*s**5
+
+    def derivative_smooth_step_5th_order(self, t, Tr):
+        # derivative of smooth_step_5th_order
+        if t <= 0.0: return 0.0
+        if t >= Tr:  return 0.0
+        s = t/Tr
+        return (30*s**2 - 60*s**3 + 30*s**4) / Tr
+    
+    def set_input_shaping(self, omega, zeta, Tr, shaping_flag):
+        self.shaper = InputShaper.zvd(omega=omega, zeta=zeta)
+        self.Tr = float(Tr)
+        self.use_input_shaping = shaping_flag
 
     def eval_rhs(self, t, x):
         q = x[:self.dynamics.state_dimension]
@@ -55,9 +85,31 @@ class FlexibleNonSymmetricSimulator:
             theta     = q[i_theta_q_index]
             theta_dot = u[i_theta_u_index]
 
+            # Initialize maneuver start on first call
+            if self.manoeuvre_start_time is None:
+                self.manoeuvre_start_time = t
+                self.theta_start = theta
+                self.theta_final = self.theta_target
+                self.delta_theta = self.theta_final - self.theta_start
+
+            def raw_theta_command(time_command):
+                tau = time_command - self.manoeuvre_start_time
+                return self.theta_start + self.delta_theta * self.smooth_step_5th_order(tau, self.Tr)
+
+            def raw_theta_dot_command(time_command):
+                tau = time_command - self.manoeuvre_start_time
+                return self.delta_theta * self.derivative_smooth_step_5th_order(tau, self.Tr)
+
+            if self.use_input_shaping and (self.shaper is not None):
+                theta_ref = self.shaper.shape(t, raw_theta_command)
+                theta_dot_ref = self.shaper.shape(t, raw_theta_dot_command)
+            else:
+                theta_ref = raw_theta_command(t)
+                theta_dot_ref = raw_theta_dot_command(t)
+
             # Errors for PD law
-            err     = self.theta_target - theta
-            err_dot = self.theta_dot_target - theta_dot
+            err     = theta_ref     - theta
+            err_dot = theta_dot_ref - theta_dot
 
             tau_pd  = self.Kp * err + self.Kd * err_dot
 
@@ -83,7 +135,7 @@ class FlexibleNonSymmetricSimulator:
     def setup_initial_conditions(self):
         return self.dynamics.get_initial_conditions()
 
-    def run_simulation(self):
+    def run_simulation(self, eval_flag):
         # ---------- Get initial conditions ---------- 
         x0 = self.setup_initial_conditions()
         
@@ -100,7 +152,8 @@ class FlexibleNonSymmetricSimulator:
         integration_options = {
             "rtol": sim_params.get("rtol", 1e-6),
             "atol": sim_params.get("atol", 1e-9),
-            "method": sim_params.get("method", "Radau")
+            "method": sim_params.get("method", "Radau"),
+            # "max_step": sim_params.get("max_step", 5e-4)
         }
         
         print(f"Starting simulation from t={t_start} to t={t_end}")
@@ -112,7 +165,8 @@ class FlexibleNonSymmetricSimulator:
             fun=self.eval_rhs,
             t_span=(t_start, t_end),
             y0=x0,
-            t_eval=t_eval,
+            t_eval=t_eval if eval_flag else None,
+            dense_output=not eval_flag,
             **integration_options
         )
 
@@ -144,6 +198,7 @@ class FlexibleNonSymmetricSimulator:
             "njev": result.njev if hasattr(result, "njev") else None,
             "nlu": result.nlu if hasattr(result, "nlu") else None,
             "config": self.config.copy(),
+            "sim_object": result
         }
         
         # ---------- Save all generalized coordinates with their real names ----------
