@@ -78,8 +78,8 @@ class FlexibleNonSymmetricDynamics:
         flexible_types = self.config["flexible_types"]
         beam_params = self.config["beam_parameters"]
         
-        # NEW: keep a flat ordering + indices for (body,mode)
-        self.flex_eta_index  = {}   # (body, k) -> flat index among flexible coordinates
+        # keep a flat ordering + indices for (body,mode)
+        self.flex_eta_index  = {} 
         self.flex_zeta_index = {}
         flat_eta_idx = 0
         flat_zeta_idx = 0
@@ -300,9 +300,9 @@ class FlexibleNonSymmetricDynamics:
             r_G = r_G + self.p_symbols[f"m_{key}"] * value
         r_G /= M
 
-        G = self.O.locatenew('G', r_G)
-        self.r_GB = self.points[self.central_body].pos_from(G)
-        self.points["center_of_mass"] = G
+        self.G = self.O.locatenew('G', r_G)
+        self.r_GB = self.points[self.central_body].pos_from(self.G)
+        self.points["center_of_mass"] = self.G
 
 
     def _define_kinematic_equations(self):
@@ -421,7 +421,7 @@ class FlexibleNonSymmetricDynamics:
             else:
                 self.linear_accelerations[child] = self.points[child].acc(inertial_frame).xreplace(self.qdd_repl).xreplace(self.qd_repl)
 
-    def _get_forces(self):
+    def _get_external_forces(self):
         forces = {}
         for name, frame in self.frames.items():
             if name == "inertial":
@@ -431,7 +431,7 @@ class FlexibleNonSymmetricDynamics:
         
         return forces
 
-    def _get_torques(self):
+    def _get_external_torques(self):
         torques = {}
         for name, frame in self.frames.items():
             if name == "inertial":
@@ -459,6 +459,28 @@ class FlexibleNonSymmetricDynamics:
                 torque = self.torques[body]
     
                 self.generalised_active_forces[i] += v_partial.dot(force) + w_partial.dot(torque)
+
+        # ---- Kepler-only gravity: apply net gravity at COM ----
+
+        # Total mass (symbolic)
+        M_symbol = sm.Float(0)
+        for key, value in self.p_symbols.items():
+            if key.startswith("m_"):
+                M_symbol += value
+
+        mu = self.p_symbols.get("planet_mu", None)
+
+        # Net gravitational force at COM
+        self.r_G = self.points["center_of_mass"].pos_from(self.O).express(self.frames["inertial"])
+        r2 = self.r_G.dot(self.r_G)
+        r = sm.sqrt(r2)
+        F_g = -mu * M_symbol * self.r_G / (r**3)
+
+        self.v_G = self.r_G.dt(self.frames["inertial"]).xreplace(self.qd_repl)
+        vG_partials = me.partial_velocity([self.v_G], self.u, self.frames["inertial"])[0]
+
+        for i in range(self.state_dimension):
+            self.generalised_active_forces[i] += vG_partials[i].dot(F_g)
         
         # ---------- Strain potential energy stored in the flexible panels ---------- 
         V_strain = sm.S.Zero
@@ -530,8 +552,8 @@ class FlexibleNonSymmetricDynamics:
         self.partial_linear_velocities = dict(zip(self.linear_velocities.keys(), partial_linear_velocities))
 
         # ---------- Forces and torques acting on the system ---------- 
-        self.forces = self._get_forces()
-        self.torques = self._get_torques()
+        self.forces = self._get_external_forces()
+        self.torques = self._get_external_torques()
 
         self._define_generalized_active_forces()
         self._define_generalized_inertia_forces()
@@ -550,22 +572,48 @@ class FlexibleNonSymmetricDynamics:
         self.eval_kinematics = sm.lambdify((self.q, self.u, self.p_symbols.values()), (self.Mk, self.gk))
         self.eval_differentials = sm.lambdify((self.q, self.u, self.p_symbols.values()), (self.Md, self.gd))
 
+        self.rG_func = sm.lambdify(
+            (self.q, self.u, self.p_symbols.values()),
+            [
+                self.r_G.dot(self.frames["inertial"].x),
+                self.r_G.dot(self.frames["inertial"].y),
+            ],
+            "numpy"
+        )
+
+        self.vG_func = sm.lambdify(
+            (self.q, self.u, self.p_symbols.values()),
+            [
+                self.v_G.dot(self.frames["inertial"].x),
+                self.v_G.dot(self.frames["inertial"].y),
+            ],
+            "numpy"
+        )
+
     def get_parameter_values(self):
-        return self.config['p_values'].values()
+        return self.config["p_values"].values()
 
     def get_initial_conditions(self):
         # ---------- Setup ---------- 
         x0 = np.zeros(2 * self.state_dimension)
         
         # ---------- Extract initial states ---------- 
-        initial_states = self.config["q_initial"]
+        initial_states = {}
+        for state_symbol in self.q:
+            name = state_symbol.name
+            initial_states[name] = float(self.config["q_initial"].get(name, 0.0))
+
         for i, value in enumerate(initial_states.values()):
             x0[i] = value
         
         # ---------- Extract initial speeds ----------
-        initial_speeds = self.config["initial_speeds"]
+        initial_speeds = {}
+        for speed_symbol in self.u:
+            name = speed_symbol.name
+            initial_speeds[name] = float(self.config["initial_speeds"].get(name, 0.0))
+
         for i, value in enumerate(initial_speeds.values()):
-            x0[i+self.state_dimension+2] = value
+            x0[i+self.state_dimension] = value
 
         # ---------- Extract parameters ---------- 
         parameters = self.config["p_values"]
@@ -574,13 +622,34 @@ class FlexibleNonSymmetricDynamics:
             if key.startswith("m_"):
                 M += value
 
-        # ---------- Center of mass position vector ---------- 
+        # ---------- Center of mass position vector (central frame) ---------- 
         central_body_frame = self.frames[self.central_body]
         rho = self.r_GB.express(central_body_frame).simplify()
         self.rho_vector = sm.Matrix([
             [rho.dot(central_body_frame.x)],
             [rho.dot(central_body_frame.y)],
         ])
+
+        # ---------- Evaluate rho(eta0) numerically ----------
+        # rho_vector is expressed in the central body frame
+        rho_func = sm.lambdify(
+            tuple(list(self.q) + list(self.p_symbols.values())),
+            self.rho_vector,
+            "numpy"
+        )
+
+        # Build q and p arguments using the current config values
+        q_args = []
+        for q_symbol in self.q:
+            name = q_symbol.name
+            q_args.append( initial_states[name])
+
+        p_args = []
+        for p_symbol in self.p_symbols.values():
+            pname = p_symbol.name
+            p_args.append(self.config["p_values"][pname])
+
+        rho0 = np.array(rho_func(*(q_args + p_args)), dtype=float)
 
         # ---------- Skew matrix S ---------- 
         S = sm.Matrix([
@@ -593,6 +662,35 @@ class FlexibleNonSymmetricDynamics:
             [np.cos(initial_states["q3"]), -np.sin(initial_states["q3"])],
             [np.sin(initial_states["q3"]),  np.cos(initial_states["q3"])]
         ])
+
+        # ---------- Keplerian COM initial position/velocity ----------
+        mu_planet = float(self.config["p_values"]["planet_mu"])
+        a = float(self.config["p_values"]["orbit_semi_major_axis"])
+        e = float(self.config["p_values"]["orbit_eccentricity"])
+
+        # True anomaly at t0 by convention
+        initial_true_anomaly = 0.0
+
+        # Kepler radius at t0
+        r0 = a * (1.0 - e**2) / (1.0 + e * np.cos(initial_true_anomaly))
+
+        # Kepler speed components at t0 (planar)
+        h = np.sqrt(mu_planet * a * (1.0 - e**2))
+        vG0 = np.array([
+            [-(mu_planet / h) * e * np.sin(initial_true_anomaly)],
+            [ (mu_planet / h) * (1.0 + e * np.cos(initial_true_anomaly))],
+        ], dtype=float)
+
+        rG0 = np.array([[r0], [0.0]], dtype=float)
+
+        # ---------- Set central-bus position from COM Kepler ICs ----------
+        rB0 = rG0 + R_theta @ rho0
+
+        # overwrite q1,q2 in both x0 and the local initial_states dict
+        initial_states["q1"] = float(rB0[0, 0])
+        initial_states["q2"] = float(rB0[1, 0])
+        x0[0] = initial_states["q1"]
+        x0[1] = initial_states["q2"]
         
         # ---------- Calculate initial generalized speeds constraints ---------- 
         M_symbol = sm.Float(0)
@@ -628,15 +726,15 @@ class FlexibleNonSymmetricDynamics:
 
         # 1) states in the order of self.q
         state_args = []
-        for q_symbol in self.q:                       # [q1, q2, q3, eta1_1, eta1_2, eta2_1, ...]
+        for q_symbol in self.q:                       
             name = str(q_symbol).replace("(t)", "")
-            state_args.append(self.config["q_initial"][name])
+            state_args.append(initial_states[name])
         
-        # 2) speeds in the order of speed_symbols = [u3] + all zeta_list (flattened)
+        # 2) speeds in the order of speed_symbols = [u3] + all zeta_list
         speed_args = []
         speed_args.append(self.config["initial_speeds"]["u3"])
         for fb in self.flexible_bodies.values():
-            for z_symbol in fb["zeta_list"]:          # e.g. "zeta1_1", "zeta1_2", "zeta2_1", ...
+            for z_symbol in fb["zeta_list"]:
                 z_name = str(z_symbol).replace("(t)", "")
                 speed_args.append(self.config["initial_speeds"][z_name])
         
@@ -648,9 +746,12 @@ class FlexibleNonSymmetricDynamics:
             param_args.append(self.config["p_values"][key])
         
         args = state_args + speed_args + param_args
-        
-        u1_consistent, u2_consistent = self.u_init_func(*args)
-        
+
+        u1_offset, u2_offset = self.u_init_func(*args)
+
+        u1_consistent = float(vG0[0, 0] + u1_offset)
+        u2_consistent = float(vG0[1, 0] + u2_offset)
+
         x0[self.state_dimension] = u1_consistent
         x0[self.state_dimension+1] = u2_consistent
 
@@ -663,7 +764,7 @@ class FlexibleNonSymmetricDynamics:
             f"q3={np.degrees(initial_states["q3"]):.3f}°",
         ]
         for body, fb in self.flexible_bodies.items():
-            for eta_sym in fb["eta_list"]:            # e.g. "eta1_1"
+            for eta_sym in fb["eta_list"]:
                 name = str(eta_sym).replace("(t)", "")
                 pos_parts.append(f"{name}={initial_states[name]:.3f}")
         
@@ -676,7 +777,7 @@ class FlexibleNonSymmetricDynamics:
             f"u3={initial_speeds["u3"]:.3f}",
         ]
         for body, fb in self.flexible_bodies.items():
-            for zeta_sym in fb["zeta_list"]:          # e.g. "zeta1_1"
+            for zeta_sym in fb["zeta_list"]:
                 name = str(zeta_sym).replace("(t)", "")
                 vel_parts.append(f"{name}={initial_speeds[name]:.3f}")
         

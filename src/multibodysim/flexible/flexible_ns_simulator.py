@@ -217,6 +217,10 @@ class FlexibleNonSymmetricSimulator:
 
         J_eff = np.zeros_like(ts)
         tau_pd = np.zeros_like(ts)
+        rG_x = np.zeros_like(ts)
+        rG_y = np.zeros_like(ts)
+        vG_x = np.zeros_like(ts)
+        vG_y = np.zeros_like(ts)
         for k, (qk, uk) in enumerate(zip(q, u)):
             # Evaluate Kane's dynamic mass matrix at this state
             Md, gd = self.dynamics.eval_differentials(qk, uk, self.p_vals)
@@ -236,8 +240,21 @@ class FlexibleNonSymmetricSimulator:
             else:
                 tau_pd[k]  = self.p_vals[self.tau_index]
 
+            # --- COM position/velocity diagnostics ---
+            xG, yG = self.dynamics.rG_func(qk, uk, self.p_vals)
+            vxG, vyG = self.dynamics.vG_func(qk, uk, self.p_vals)
+
+            rG_x[k] = float(xG)
+            rG_y[k] = float(yG)
+            vG_x[k] = float(vxG)
+            vG_y[k] = float(vyG)
+
         self.results["J_eff"] = J_eff
         self.results["tau_PD"] = tau_pd
+        self.results["rG_x"] = np.array(rG_x)
+        self.results["rG_y"] = np.array(rG_y)
+        self.results["vG_x"] = np.array(vG_x)
+        self.results["vG_y"] = np.array(vG_y)
 
         return self.results
 
