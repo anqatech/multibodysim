@@ -569,8 +569,8 @@ class FlexibleNonSymmetricDynamics:
 
     def _create_lambdified_functions(self):
         # ---------- Create lambdified functions matching the notebook exactly ---------- 
-        self.eval_kinematics = sm.lambdify((self.q, self.u, self.p_symbols.values()), (self.Mk, self.gk))
-        self.eval_differentials = sm.lambdify((self.q, self.u, self.p_symbols.values()), (self.Md, self.gd))
+        self.eval_kinematics = sm.lambdify((self.q, self.u, self.p_symbols.values()), (self.Mk, self.gk), cse=True)
+        self.eval_differentials = sm.lambdify((self.q, self.u, self.p_symbols.values()), (self.Md, self.gd), cse=True)
 
         self.rG_func = sm.lambdify(
             (self.q, self.u, self.p_symbols.values()),
@@ -578,7 +578,8 @@ class FlexibleNonSymmetricDynamics:
                 self.r_G.dot(self.frames["inertial"].x),
                 self.r_G.dot(self.frames["inertial"].y),
             ],
-            "numpy"
+            "numpy",
+            cse=True
         )
 
         self.vG_func = sm.lambdify(
@@ -587,7 +588,8 @@ class FlexibleNonSymmetricDynamics:
                 self.v_G.dot(self.frames["inertial"].x),
                 self.v_G.dot(self.frames["inertial"].y),
             ],
-            "numpy"
+            "numpy",
+            cse=True
         )
 
     def get_parameter_values(self):

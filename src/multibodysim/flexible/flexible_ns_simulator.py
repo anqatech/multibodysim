@@ -148,10 +148,41 @@ class FlexibleNonSymmetricSimulator:
         # ---------- Create time evaluation points ---------- 
         t_eval = np.linspace(t_start, t_end, nb_timesteps)
         
+# ----------------------------------------------------------------------------------------------------------------
         # ---------- Integration settings ---------- 
+        atol = []
+
+        # --- q states ---
+        for q_sym in self.dynamics.q:
+            name = q_sym.name
+
+            if name in ("q1", "q2"):
+                atol.append(1e-2)
+            elif name == "q3":
+                atol.append(1e-8)
+            elif name.startswith("eta"):
+                atol.append(1e-6)
+            else:
+                atol.append(1e-6)
+
+        # --- u states ---
+        for u_sym in self.dynamics.u:
+            name = u_sym.name
+
+            if name in ("u1", "u2"):
+                atol.append(1e-3)
+            elif name == "u3":
+                atol.append(1e-9)
+            elif name.startswith("zeta"):
+                atol.append(1e-6)
+            else:
+                atol.append(1e-6)
+
+        atol = np.array(atol)
+
         integration_options = {
             "rtol": sim_params.get("rtol", 1e-6),
-            "atol": sim_params.get("atol", 1e-9),
+            "atol": atol,
             "method": sim_params.get("method", "Radau"),
             # "max_step": sim_params.get("max_step", 5e-4)
         }
@@ -159,7 +190,7 @@ class FlexibleNonSymmetricSimulator:
         print(f"Starting simulation from t={t_start} to t={t_end}")
         print(f"Integration method: {integration_options["method"]}")
         print(f"Tolerances: rtol={integration_options["rtol"]}, atol={integration_options["atol"]}\n")
-    
+
         # ---------- Integrate equations of motion ---------- 
         result = solve_ivp(
             fun=self.eval_rhs,
@@ -169,6 +200,7 @@ class FlexibleNonSymmetricSimulator:
             dense_output=not eval_flag,
             **integration_options
         )
+# ----------------------------------------------------------------------------------------------------------------
 
         # ---------- Process results ----------
         xs = np.transpose(result.y)
