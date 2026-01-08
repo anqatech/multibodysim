@@ -148,7 +148,6 @@ class FlexibleNonSymmetricSimulator:
         # ---------- Create time evaluation points ---------- 
         t_eval = np.linspace(t_start, t_end, nb_timesteps)
         
-# ----------------------------------------------------------------------------------------------------------------
         # ---------- Integration settings ---------- 
         atol = []
 
@@ -200,7 +199,6 @@ class FlexibleNonSymmetricSimulator:
             dense_output=not eval_flag,
             **integration_options
         )
-# ----------------------------------------------------------------------------------------------------------------
 
         # ---------- Process results ----------
         xs = np.transpose(result.y)
