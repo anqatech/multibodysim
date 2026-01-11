@@ -38,6 +38,13 @@ class FlexibleNonSymmetricSimulator:
         self.delta_theta = None
         self.Tr = 0.0
         
+# ----------------------------------------------------------------------------------------------------
+        # ---- Nadir pointing control (LVLH tracking) ----
+        self.use_nadir_pd = False
+        self.Kp_nadir = 0.0
+        self.Kd_nadir = 0.0
+# ----------------------------------------------------------------------------------------------------
+
         # ---------- Initialize results storage ---------- 
         self.results = None
 
@@ -49,6 +56,20 @@ class FlexibleNonSymmetricSimulator:
         self.use_attitude_pd   = True
 
         self.set_input_shaping(omega, zeta, Tr, shaping_flag)
+
+# ----------------------------------------------------------------------------------------------------
+    def set_nadir_pointing(self, Kp, Kd):
+        self.Kp_nadir = float(Kp)
+        self.Kd_nadir = float(Kd)
+
+        self.use_nadir_pd = True
+        self.use_attitude_pd = False      # avoid conflicting controllers
+        self.use_input_shaping = False    # recommended for tracking
+
+    @staticmethod
+    def wrap_to_domain_minus_pi_pi(angle):
+        return (angle + np.pi) % (2*np.pi) - np.pi
+# ----------------------------------------------------------------------------------------------------
     
     def smooth_step_5th_order(self, t, Tr):
         # return foes from 0 to 1 with zero velocity and zero acceleration at endpoints
@@ -64,28 +85,31 @@ class FlexibleNonSymmetricSimulator:
         s = t/Tr
         return (30*s**2 - 60*s**3 + 30*s**4) / Tr
     
+    def second_derivative_smooth_step_5th_order(self, t, Tr):
+        if t <= 0.0 or t >= Tr:
+            return 0.0
+        s = t / Tr
+        return (60*s - 180*s**2 + 120*s**3) / (Tr**2)
+
     def set_input_shaping(self, omega, zeta, Tr, shaping_flag):
         self.shaper = InputShaper.zvd(omega=omega, zeta=zeta)
         self.Tr = float(Tr)
         self.use_input_shaping = shaping_flag
 
-    def eval_rhs(self, t, x):
-        q = x[:self.dynamics.state_dimension]
-        u = x[self.dynamics.state_dimension:]
+    def compute_control_tau(self, t, q, u, Md=None):
+        tau_ff = 0.0
+        tau_pd = self.p_vals[self.tau_index]
 
-        # ---- compute PD torque if enabled ----
+        # ---- attitude PD ----
         if self.use_attitude_pd:
-            # identify indices of the bus attitude and angular_velocity
             q_ref = list(self.dynamics.q_reference.keys())
             u_ref = list(self.dynamics.u_reference.keys())
-
             i_theta_q_index = q_ref.index("theta")
             i_theta_u_index = u_ref.index("theta")
 
             theta     = q[i_theta_q_index]
             theta_dot = u[i_theta_u_index]
 
-            # Initialize maneuver start on first call
             if self.manoeuvre_start_time is None:
                 self.manoeuvre_start_time = t
                 self.theta_start = theta
@@ -101,20 +125,65 @@ class FlexibleNonSymmetricSimulator:
                 return self.delta_theta * self.derivative_smooth_step_5th_order(tau, self.Tr)
 
             if self.use_input_shaping and (self.shaper is not None):
-                theta_ref = self.shaper.shape(t, raw_theta_command)
+                theta_ref     = self.shaper.shape(t, raw_theta_command)
                 theta_dot_ref = self.shaper.shape(t, raw_theta_dot_command)
             else:
-                theta_ref = raw_theta_command(t)
+                theta_ref     = raw_theta_command(t)
                 theta_dot_ref = raw_theta_dot_command(t)
 
-            # Errors for PD law
             err     = theta_ref     - theta
             err_dot = theta_dot_ref - theta_dot
 
-            tau_pd  = self.Kp * err + self.Kd * err_dot
+            tau_ff = 0.0
+            tau_pd = self.Kp * err + self.Kd * err_dot
 
-            # overwrite the tau parameter entry
-            self.p_vals[self.tau_index] = tau_pd
+        # ---- nadir PD (optionally overrides attitude PD if both enabled) ----
+        if self.use_nadir_pd:
+            q_ref = list(self.dynamics.q_reference.keys())
+            u_ref = list(self.dynamics.u_reference.keys())
+            i_theta_q_index = q_ref.index("theta")
+            i_theta_u_index = u_ref.index("theta")
+
+            theta     = q[i_theta_q_index]
+            theta_dot = u[i_theta_u_index]
+
+            if Md is None:
+                raise ValueError("Nadir PD requested but Md not provided to compute_control_tau().")
+
+            J_instant = float(Md[i_theta_u_index, i_theta_u_index])
+
+            rGx, rGy = self.dynamics.rG_func(q, u, self.p_vals)
+            vGx, vGy = self.dynamics.vG_func(q, u, self.p_vals)
+
+            theta_k   = np.arctan2(-rGy, -rGx)
+            theta_ref = theta_k - 0.5*np.pi
+
+            h  = rGx*vGy - rGy*vGx
+            r2 = rGx*rGx + rGy*rGy
+
+            theta_dot_ref = h / r2
+            r    = np.sqrt(r2)
+            rdot = (rGx*vGx + rGy*vGy) / r
+            theta_ddot_ref = -2.0 * h * rdot / (r**3)
+
+            err     = self.wrap_to_domain_minus_pi_pi(theta_ref - theta)
+            err_dot = theta_dot_ref - theta_dot
+
+            tau_ff = J_instant * theta_ddot_ref
+            tau_pd = self.Kp_nadir * err + self.Kd_nadir * err_dot
+
+        def soft_cap(x, x_max=1e-4):
+            return x_max * np.tanh(x / x_max)
+        
+        # tau_ff = soft_cap(tau_ff, 1e-8)
+        # tau_pd = soft_cap(tau_pd, 5e-4)
+        tau_ff = 0.0
+
+        return tau_ff, tau_pd
+
+    def eval_rhs(self, t, x):
+        q = x[:self.dynamics.state_dimension]
+        u = x[self.dynamics.state_dimension:]
 
         try:
             # ---------- Evaluate kinematic equations ---------- 
@@ -123,6 +192,14 @@ class FlexibleNonSymmetricSimulator:
 
             # ---------- Evaluate dynamic equations ---------- 
             Md, gd = self.dynamics.eval_differentials(q, u, self.p_vals)
+
+            if self.use_attitude_pd or self.use_nadir_pd:
+                tau_ff, tau_pd = self.compute_control_tau(t, q, u, Md=Md)
+                self.p_vals[self.tau_index] = tau_ff + tau_pd
+
+                # IMPORTANT: recompute gd after updating tau
+                Md, gd = self.dynamics.eval_differentials(q, u, self.p_vals)
+    
             ud = -np.linalg.solve(Md, np.squeeze(gd))
             
         except np.linalg.LinAlgError:
@@ -246,29 +323,22 @@ class FlexibleNonSymmetricSimulator:
         theta_index = u_ref.index("theta")
 
         J_eff = np.zeros_like(ts)
+        tau_ff = np.zeros_like(ts)
         tau_pd = np.zeros_like(ts)
         rG_x = np.zeros_like(ts)
         rG_y = np.zeros_like(ts)
         vG_x = np.zeros_like(ts)
         vG_y = np.zeros_like(ts)
-        for k, (qk, uk) in enumerate(zip(q, u)):
+        for k, (tk, qk, uk) in enumerate(zip(ts, q, u)):
             # Evaluate Kane's dynamic mass matrix at this state
             Md, gd = self.dynamics.eval_differentials(qk, uk, self.p_vals)
             Md = np.asarray(Md, dtype=float)
 
             # Effective inertia for the attitude DOF
             J_eff[k] = np.abs(Md[theta_index, theta_index])
-
-            if self.use_attitude_pd:
-                theta = qk[theta_index]
-                theta_dot = uk[theta_index]
-
-                err     = self.theta_target - theta
-                err_dot = self.theta_dot_target - theta_dot
-
-                tau_pd[k]  = self.Kp * err + self.Kd * err_dot
-            else:
-                tau_pd[k]  = self.p_vals[self.tau_index]
+            tau_ff_k, tau_pd_k = self.compute_control_tau(tk, qk, uk, Md=Md)
+            tau_ff[k] = tau_ff_k
+            tau_pd[k] = tau_pd_k
 
             # --- COM position/velocity diagnostics ---
             xG, yG = self.dynamics.rG_func(qk, uk, self.p_vals)
@@ -280,6 +350,7 @@ class FlexibleNonSymmetricSimulator:
             vG_y[k] = float(vyG)
 
         self.results["J_eff"] = J_eff
+        self.results["tau_FF"] = tau_ff
         self.results["tau_PD"] = tau_pd
         self.results["rG_x"] = np.array(rG_x)
         self.results["rG_y"] = np.array(rG_y)
