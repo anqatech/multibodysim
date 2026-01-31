@@ -130,6 +130,13 @@ class FlexibleNonSymmetricDynamics:
             symbol = sm.symbols(key)
             self.p_symbols[key] = symbol
 
+        # ---------- Optional per-body torque actuators ----------
+        self.torque_symbols = {}
+
+        for body in self.rigid_bodies.keys():
+            symbol = sm.symbols(f"tau_{body}")
+            self.torque_symbols[body] = symbol
+
     def _define_mode_shapes(self):
         # ---------- Setup ----------
         beam_params = self.config["beam_parameters"]
@@ -437,8 +444,8 @@ class FlexibleNonSymmetricDynamics:
             if name == "inertial":
                 continue
 
-            if name == self.central_body:
-                torques[name] = self.p_symbols["tau"] * frame.z
+            if name in self.torque_symbols.keys():
+                torques[name] = self.torque_symbols[name] * frame.z
             else:
                 torques[name] = 0 * frame.z
         
@@ -569,8 +576,16 @@ class FlexibleNonSymmetricDynamics:
 
     def _create_lambdified_functions(self):
         # ---------- Create lambdified functions matching the notebook exactly ---------- 
-        self.eval_kinematics = sm.lambdify((self.q, self.u, self.p_symbols.values()), (self.Mk, self.gk), cse=True)
-        self.eval_differentials = sm.lambdify((self.q, self.u, self.p_symbols.values()), (self.Md, self.gd), cse=True)
+        self.eval_kinematics = sm.lambdify(
+            (self.q, self.u, self.p_symbols.values(), self.torque_symbols.values()), 
+            (self.Mk, self.gk), 
+            cse=True
+        )
+        self.eval_differentials = sm.lambdify(
+            (self.q, self.u, self.p_symbols.values(), self.torque_symbols.values()), 
+            (self.Md, self.gd), 
+            cse=True
+        )
 
         self.rG_func = sm.lambdify(
             (self.q, self.u, self.p_symbols.values()),
@@ -594,6 +609,21 @@ class FlexibleNonSymmetricDynamics:
 
     def get_parameter_values(self):
         return self.config["p_values"].values()
+    
+    def get_torque_values(self):
+        torques = self.config["torques"]
+
+        torque_values = []
+        for body in self.rigid_bodies:
+            torque = torques[body]
+            torque_values.append(torque)
+
+        return torque_values
+
+    def get_torque_weights(self):
+        torque_weights = self.config["torque_weights"].values()
+
+        return torque_weights
 
     def get_initial_conditions(self):
         # ---------- Setup ---------- 

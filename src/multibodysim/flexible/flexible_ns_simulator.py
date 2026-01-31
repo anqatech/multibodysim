@@ -12,15 +12,12 @@ class FlexibleNonSymmetricSimulator:
         self.dynamics = FlexibleNonSymmetricDynamics(config)
         
         # ---------- Extract parameter values ---------- 
-        # self.p_vals = self.dynamics.get_parameter_values()
         self.p_vals = np.array(list(self.dynamics.get_parameter_values()), dtype=float)
 
-        # index of tau in the parameter vector
-        self.p_keys = list(self.config["p_values"].keys())
-        try:
-            self.tau_index = self.p_keys.index("tau")
-        except ValueError:
-            raise KeyError("Config p_values must contain tau entry for the bus torque.")
+        # ---------- Extract torque values (one scalar per rigid body) ----------
+        self.torque_intial_vals = np.array(list(self.dynamics.get_torque_values()), dtype=float)
+        self.torque_vals = self.torque_intial_vals.copy()
+        self.torque_weights = np.array(list(self.dynamics.get_torque_weights()), dtype=float)
 
         # --------- PD attitude control settings ---------
         self.use_attitude_pd    = False        # flag
@@ -38,12 +35,10 @@ class FlexibleNonSymmetricSimulator:
         self.delta_theta = None
         self.Tr = 0.0
         
-# ----------------------------------------------------------------------------------------------------
         # ---- Nadir pointing control (LVLH tracking) ----
         self.use_nadir_pd = False
         self.Kp_nadir = 0.0
         self.Kd_nadir = 0.0
-# ----------------------------------------------------------------------------------------------------
 
         # ---------- Initialize results storage ---------- 
         self.results = None
@@ -57,7 +52,6 @@ class FlexibleNonSymmetricSimulator:
 
         self.set_input_shaping(omega, zeta, Tr, shaping_flag)
 
-# ----------------------------------------------------------------------------------------------------
     def set_nadir_pointing(self, Kp, Kd):
         self.Kp_nadir = float(Kp)
         self.Kd_nadir = float(Kd)
@@ -69,7 +63,6 @@ class FlexibleNonSymmetricSimulator:
     @staticmethod
     def wrap_to_domain_minus_pi_pi(angle):
         return (angle + np.pi) % (2*np.pi) - np.pi
-# ----------------------------------------------------------------------------------------------------
     
     def smooth_step_5th_order(self, t, Tr):
         # return foes from 0 to 1 with zero velocity and zero acceleration at endpoints
@@ -98,7 +91,7 @@ class FlexibleNonSymmetricSimulator:
 
     def compute_control_tau(self, t, q, u, Md=None):
         tau_ff = 0.0
-        tau_pd = self.p_vals[self.tau_index]
+        tau_pd = 0.0
 
         # ---- attitude PD ----
         if self.use_attitude_pd:
@@ -172,13 +165,6 @@ class FlexibleNonSymmetricSimulator:
             tau_ff = J_instant * theta_ddot_ref
             tau_pd = self.Kp_nadir * err + self.Kd_nadir * err_dot
 
-        def soft_cap(x, x_max=1e-4):
-            return x_max * np.tanh(x / x_max)
-        
-        # tau_ff = soft_cap(tau_ff, 1e-8)
-        # tau_pd = soft_cap(tau_pd, 5e-4)
-        tau_ff = 0.0
-
         return tau_ff, tau_pd
 
     def eval_rhs(self, t, x):
@@ -187,18 +173,24 @@ class FlexibleNonSymmetricSimulator:
 
         try:
             # ---------- Evaluate kinematic equations ---------- 
-            Mk, gk = self.dynamics.eval_kinematics(q, u, self.p_vals)
+            Mk, gk = self.dynamics.eval_kinematics(q, u, self.p_vals, self.torque_vals)
             qd = -np.linalg.solve(Mk, np.squeeze(gk))
 
             # ---------- Evaluate dynamic equations ---------- 
-            Md, gd = self.dynamics.eval_differentials(q, u, self.p_vals)
+            Md, gd = self.dynamics.eval_differentials(q, u, self.p_vals, self.torque_vals)
+
+            # reset to perturbation torques each RHS call
+            self.torque_vals = self.torque_intial_vals.copy()
 
             if self.use_attitude_pd or self.use_nadir_pd:
                 tau_ff, tau_pd = self.compute_control_tau(t, q, u, Md=Md)
-                self.p_vals[self.tau_index] = tau_ff + tau_pd
+                tau_ctrl = tau_ff + tau_pd
 
-                # IMPORTANT: recompute gd after updating tau
-                Md, gd = self.dynamics.eval_differentials(q, u, self.p_vals)
+                # distribute control torque using weights
+                self.torque_vals += tau_ctrl * self.torque_weights
+
+                # IMPORTANT: recompute gd after updating torque values
+                Md, gd = self.dynamics.eval_differentials(q, u, self.p_vals, self.torque_vals)
     
             ud = -np.linalg.solve(Md, np.squeeze(gd))
             
@@ -331,7 +323,7 @@ class FlexibleNonSymmetricSimulator:
         vG_y = np.zeros_like(ts)
         for k, (tk, qk, uk) in enumerate(zip(ts, q, u)):
             # Evaluate Kane's dynamic mass matrix at this state
-            Md, gd = self.dynamics.eval_differentials(qk, uk, self.p_vals)
+            Md, gd = self.dynamics.eval_differentials(qk, uk, self.p_vals, self.torque_vals)
             Md = np.asarray(Md, dtype=float)
 
             # Effective inertia for the attitude DOF

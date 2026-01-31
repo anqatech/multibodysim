@@ -5,7 +5,7 @@ from multibodysim import FlexibleNonSymmetricSimulator
 
 
 config = orjson.loads(Path(
-    "/Users/jalalelhazzat/Documents/Packages/configuration/flexible/Keplerian-Orbit/kepler_orbit_mode_1_bodies_3_conf.json"
+    "/Users/jalalelhazzat/Documents/Packages/configuration/flexible/Keplerian-Orbit/kepler_orbit_mode_1_bodies_7_conf.json"
 ).read_bytes())
 sim = FlexibleNonSymmetricSimulator(config)
 
@@ -23,9 +23,6 @@ Kd = 2 * zeta_cl * J_eff * omega_cl
 print(f"Kp = {Kp:.1f}, Kd = {Kd:.1f}\n")
 
 sim.set_nadir_pointing(Kp=Kp, Kd=Kd)
-# ----------------------------------------------------------------------
-
-# ----------------------------------------------------------------------
 
 # # ----------------------------------------------------------------------
 # # -------------------------- Input Shaping Setup --------------------------
