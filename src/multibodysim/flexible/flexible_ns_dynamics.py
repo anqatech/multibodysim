@@ -295,8 +295,8 @@ class FlexibleNonSymmetricDynamics:
 
                 if not self.inertial_position[child]:
                     self.inertial_position[child] = child_cm_point.pos_from(self.O)
-
-        # System center of mass
+        
+        # ---------- System center of mass ----------
         M = sm.Float(0)
         for key, value in self.p_symbols.items():
             if key.startswith("m_"):
@@ -310,7 +310,18 @@ class FlexibleNonSymmetricDynamics:
         self.G = self.O.locatenew('G', r_G)
         self.r_GB = self.points[self.central_body].pos_from(self.G)
         self.points["center_of_mass"] = self.G
+        self.r_G = self.points["center_of_mass"].pos_from(self.O).express(self.frames["inertial"])
 
+        # ---------- LVLH Frame ----------
+        L = me.ReferenceFrame('LVLH')
+
+        rx = self.r_G.dot(N.x)
+        ry = self.r_G.dot(N.y)
+        nu = sm.atan2(ry, rx)
+
+        L.orient_axis(N, nu, N.z)
+        self.frames["lvlh"] = L
+        self.nu = nu
 
     def _define_kinematic_equations(self):
         # ---------- Kinematical differential equations ----------
@@ -332,7 +343,7 @@ class FlexibleNonSymmetricDynamics:
 
         # ---------- Angular velocities ----------
         for name, frame in self.frames.items():
-            if name != "inertial":
+            if name not in ["inertial", "lvlh"]:
                 frame.set_ang_vel(inertial_frame, self.u_angle * inertial_frame.z)
                 self.angular_velocities[name] = frame.ang_vel_in(inertial_frame).xreplace(self.qdd_repl).xreplace(self.qd_repl)
         
@@ -342,6 +353,20 @@ class FlexibleNonSymmetricDynamics:
         )
         self.linear_velocities[self.central_body] = self.points[self.central_body].vel(inertial_frame).xreplace(self.qdd_repl).xreplace(self.qd_repl)
         
+        # ---------- Centre of Mass Inertial velocity ----------
+        self.v_G = self.r_G.dt(self.frames["inertial"]).xreplace(self.qd_repl)
+
+        # ---------- LVLH Angular velocity ----------
+        vx = self.v_G.dot(inertial_frame.x)
+        vy = self.v_G.dot(inertial_frame.y)
+        rx = self.r_G.dot(inertial_frame.x)
+        ry = self.r_G.dot(inertial_frame.y)
+        r2 = rx**2 + ry**2
+        nu_dot = (rx*vy - ry*vx) / r2
+
+        self.frames["lvlh"].set_ang_vel(inertial_frame, nu_dot * inertial_frame.z)
+        self.nu_dot = nu_dot
+
         # ---------- Translational velocities ----------
         for child, parent in self.parents.items():
             if child == self.central_body:
@@ -428,6 +453,29 @@ class FlexibleNonSymmetricDynamics:
             else:
                 self.linear_accelerations[child] = self.points[child].acc(inertial_frame).xreplace(self.qdd_repl).xreplace(self.qd_repl)
 
+    def _tidal_acceleration_from_rho(self, rho_vec):
+        N = self.frames["inertial"]
+        L = self.frames["lvlh"]
+
+        mu = self.p_symbols["planet_mu"]
+
+        # ------- Orbital radius -------
+        r2 = self.r_G.dot(self.r_G)
+        r = sm.sqrt(r2)
+
+        # ------- Express rho in LVLH -------
+        rho_L = rho_vec.express(L).to_matrix(L) 
+        rho_x, rho_y, rho_z = rho_L[0], rho_L[1], rho_L[2]
+
+        # ------- Tidal acceleration in LVLH -------
+        ax =  2 * mu / (r**3) * rho_x
+        ay = -1 * mu / (r**3) * rho_y
+        az = -1 * mu / (r**3) * rho_z
+
+        a_vec = ax * L.x + ay * L.y + az * L.z
+
+        return a_vec.express(N)
+
     def _get_external_forces(self):
         forces = {}
         for name, frame in self.frames.items():
@@ -436,6 +484,21 @@ class FlexibleNonSymmetricDynamics:
             
             forces[name] = 0 * frame.x + 0 * frame.y
         
+        # ------- Tidal acceleration force -------
+        if self.config.get("enable_tidal_acceleration", False):
+            bus_point = self.points[self.central_body]
+            rho_bus = bus_point.pos_from(self.points["center_of_mass"])
+
+            # Tidal acceleration at that point
+            a_tidal_bus = self._tidal_acceleration_from_rho(rho_bus)
+
+            # Applied tidal force on the bus
+            m_bus = self.p_symbols[f"m_{self.central_body}"]
+            F_tidal_bus = m_bus * a_tidal_bus
+
+            # Add to external forces on the bus
+            forces[self.central_body] = forces[self.central_body] + F_tidal_bus
+
         return forces
 
     def _get_external_torques(self):
@@ -478,12 +541,10 @@ class FlexibleNonSymmetricDynamics:
         mu = self.p_symbols.get("planet_mu", None)
 
         # Net gravitational force at COM
-        self.r_G = self.points["center_of_mass"].pos_from(self.O).express(self.frames["inertial"])
         r2 = self.r_G.dot(self.r_G)
         r = sm.sqrt(r2)
         F_g = -mu * M_symbol * self.r_G / (r**3)
 
-        self.v_G = self.r_G.dt(self.frames["inertial"]).xreplace(self.qd_repl)
         vG_partials = me.partial_velocity([self.v_G], self.u, self.frames["inertial"])[0]
 
         for i in range(self.state_dimension):
