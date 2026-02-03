@@ -415,18 +415,25 @@ class FlexibleNonSymmetricDynamics:
                 raise KeyError(f"Unknown parent type for '{parent}': {parent_type}")
 
         # ---------- Flexible center of mass velocities ----------
-        # !!! Not used at the moment --> TBD if it is to be kept
+        self.dm_cm_velocities = {}
+
         for item, fb in self.flexible_bodies.items():
             phi_mean_list = fb["phi_mean_list"]
             zeta_list     = fb["zeta_list"]
             phi_mean_zeta_sum = sum(pm * z for pm, z in zip(phi_mean_list, zeta_list))
-        
+
             self.points[f"dm_center_of_mass_{item}"].set_vel(
                 self.frames[item], phi_mean_zeta_sum * self.frames[item].y
             )
-            parent = self.parents[item]  # not always central body once you generalize!
-            _ = self.points[f"dm_center_of_mass_{item}"].v1pt_theory(
+
+            parent = self.parents[item]
+            self.points[f"dm_center_of_mass_{item}"].v1pt_theory(
                 self.points[f"joint_{item}_{parent}"], inertial_frame, self.frames[item]
+            )
+
+            self.dm_cm_velocities[item] = (
+                self.points[f"dm_center_of_mass_{item}"].vel(inertial_frame)
+                .xreplace(self.qdd_repl).xreplace(self.qd_repl)
             )
 
     def _setup_accelerations(self):
@@ -476,35 +483,57 @@ class FlexibleNonSymmetricDynamics:
 
         return a_vec.express(N)
 
+    def _get_lumped_mass_points(self):
+        lumped = {}
+
+        # ---------- Buses ----------
+        for bus_name in self.rigid_bodies:
+            if bus_name not in self.points:
+                continue
+            m_key = f"m_{bus_name}"
+            m_sym = self.p_symbols.get(m_key, None)
+            if m_sym is None:
+                continue
+            lumped[bus_name] = (self.points[bus_name], m_sym)
+
+        # ---------- Panels ----------
+        for panel_name in self.flexible_bodies:  # or self.beams list of names
+            com_name = f"dm_center_of_mass_{panel_name}"
+            if com_name not in self.points:
+                continue
+            m_key = f"m_{panel_name}"
+            m_sym = self.p_symbols.get(m_key, None)
+            if m_sym is None:
+                continue
+            lumped[panel_name] = (self.points[com_name], m_sym)
+
+        return lumped
+    
     def _get_external_forces(self):
         forces = {}
         for name, frame in self.frames.items():
-            if name == "inertial":
+            if name in ["inertial", "lvlh"]:
                 continue
-            
+
             forces[name] = 0 * frame.x + 0 * frame.y
-        
-        # ------- Tidal acceleration force -------
+
+        # ------- Tidal acceleration forces -------
         if self.config.get("enable_tidal_acceleration", False):
-            bus_point = self.points[self.central_body]
-            rho_bus = bus_point.pos_from(self.points["center_of_mass"])
+            G = self.points["center_of_mass"]
+            self.lumped = self._get_lumped_mass_points()
 
-            # Tidal acceleration at that point
-            a_tidal_bus = self._tidal_acceleration_from_rho(rho_bus)
-
-            # Applied tidal force on the bus
-            m_bus = self.p_symbols[f"m_{self.central_body}"]
-            F_tidal_bus = m_bus * a_tidal_bus
-
-            # Add to external forces on the bus
-            forces[self.central_body] = forces[self.central_body] + F_tidal_bus
+            for name, (mass_point, mass) in self.lumped.items():
+                rho = mass_point.pos_from(G)
+                a_tidal = self._tidal_acceleration_from_rho(rho)
+                F_tidal = mass * a_tidal
+                forces[name] = forces[name] + F_tidal
 
         return forces
 
     def _get_external_torques(self):
         torques = {}
         for name, frame in self.frames.items():
-            if name == "inertial":
+            if name in ["inertial", "lvlh"]:
                 continue
 
             if name in self.torque_symbols.keys():
@@ -514,20 +543,38 @@ class FlexibleNonSymmetricDynamics:
         
         return torques
 
+
     def _define_generalized_active_forces(self):
         # ---------- Setup ----------
         self.state_reference_dimension = len(self.u_reference)
         self.state_dimension = len(self.u)
         self.generalised_active_forces = sm.zeros(self.state_dimension, 1)
-        
+
+        N = self.frames["inertial"]
+        self.v_partials_at_force_point = {}
+
+        for body in self.parents.keys():
+            btype = self.body_type[body]
+
+            if btype.startswith("rigid-"):
+                v_expr = self.linear_velocities[body]
+            elif btype.startswith("flexible-"):
+                v_expr = self.dm_cm_velocities[body]
+            else:
+                raise ValueError(f"Unknown body type '{btype}' for body '{body}'")
+
+            self.v_partials_at_force_point[body] = me.partial_velocity([v_expr], self.u, N)[0]
+
+        # ---------- Active forces and torques ----------
         for i in range(self.state_dimension):
             for body in self.parents.keys():
-                v_partial = self.partial_linear_velocities[body][i]
+
+                v_partial = self.v_partials_at_force_point[body][i]
                 w_partial = self.partial_angular_velocities[body][i]
-                
-                force = self.forces[body]
+
+                force  = self.forces[body]
                 torque = self.torques[body]
-    
+
                 self.generalised_active_forces[i] += v_partial.dot(force) + w_partial.dot(torque)
 
         # ---- Kepler-only gravity: apply net gravity at COM ----
