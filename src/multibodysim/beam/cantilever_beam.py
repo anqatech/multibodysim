@@ -40,7 +40,19 @@ class CantileverBeam:
         phi_dd = phi.diff(s, 2)
         k_modal = sm.integrate(self.E * self.I * (phi_dd)**2, (s, 0, self.L))
         return k_modal
+
+# ----------------------------------------------------------------------------------------------------
+    def mode_shape_norm(self, n_points=200, mode=1):
+        s_vals = np.linspace(0, self.L, n_points)
+        phi_vals = self.mode_shape(s_vals, mode)
+        return trapezoid(phi_vals**2, s_vals) / self.L
     
+    def mode_shape_first_moment(self, n_points=200, mode=1):
+        s_vals = np.linspace(0, self.L, n_points)
+        phi_vals = self.mode_shape(s_vals, mode)
+        return trapezoid((s_vals - self.L/2.0) * phi_vals, s_vals) / self.L
+# ----------------------------------------------------------------------------------------------------
+
     def _generate_betas(self, n=5):
         def f(b): return np.cosh(b) * np.cos(b) + 1.0
         betas = []

@@ -174,6 +174,14 @@ class FlexibleNonSymmetricDynamics:
             self.flexible_bodies[body]["phi_mean_list"] = phi_mean_list
             self.flexible_bodies[body]["k_modal_list"]  = k_modal_list
 
+# ----------------------------------------------------------------------------------------------------
+            phi_norm_list  = [beam.mode_shape_norm(nb_pts, mode=k+1) for k in range(n_modes)]
+            phi_m1_list    = [beam.mode_shape_first_moment(nb_pts, mode=k+1) for k in range(n_modes)]
+
+            self.flexible_bodies[body]["phi_norm_list"] = phi_norm_list
+            self.flexible_bodies[body]["phi_m1_list"]   = phi_m1_list
+# ----------------------------------------------------------------------------------------------------
+
     def _get_offset_vector(self, parent, child):
         parent_type = self.body_type[parent]
         child_type = self.body_type[child]
@@ -488,6 +496,20 @@ class FlexibleNonSymmetricDynamics:
 
         for i in range(self.state_dimension):
             self.generalised_active_forces[i] += vG_partials[i].dot(F_g)
+
+# ----------------------------------------------------------------------------------------------------
+        # Gravity gradient setup
+        self.enable_gravity_gradient = self.config["enable_gravity_gradient"]
+
+        # ---- express local vertical in each body frame ----
+        self.e3_hat_inertial = -self.r_G / r2
+        self.e3_hat_body = {}
+        for body in self.parents.keys():
+            if body in ("N", "inertial"):
+                continue
+            self.e3_hat_body[body] = self.e3_hat_inertial.express(self.frames[body])
+
+# ----------------------------------------------------------------------------------------------------
         
         # ---------- Strain potential energy stored in the flexible panels ---------- 
         V_strain = sm.S.Zero
