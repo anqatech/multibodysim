@@ -17,6 +17,10 @@ class FlexibleNonSymmetricDynamics:
             self.body_names = config["body_names"]
             self.central_body = config["central_body"]
             self.body_type = config["body_type"]
+# ----------------------------------------------------------------------------------------------------
+            self.enable_gravity_gradient = self.config["enable_gravity_gradient"]
+# ----------------------------------------------------------------------------------------------------
+
         except KeyError as e:
             raise KeyError(f"Missing config key: {e}")
         
@@ -29,6 +33,7 @@ class FlexibleNonSymmetricDynamics:
         self._define_symbols()
         self._define_mode_shapes()
         self._define_kinematics()
+        self._define_inertia_matrices()
         self._define_kinematic_equations()
         self._setup_velocities()
         self._setup_accelerations()
@@ -180,6 +185,57 @@ class FlexibleNonSymmetricDynamics:
 
             self.flexible_bodies[body]["phi_norm_list"] = phi_norm_list
             self.flexible_bodies[body]["phi_m1_list"]   = phi_m1_list
+# ----------------------------------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------------------------------
+    def _define_inertia_matrices(self):
+        for body, fb_dict in self.flexible_bodies.items():
+            eta_list      = fb_dict["eta_list"]
+            phi_mean_list = fb_dict["phi_mean_list"]
+            phi_norm_list = fb_dict["phi_norm_list"]
+            phi_m1_list   = fb_dict["phi_m1_list"]
+
+            mass_body = self.p_symbols[f"m_{body}"]
+            length_body = self.p_symbols[f"L"]
+
+            # I22 constant
+            I22 = sm.Rational(1, 12) * mass_body * length_body**2
+
+            # I12 linear in eta
+            I12 = sm.S.Zero
+            for eta_k, phi_m1_k in zip(eta_list, phi_m1_list):
+                I12 += -eta_k * sm.Float(phi_m1_k)
+            I12 = mass_body * I12
+
+            # I11 quadratic in eta
+            first_term = sm.S.Zero
+            for eta_k, Mtilde_k in zip(eta_list, phi_norm_list):
+                first_term += eta_k**2 * sm.Float(Mtilde_k)
+            second_term = sm.S.Zero
+            for eta_k, phi_bar_k in zip(eta_list, phi_mean_list):
+                second_term += eta_k * sm.Float(phi_bar_k)
+            I11 = mass_body * (first_term - second_term**2)
+
+            # I33 out of plane
+            I33 = I11 + I22
+
+            Inertia_matrix = sm.Matrix([
+                [I11, I12, 0],
+                [I12, I22, 0],
+                [0,   0,   I33]
+            ])
+
+            # (Ixx, Iyy, Izz, Ixy, Iyz, Ixz)
+            Inertia_matrix = me.inertia(self.frames[body], I11, I22, I33, I12, 0, 0)
+            fb_dict["Inertia"] = Inertia_matrix
+
+        for body in self.rigid_bodies.keys():
+            I_bus = (self.p_symbols[f"m_{body}"] * self.p_symbols["D"]**2) / 12
+
+            # (Ixx, Iyy, Izz, Ixy, Iyz, Ixz)
+            Inertia_matrix = me.inertia(self.frames[body], I_bus, I_bus, 2 * I_bus, 0, 0, 0)
+            self.rigid_bodies[body] = {"Inertia": Inertia_matrix}
+
 # ----------------------------------------------------------------------------------------------------
 
     def _get_offset_vector(self, parent, child):
@@ -498,9 +554,6 @@ class FlexibleNonSymmetricDynamics:
             self.generalised_active_forces[i] += vG_partials[i].dot(F_g)
 
 # ----------------------------------------------------------------------------------------------------
-        # Gravity gradient setup
-        self.enable_gravity_gradient = self.config["enable_gravity_gradient"]
-
         # ---- express local vertical in each body frame ----
         self.e3_hat_inertial = -self.r_G / r2
         self.e3_hat_body = {}
@@ -538,8 +591,9 @@ class FlexibleNonSymmetricDynamics:
                 v_partial = self.partial_linear_velocities[body][i]
                 w_partial = self.partial_angular_velocities[body][i]
             
-                I_bus = (self.p_symbols[f"m_{body}"] * self.p_symbols["D"]**2) / 12
-                Inertia_matrix = me.inertia(self.frames[body], I_bus, I_bus, 2 * I_bus)
+# ----------------------------------------------------------------------------------------------------
+                Inertia_matrix = self.rigid_bodies[body]["Inertia"]
+# ----------------------------------------------------------------------------------------------------
     
                 body_linear_acceleration = self.linear_accelerations[body]
                 body_angular_velocity = self.angular_velocities[body]
