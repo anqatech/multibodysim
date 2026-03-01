@@ -555,22 +555,55 @@ class FlexibleNonSymmetricDynamics:
 
 # ----------------------------------------------------------------------------------------------------
         # ---- express local vertical in each body frame ----
-        self.e3_hat_inertial = -self.r_G / r2
+        self.e3_hat_inertial = -self.r_G / r
         self.e3_hat_body = {}
         for body in self.parents.keys():
             if body in ("N", "inertial"):
                 continue
             self.e3_hat_body[body] = self.e3_hat_inertial.express(self.frames[body])
 
+        # ---- gravity gradient potential function ----
+        self.V_gg = sm.S.Zero  # default
+        if self.enable_gravity_gradient:
+            mu_planet = self.p_symbols["planet_mu"]
+
+            potential_prefixe = sm.Rational(3, 2) * mu_planet / (r**3)
+
+            self.V_gg = sm.S.Zero
+
+            for body in self.parents.keys():
+                e3_b = self.e3_hat_body[body]
+
+                if body in self.rigid_bodies:
+                    I_dyad = self.rigid_bodies[body]["Inertia"]
+                elif body in self.flexible_bodies:
+                    I_dyad = self.flexible_bodies[body]["Inertia"]
+                else:
+                    raise Exception(f"Unknown body type {body}")
+
+                self.V_gg += potential_prefixe * ( e3_b.dot(I_dyad.dot(e3_b)) )
+
+            # ---- Attitude contribution ----
+            theta = self.q_reference["theta"]
+            i_theta_u = list(self.u_reference.keys()).index("theta")
+            self.generalised_active_forces[i_theta_u] += -sm.diff(self.V_gg, theta)
+
+            # ---- Flexible modal contributions ----
+            for body, fb in self.flexible_bodies.items():
+                eta_list = fb["eta_list"]
+                for k, eta_k in enumerate(eta_list):
+                    flat_eta = self.flex_eta_index[(body, k)]
+                    row = self.state_reference_dimension + flat_eta
+                    self.generalised_active_forces[row] += -sm.diff(self.V_gg, eta_k)
 # ----------------------------------------------------------------------------------------------------
         
         # ---------- Strain potential energy stored in the flexible panels ---------- 
-        V_strain = sm.S.Zero
+        self.V_strain = sm.S.Zero
         for body, fb in self.flexible_bodies.items():
             eta_list     = fb["eta_list"]
             k_modal_list = fb["k_modal_list"]
             for k, (eta_k, Kk) in enumerate(zip(eta_list, k_modal_list)):
-                V_strain += sm.Rational(1, 2) * Kk * eta_k**2
+                self.V_strain += sm.Rational(1, 2) * Kk * eta_k**2
         
         # ---------- Flexible contribution to generalised active forces ---------- 
         for body, fb in self.flexible_bodies.items():
