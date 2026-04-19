@@ -2,10 +2,12 @@ import numpy as np
 from scipy.integrate import solve_ivp
 from .flexible_ns_dynamics import FlexibleNonSymmetricDynamics
 from ..inputshaping.zv_input_shaping import InputShaper
+from ..controllers.plant_view import FlexibleNSPlantView
+from ..controllers.base import AttitudeController, ControlOutput
 
 
 class FlexibleNonSymmetricSimulator:
-    def __init__(self, config):
+    def __init__(self, config, controller: AttitudeController | None = None):
         self.config = config
         
         # ---------- Create symbolic dynamics model ---------- 
@@ -18,6 +20,12 @@ class FlexibleNonSymmetricSimulator:
         self.torque_intial_vals = np.array(list(self.dynamics.get_torque_values()), dtype=float)
         self.torque_vals = self.torque_intial_vals.copy()
         self.torque_weights = np.array(list(self.dynamics.get_torque_weights()), dtype=float)
+
+        # ---------- Plant view for controllers ----------
+        self.plant_view = FlexibleNSPlantView(self.dynamics, self.p_vals)
+
+        # ---------- Optional external controller ----------
+        self.controller = controller        
 
         # --------- PD attitude control settings ---------
         self.use_attitude_pd    = False        # flag
@@ -43,6 +51,9 @@ class FlexibleNonSymmetricSimulator:
         # ---------- Initialize results storage ---------- 
         self.results = None
 
+    def set_controller(self, controller: AttitudeController | None):
+        self.controller = controller
+    
     def set_attitude_manoeuver(self, theta_target, theta_dot_target, Kp, Kd, Tr, omega, zeta, shaping_flag):
         self.theta_target      = theta_target
         self.theta_dot_target  = theta_dot_target
@@ -95,13 +106,8 @@ class FlexibleNonSymmetricSimulator:
 
         # ---- attitude PD ----
         if self.use_attitude_pd:
-            q_ref = list(self.dynamics.q_reference.keys())
-            u_ref = list(self.dynamics.u_reference.keys())
-            i_theta_q_index = q_ref.index("theta")
-            i_theta_u_index = u_ref.index("theta")
-
-            theta     = q[i_theta_q_index]
-            theta_dot = u[i_theta_u_index]
+            theta = self.plant_view.theta(q)
+            theta_dot = self.plant_view.theta_dot(u)
 
             if self.manoeuvre_start_time is None:
                 self.manoeuvre_start_time = t
@@ -132,21 +138,15 @@ class FlexibleNonSymmetricSimulator:
 
         # ---- nadir PD (optionally overrides attitude PD if both enabled) ----
         if self.use_nadir_pd:
-            q_ref = list(self.dynamics.q_reference.keys())
-            u_ref = list(self.dynamics.u_reference.keys())
-            i_theta_q_index = q_ref.index("theta")
-            i_theta_u_index = u_ref.index("theta")
-
-            theta     = q[i_theta_q_index]
-            theta_dot = u[i_theta_u_index]
+            theta = self.plant_view.theta(q)
+            theta_dot = self.plant_view.theta_dot(u)
 
             if Md is None:
                 raise ValueError("Nadir PD requested but Md not provided to compute_control_tau().")
 
-            J_instant = float(Md[i_theta_u_index, i_theta_u_index])
+            J_instant = self.plant_view.J_theta(Md)
 
-            rGx, rGy = self.dynamics.rG_func(q, u, self.p_vals)
-            vGx, vGy = self.dynamics.vG_func(q, u, self.p_vals)
+            rGx, rGy, vGx, vGy = self.plant_view.com_state(q, u)
 
             theta_k   = np.arctan2(-rGy, -rGx)
             theta_ref = theta_k - 0.5*np.pi
@@ -167,6 +167,10 @@ class FlexibleNonSymmetricSimulator:
 
         return tau_ff, tau_pd
 
+    def compute_control_output(self, t, q, u, Md=None) -> ControlOutput:
+        tau_ff, tau_pd = self.compute_control_tau(t, q, u, Md=Md)
+        return ControlOutput(tau_ff=float(tau_ff), tau_fb=float(tau_pd))
+
     def eval_rhs(self, t, x):
         q = x[:self.dynamics.state_dimension]
         u = x[self.dynamics.state_dimension:]
@@ -183,8 +187,8 @@ class FlexibleNonSymmetricSimulator:
             self.torque_vals = self.torque_intial_vals.copy()
 
             if self.use_attitude_pd or self.use_nadir_pd:
-                tau_ff, tau_pd = self.compute_control_tau(t, q, u, Md=Md)
-                tau_ctrl = tau_ff + tau_pd
+                ctrl_out = self.compute_control_output(t, q, u, Md=Md)
+                tau_ctrl = ctrl_out.tau_total
 
                 # distribute control torque using weights
                 self.torque_vals += tau_ctrl * self.torque_weights
