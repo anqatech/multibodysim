@@ -170,6 +170,15 @@ class FlexibleNonSymmetricSimulator:
     def compute_control_output(self, t, q, u, Md=None) -> ControlOutput:
         tau_ff, tau_pd = self.compute_control_tau(t, q, u, Md=Md)
         return ControlOutput(tau_ff=float(tau_ff), tau_fb=float(tau_pd))
+    
+    def get_control_output(self, t, q, u, Md=None) -> ControlOutput:
+        if self.controller is not None:
+            return self.controller.compute(t, q, u, Md=Md)
+
+        if self.use_attitude_pd or self.use_nadir_pd:
+            return self.compute_control_output(t, q, u, Md=Md)
+
+        return ControlOutput()
 
     def eval_rhs(self, t, x):
         q = x[:self.dynamics.state_dimension]
@@ -186,10 +195,10 @@ class FlexibleNonSymmetricSimulator:
             # reset to perturbation torques each RHS call
             self.torque_vals = self.torque_intial_vals.copy()
 
-            if self.use_attitude_pd or self.use_nadir_pd:
-                ctrl_out = self.compute_control_output(t, q, u, Md=Md)
-                tau_ctrl = ctrl_out.tau_total
+            ctrl_out = self.get_control_output(t, q, u, Md=Md)
+            tau_ctrl = ctrl_out.tau_total
 
+            if tau_ctrl != 0.0:
                 # distribute control torque using weights
                 self.torque_vals += tau_ctrl * self.torque_weights
 

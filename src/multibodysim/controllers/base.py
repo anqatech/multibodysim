@@ -11,8 +11,7 @@ class ControlOutput:
     @property
     def tau_total(self) -> float:
         return self.tau_ff + self.tau_fb
-
-
+    
 class AttitudeController(Protocol):
     def reset(self) -> None: ...
     def compute(

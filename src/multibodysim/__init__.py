@@ -8,6 +8,7 @@ from .flexible.flexible_symbolic_model import FlexibleSymbolicDynamics
 from .flexible.flexible_simulator import FlexibleSimulator
 from .flexible.flexible_ns_dynamics import FlexibleNonSymmetricDynamics
 from .flexible.flexible_ns_simulator import FlexibleNonSymmetricSimulator
+from .controllers.pd_attitude import PlanarAttitudeController
 
 
 __version__ = "0.1.0"
