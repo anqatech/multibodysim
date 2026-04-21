@@ -6,7 +6,7 @@ from ..controllers.base import AttitudeController, ControlOutput
 
 
 class FlexibleNonSymmetricSimulator:
-    def __init__(self, config, controller: AttitudeController | None = None):
+    def __init__(self, config):
         self.config = config
         
         # ---------- Create symbolic dynamics model ---------- 
@@ -22,9 +22,6 @@ class FlexibleNonSymmetricSimulator:
 
         # ---------- Plant view for controllers ----------
         self.plant_view = FlexibleNSPlantView(self.dynamics, self.p_vals)
-
-        # ---------- Optional external controller ----------
-        self.controller = controller        
 
         # ---------- Initialize results storage ---------- 
         self.results = None
