@@ -53,6 +53,12 @@ class FlexibleNonSymmetricSimulator:
 
     def set_controller(self, controller: AttitudeController | None):
         self.controller = controller
+
+        if controller is not None:
+            # Disable legacy internal controllers
+            self.use_attitude_pd = False
+            self.use_nadir_pd = False
+            self.use_input_shaping = False
     
     def set_attitude_manoeuver(self, theta_target, theta_dot_target, Kp, Kd, Tr, omega, zeta, shaping_flag):
         self.theta_target      = theta_target
