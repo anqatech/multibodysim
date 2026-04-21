@@ -23,8 +23,9 @@ class FlexibleNonSymmetricSimulator:
         # ---------- Plant view for controllers ----------
         self.plant_view = FlexibleNSPlantView(self.dynamics, self.p_vals)
 
-        # ---------- Initialize results storage ---------- 
+        # ------------- Initialisations -------------
         self.results = None
+        self.controller = None
 
     def set_controller(self, controller: AttitudeController | None):
         self.controller = controller
