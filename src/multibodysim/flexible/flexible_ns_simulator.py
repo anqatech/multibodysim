@@ -1,7 +1,6 @@
 import numpy as np
 from scipy.integrate import solve_ivp
 from .flexible_ns_dynamics import FlexibleNonSymmetricDynamics
-from ..inputshaping.zv_input_shaping import InputShaper
 from ..controllers.plant_view import FlexibleNSPlantView
 from ..controllers.base import AttitudeController, ControlOutput
 
@@ -27,162 +26,15 @@ class FlexibleNonSymmetricSimulator:
         # ---------- Optional external controller ----------
         self.controller = controller        
 
-        # --------- PD attitude control settings ---------
-        self.use_attitude_pd    = False        # flag
-        self.theta_target       = 0.0          # desired bus angle [rad]
-        self.theta_dot_target   = 0.0          # desired bus angular velocity [rad/s]
-        self.Kp                 = 0.0          # Proportional gain
-        self.Kd                 = 0.0          # Derivative gain
-
-        # --------- Input Shaping settings ---------
-        self.use_input_shaping = False
-        self.shaper = None
-        self.manoeuvre_start_time = None
-        self.theta_start = None
-        self.theta_final = None
-        self.delta_theta = None
-        self.Tr = 0.0
-        
-        # ---- Nadir pointing control (LVLH tracking) ----
-        self.use_nadir_pd = False
-        self.Kp_nadir = 0.0
-        self.Kd_nadir = 0.0
-
         # ---------- Initialize results storage ---------- 
         self.results = None
 
     def set_controller(self, controller: AttitudeController | None):
         self.controller = controller
 
-        if controller is not None:
-            # Disable legacy internal controllers
-            self.use_attitude_pd = False
-            self.use_nadir_pd = False
-            self.use_input_shaping = False
-    
-    def set_attitude_manoeuver(self, theta_target, theta_dot_target, Kp, Kd, Tr, omega, zeta, shaping_flag):
-        self.theta_target      = theta_target
-        self.theta_dot_target  = theta_dot_target
-        self.Kp                = Kp
-        self.Kd                = Kd
-        self.use_attitude_pd   = True
-
-        self.set_input_shaping(omega, zeta, Tr, shaping_flag)
-
-    def set_nadir_pointing(self, Kp, Kd):
-        self.Kp_nadir = float(Kp)
-        self.Kd_nadir = float(Kd)
-
-        self.use_nadir_pd = True
-        self.use_attitude_pd = False      # avoid conflicting controllers
-        self.use_input_shaping = False    # recommended for tracking
-
-    @staticmethod
-    def wrap_to_domain_minus_pi_pi(angle):
-        return (angle + np.pi) % (2*np.pi) - np.pi
-    
-    def smooth_step_5th_order(self, t, Tr):
-        # return foes from 0 to 1 with zero velocity and zero acceleration at endpoints
-        if t <= 0.0: return 0.0
-        if t >= Tr:  return 1.0
-        s = t/Tr
-        return 10*s**3 - 15*s**4 + 6*s**5
-
-    def derivative_smooth_step_5th_order(self, t, Tr):
-        # derivative of smooth_step_5th_order
-        if t <= 0.0: return 0.0
-        if t >= Tr:  return 0.0
-        s = t/Tr
-        return (30*s**2 - 60*s**3 + 30*s**4) / Tr
-    
-    def second_derivative_smooth_step_5th_order(self, t, Tr):
-        if t <= 0.0 or t >= Tr:
-            return 0.0
-        s = t / Tr
-        return (60*s - 180*s**2 + 120*s**3) / (Tr**2)
-
-    def set_input_shaping(self, omega, zeta, Tr, shaping_flag):
-        self.shaper = InputShaper.zvd(omega=omega, zeta=zeta)
-        self.Tr = float(Tr)
-        self.use_input_shaping = shaping_flag
-
-    def compute_control_tau(self, t, q, u, Md=None):
-        tau_ff = 0.0
-        tau_pd = 0.0
-
-        # ---- attitude PD ----
-        if self.use_attitude_pd:
-            theta = self.plant_view.theta(q)
-            theta_dot = self.plant_view.theta_dot(u)
-
-            if self.manoeuvre_start_time is None:
-                self.manoeuvre_start_time = t
-                self.theta_start = theta
-                self.theta_final = self.theta_target
-                self.delta_theta = self.theta_final - self.theta_start
-
-            def raw_theta_command(time_command):
-                tau = time_command - self.manoeuvre_start_time
-                return self.theta_start + self.delta_theta * self.smooth_step_5th_order(tau, self.Tr)
-
-            def raw_theta_dot_command(time_command):
-                tau = time_command - self.manoeuvre_start_time
-                return self.delta_theta * self.derivative_smooth_step_5th_order(tau, self.Tr)
-
-            if self.use_input_shaping and (self.shaper is not None):
-                theta_ref     = self.shaper.shape(t, raw_theta_command)
-                theta_dot_ref = self.shaper.shape(t, raw_theta_dot_command)
-            else:
-                theta_ref     = raw_theta_command(t)
-                theta_dot_ref = raw_theta_dot_command(t)
-
-            err     = theta_ref     - theta
-            err_dot = theta_dot_ref - theta_dot
-
-            tau_ff = 0.0
-            tau_pd = self.Kp * err + self.Kd * err_dot
-
-        # ---- nadir PD (optionally overrides attitude PD if both enabled) ----
-        if self.use_nadir_pd:
-            theta = self.plant_view.theta(q)
-            theta_dot = self.plant_view.theta_dot(u)
-
-            if Md is None:
-                raise ValueError("Nadir PD requested but Md not provided to compute_control_tau().")
-
-            J_instant = self.plant_view.J_theta(Md)
-
-            rGx, rGy, vGx, vGy = self.plant_view.com_state(q, u)
-
-            theta_k   = np.arctan2(-rGy, -rGx)
-            theta_ref = theta_k - 0.5*np.pi
-
-            h  = rGx*vGy - rGy*vGx
-            r2 = rGx*rGx + rGy*rGy
-
-            theta_dot_ref = h / r2
-            r    = np.sqrt(r2)
-            rdot = (rGx*vGx + rGy*vGy) / r
-            theta_ddot_ref = -2.0 * h * rdot / (r**3)
-
-            err     = self.wrap_to_domain_minus_pi_pi(theta_ref - theta)
-            err_dot = theta_dot_ref - theta_dot
-
-            tau_ff = J_instant * theta_ddot_ref
-            tau_pd = self.Kp_nadir * err + self.Kd_nadir * err_dot
-
-        return tau_ff, tau_pd
-
-    def compute_control_output(self, t, q, u, Md=None) -> ControlOutput:
-        tau_ff, tau_pd = self.compute_control_tau(t, q, u, Md=Md)
-        return ControlOutput(tau_ff=float(tau_ff), tau_fb=float(tau_pd))
-    
     def get_control_output(self, t, q, u, Md=None) -> ControlOutput:
         if self.controller is not None:
             return self.controller.compute(t, q, u, Md=Md)
-
-        if self.use_attitude_pd or self.use_nadir_pd:
-            return self.compute_control_output(t, q, u, Md=Md)
 
         return ControlOutput()
 
@@ -347,9 +199,9 @@ class FlexibleNonSymmetricSimulator:
 
             # Effective inertia for the attitude DOF
             J_eff[k] = np.abs(Md[theta_index, theta_index])
-            tau_ff_k, tau_pd_k = self.compute_control_tau(tk, qk, uk, Md=Md)
-            tau_ff[k] = tau_ff_k
-            tau_pd[k] = tau_pd_k
+            ctrl_out = self.get_control_output(tk, qk, uk, Md=Md)
+            tau_ff[k] = ctrl_out.tau_ff
+            tau_pd[k] = ctrl_out.tau_fb
 
             # --- COM position/velocity diagnostics ---
             xG, yG = self.dynamics.rG_func(qk, uk, self.p_vals)

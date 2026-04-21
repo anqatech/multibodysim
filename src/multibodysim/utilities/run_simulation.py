@@ -2,11 +2,16 @@ import numpy as np
 import orjson, json
 from pathlib import Path
 from multibodysim import FlexibleNonSymmetricSimulator
+from multibodysim import PlanarAttitudeController
 
 
-config = orjson.loads(Path(
-    "/Users/jalalelhazzat/Documents/Packages/configuration/flexible/Keplerian-Orbit/kepler_orbit_mode_1_bodies_7_conf.json"
-).read_bytes())
+conf_directory  = "/Users/jalalelhazzat/Documents/Packages/configuration/flexible/PD-Control/"
+conf_filename   = "kepler_orbit_mode_1_bodies_3_conf.json"
+
+config_path = Path(conf_directory) / conf_filename
+with open(config_path, 'rb') as f:
+    config = orjson.loads(f.read())
+
 sim = FlexibleNonSymmetricSimulator(config)
 
 # ----------------------------------------------------------------------
@@ -22,22 +27,44 @@ Kd = 2 * zeta_cl * J_eff * omega_cl
 
 print(f"Kp = {Kp:.1f}, Kd = {Kd:.1f}\n")
 
-sim.set_nadir_pointing(Kp=Kp, Kd=Kd)
-
 # # ----------------------------------------------------------------------
-# # -------------------------- Input Shaping Setup --------------------------
+# # ------------------------- Input Shaping Setup ------------------------
 # # ----------------------------------------------------------------------
 
-# zeta  = 0.012
-# omega = 18.35
+zeta  = 0.012
+omega = 18.35
 
-# omega_d = omega * np.sqrt(1 - zeta**2)
-# Tr = 3 * (2 * np.pi / omega_d) 
+omega_d = omega * np.sqrt(1 - zeta**2)
+Tr = 3 * (2 * np.pi / omega_d) 
 
+print(f"Input Shaping Zeta = {zeta:.6f}, Omega = {omega:.4f}, Omega_d = {omega_d:.4f}, Tr = {Tr:.3f}\n")
+
+# ----------------------------------------------------------------------
+# ---------------------------- Angle Target ----------------------------
+# ----------------------------------------------------------------------
+
+theta0            = config["q_initial"]["q3"]
+theta_target      = theta0 + np.deg2rad(30.0)
+theta_dot_target  = 0.0
 
 # # ----------------------------------------------------------------------
 # # ----------------------------------------------------------------------
 
-# sim.set_attitude_manoeuver(theta_target, theta_dot_target, Kp, Kd, omega, zeta, Tr, shaping_flag=False)
+ctrl = PlanarAttitudeController(sim.plant_view)
+ctrl.configure_attitude_pd(
+    theta_target=theta_target,
+    theta_dot_target=theta_dot_target,
+    Kp=Kp,
+    Kd=Kd,
+    Tr=Tr,
+    use_input_shaping=False,
+    shaper=None,
+    omega=omega,
+    zeta=zeta,
+)
+sim.set_controller(ctrl)
+
+# # ----------------------------------------------------------------------
+# # ----------------------------------------------------------------------
 
 results = sim.run_simulation(eval_flag=False)
