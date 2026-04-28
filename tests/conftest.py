@@ -12,11 +12,13 @@ CONFIG_DIR = Path(
 )
 
 
-def _load_config(filename: str) -> dict:
-    config_path = CONFIG_DIR / filename
-    if not config_path.exists():
-        raise FileNotFoundError(f"Missing test config: {config_path}")
-    return json.loads(config_path.read_text())
+def _load_config(*filenames: str) -> dict:
+    for filename in filenames:
+        config_path = CONFIG_DIR / filename
+        if config_path.exists():
+            return json.loads(config_path.read_text())
+    names = ", ".join(filenames)
+    raise FileNotFoundError(f"Missing test config. Tried: {names}")
 
 
 def _make_short_test_config(config: dict) -> dict:
@@ -28,12 +30,18 @@ def _make_short_test_config(config: dict) -> dict:
 
 @pytest.fixture(scope="session")
 def gg_off_config() -> dict:
-    return _load_config("GG_off_mode_1_bodies_3_conf.json")
+    return _load_config(
+        "GG_off_mode_1_flex_init_0_bodies_3_conf.json",
+        "GG_off_mode_1_bodies_3_conf.json",
+    )
 
 
 @pytest.fixture(scope="session")
 def gg_on_config() -> dict:
-    return _load_config("GG_on_mode_1_bodies_3_conf.json")
+    return _load_config(
+        "GG_on_mode_1_flex_init_0_bodies_3_conf.json",
+        "GG_on_mode_1_bodies_3_conf.json",
+    )
 
 
 @pytest.fixture

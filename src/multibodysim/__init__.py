@@ -7,6 +7,7 @@ from .beam.clamped_clamped_beam import ClampedClampedBeam
 from .flexible.flexible_ns_dynamics import FlexibleNonSymmetricDynamics
 from .flexible.flexible_ns_simulator import FlexibleNonSymmetricSimulator
 from .controllers.pd_attitude import PlanarAttitudeController
+from .controllers.metrics import attitude_control_metrics
 
 
 __version__ = "0.1.0"
