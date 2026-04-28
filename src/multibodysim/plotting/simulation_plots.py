@@ -108,3 +108,44 @@ def plot_flexible_motion(results, eta_keys=None, zeta_keys=None, figsize=(10, 8)
         plt.show()
 
     return fig, axes
+
+def nadir_angle_error(results, axis="x"):
+    rG = np.column_stack((results["rG_x"], results["rG_y"]))
+    rnorm = np.linalg.norm(rG, axis=1, keepdims=True)
+
+    if np.any(rnorm == 0.0):
+        raise ValueError("Zero COM radius encountered while computing nadir direction.")
+
+    k_hat = -rG / rnorm
+    alpha_nadir = np.arctan2(k_hat[:, 1], k_hat[:, 0])
+
+    theta = results["q3"]
+
+    if axis == "x":
+        alpha_body = theta
+    elif axis == "y":
+        alpha_body = theta + np.pi / 2.0
+    else:
+        raise ValueError("axis must be 'x' or 'y'.")
+
+    return wrap_to_pi(alpha_body - alpha_nadir)
+
+def plot_nadir_angle_error(results, axis="x", figsize=(10, 3), show=True):
+    ts = results["time"]
+    delta = nadir_angle_error(results, axis=axis)
+
+    fig, ax = plt.subplots(1, 1, figsize=figsize)
+
+    ax.plot(ts, np.rad2deg(delta))
+    ax.set_xlabel("Time [s]")
+    ax.set_ylabel(f"$\\delta_{axis}$ [deg]")
+    ax.set_title(f"Body {axis}-axis relative to nadir")
+    ax.grid(True)
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{int(x):,}"))
+
+    fig.tight_layout()
+
+    if show:
+        plt.show()
+
+    return fig, ax
