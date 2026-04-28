@@ -1,6 +1,6 @@
 # --- Python bytecode & caches ---
 __pycache__/
-# *.py[cod]
+*.py[cod]
 # *$py.class
 # .pyre/
 # .pytype/
@@ -19,13 +19,13 @@ __pycache__/
 # !.vscode/tasks.json
 
 # --- Virtual envs ---
-# .venv/
-# venv/
+.venv/
+venv/
 # .env/            # virtualenv named ".env", not your dotenv file
 
 # --- Build / packaging ---
-# build/
-# dist/
+build/
+dist/
 *.egg-info/
 # .eggs/
 # pip-wheel-metadata/
@@ -36,7 +36,6 @@ __pycache__/
 .coverage
 .coverage.*
 htmlcov/
-.coverage.*
 
 # --- Typing / lint caches ---
 # .mypy_cache/
@@ -45,14 +44,14 @@ htmlcov/
 # .dmypy.json
 
 # --- Notebooks ---
-# .ipynb_checkpoints/
+.ipynb_checkpoints/
 
 # --- Docs (Sphinx/MkDocs) ---
 # docs/_build/
 # site/
 
 # JetBrains (if someone opens in PyCharm)
-# .idea/
+.idea/
 
 # --- Env/secrets (keep a template) ---
 # .env
