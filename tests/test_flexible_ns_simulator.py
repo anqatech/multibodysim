@@ -19,6 +19,65 @@ def test_example_config_builds_simulator_and_initial_conditions(gg_off_short_con
     assert np.all(np.isfinite(x0))
 
 
+def test_default_solver_absolute_tolerances_match_existing_values(gg_off_short_config: dict):
+    simulator = FlexibleNonSymmetricSimulator(gg_off_short_config)
+
+    atol = simulator._build_absolute_tolerances(gg_off_short_config["sim_parameters"])
+
+    assert np.allclose(
+        atol,
+        np.array(
+            [
+                1e-2,  # q1
+                1e-2,  # q2
+                1e-8,  # q3
+                1e-6,  # eta1_1
+                1e-6,  # eta2_1
+                1e-3,  # u1
+                1e-3,  # u2
+                1e-9,  # u3
+                1e-6,  # zeta1_1
+                1e-6,  # zeta2_1
+            ]
+        ),
+    )
+
+
+def test_solver_absolute_tolerances_are_configurable(gg_off_short_config: dict):
+    gg_off_short_config["sim_parameters"].update(
+        {
+            "state_atol": {
+                "q3": 1e-7,
+                "u3": 1e-8,
+                "eta": 1e-5,
+                "zeta": 1e-4,
+                "eta2_1": 2e-5,
+            }
+        }
+    )
+    simulator = FlexibleNonSymmetricSimulator(gg_off_short_config)
+
+    atol = simulator._build_absolute_tolerances(gg_off_short_config["sim_parameters"])
+
+    assert np.allclose(
+        atol,
+        np.array(
+            [
+                1e-2,  # q1
+                1e-2,  # q2
+                1e-7,  # q3
+                1e-5,  # eta1_1 from eta family override
+                2e-5,  # eta2_1 from exact-state override
+                1e-3,  # u1
+                1e-3,  # u2
+                1e-8,  # u3
+                1e-4,  # zeta1_1
+                1e-4,  # zeta2_1
+            ]
+        ),
+    )
+
+
 @pytest.mark.parametrize(
     ("config_fixture_name", "gravity_gradient_expected"),
     [

@@ -6,6 +6,19 @@ from ..controllers.base import AttitudeController, ControlOutput
 
 
 class FlexibleNonSymmetricSimulator:
+    DEFAULT_ABSOLUTE_TOLERANCES = {
+        "q1": 1e-2,
+        "q2": 1e-2,
+        "q3": 1e-8,
+        "eta": 1e-6,
+        "u1": 1e-3,
+        "u2": 1e-3,
+        "u3": 1e-9,
+        "zeta": 1e-6,
+        "q_default": 1e-6,
+        "u_default": 1e-6,
+    }
+
     def __init__(self, config):
         self.config = config
         
@@ -73,6 +86,35 @@ class FlexibleNonSymmetricSimulator:
     def setup_initial_conditions(self):
         return self.dynamics.get_initial_conditions()
 
+    def _absolute_tolerance_for_name(self, name, tolerance_map, default_key):
+        if name in tolerance_map:
+            return tolerance_map[name]
+
+        if name.startswith("eta"):
+            return tolerance_map["eta"]
+
+        if name.startswith("zeta"):
+            return tolerance_map["zeta"]
+
+        return tolerance_map[default_key]
+
+    def _build_absolute_tolerances(self, sim_params):
+        tolerance_map = self.DEFAULT_ABSOLUTE_TOLERANCES.copy()
+
+        tolerance_map.update(sim_params.get("state_atol", {}))
+
+        atol = []
+
+        for q_sym in self.dynamics.q:
+            name = q_sym.name
+            atol.append(self._absolute_tolerance_for_name(name, tolerance_map, "q_default"))
+
+        for u_sym in self.dynamics.u:
+            name = u_sym.name
+            atol.append(self._absolute_tolerance_for_name(name, tolerance_map, "u_default"))
+
+        return np.array(atol, dtype=float)
+
     def run_simulation(self, eval_flag):
         # ---------- Get initial conditions ---------- 
         x0 = self.setup_initial_conditions()
@@ -87,38 +129,10 @@ class FlexibleNonSymmetricSimulator:
         t_eval = np.linspace(t_start, t_end, nb_timesteps)
         
         # ---------- Integration settings ---------- 
-        atol = []
-
-        # --- q states ---
-        for q_sym in self.dynamics.q:
-            name = q_sym.name
-
-            if name in ("q1", "q2"):
-                atol.append(1e-2)
-            elif name == "q3":
-                atol.append(1e-8)
-            elif name.startswith("eta"):
-                atol.append(1e-6)
-            else:
-                atol.append(1e-6)
-
-        # --- u states ---
-        for u_sym in self.dynamics.u:
-            name = u_sym.name
-
-            if name in ("u1", "u2"):
-                atol.append(1e-3)
-            elif name == "u3":
-                atol.append(1e-9)
-            elif name.startswith("zeta"):
-                atol.append(1e-6)
-            else:
-                atol.append(1e-6)
-
-        atol = np.array(atol)
+        atol = self._build_absolute_tolerances(sim_params)
 
         integration_options = {
-            "rtol": sim_params.get("rtol", 1e-6),
+            "rtol": sim_params.get("rtol", 1e-5),
             "atol": atol,
             "method": sim_params.get("method", "Radau"),
             # "max_step": sim_params.get("max_step", 5e-4)

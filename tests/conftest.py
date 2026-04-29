@@ -7,18 +7,21 @@ from pathlib import Path
 import pytest
 
 
-CONFIG_DIR = Path(
-    "/Users/jalalelhazzat/Documents/Packages/configuration/flexible/Best-Practices"
-)
+CONFIG_DIRS = [
+    Path("/Users/jalalelhazzat/Documents/Packages/configuration/flexible/Zero-Initial-Flexing"),
+    Path("/Users/jalalelhazzat/Documents/Packages/configuration/flexible/Best-Practices"),
+]
 
 
 def _load_config(*filenames: str) -> dict:
-    for filename in filenames:
-        config_path = CONFIG_DIR / filename
-        if config_path.exists():
-            return json.loads(config_path.read_text())
+    for config_dir in CONFIG_DIRS:
+        for filename in filenames:
+            config_path = config_dir / filename
+            if config_path.exists():
+                return json.loads(config_path.read_text())
     names = ", ".join(filenames)
-    raise FileNotFoundError(f"Missing test config. Tried: {names}")
+    dirs = ", ".join(str(config_dir) for config_dir in CONFIG_DIRS)
+    raise FileNotFoundError(f"Missing test config. Tried: {names} in {dirs}")
 
 
 def _make_short_test_config(config: dict) -> dict:
