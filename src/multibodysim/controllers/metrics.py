@@ -70,3 +70,26 @@ def attitude_control_metrics(
             )
 
     return metrics
+
+
+def control_metrics_table(metrics: dict[str, float]) -> tuple[list[tuple[str, str, float]], list[str]]:
+    """Convert control metrics to display-ready rows and column names."""
+    labels = {
+        "rise_time_10_90_s": ("Rise time 10-90%", "s"),
+        "settling_time_s": ("Settling time", "s"),
+        "overshoot_deg": ("Overshoot", "deg"),
+        "overshoot_percent": ("Overshoot", "%"),
+        "steady_state_error_deg": ("Steady-state error", "deg"),
+        "peak_u3_deg_s": ("Peak angular velocity", "deg/s"),
+        "peak_tau_PD": ("Peak PD torque", "N.m"),
+        "rms_tau_PD": ("RMS PD torque", "N.m"),
+        "impulse_abs_tau_PD": ("PD torque impulse", "N.m.s"),
+        "energy_tau_PD_sq": ("PD torque squared integral", "N^2.m^2.s"),
+    }
+
+    rows = []
+    for key, value in metrics.items():
+        metric, unit = labels.get(key, (key, "-"))
+        rows.append((metric, unit, value))
+
+    return rows, ["Metric", "Unit", "Value"]

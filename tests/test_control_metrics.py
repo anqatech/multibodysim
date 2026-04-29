@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from multibodysim import attitude_control_metrics
+from multibodysim import attitude_control_metrics, control_metrics_table
 
 
 def test_attitude_control_metrics_for_simple_slew():
@@ -35,3 +35,18 @@ def test_attitude_control_metrics_for_simple_slew():
     assert np.isclose(metrics["energy_tau_PD_sq"], 0.004)
     assert np.isclose(metrics["peak_eta1_1"], 1.0e-6)
     assert "post_Tr_rms_eta1_1" in metrics
+
+
+def test_control_metrics_table_formats_known_labels():
+    metrics = {
+        "rise_time_10_90_s": 10.0,
+        "peak_tau_PD": 0.2,
+        "custom_metric": 3.0,
+    }
+
+    rows, columns = control_metrics_table(metrics)
+
+    assert columns == ["Metric", "Unit", "Value"]
+    assert rows[0] == ("Rise time 10-90%", "s", 10.0)
+    assert rows[1] == ("Peak PD torque", "N.m", 0.2)
+    assert rows[2] == ("custom_metric", "-", 3.0)
