@@ -149,3 +149,26 @@ def plot_nadir_angle_error(results, axis="x", figsize=(10, 3), show=True):
         plt.show()
 
     return fig, ax
+
+def plot_control_torques(results, figsize=(10, 5), show=True):
+    ts = results["time"]
+
+    fig, axes = plt.subplots(2, 1, sharex=True, figsize=figsize)
+
+    axes[0].plot(ts, results["tau_PD"])
+    axes[0].set_ylabel("PD torque [N.m]")
+    axes[0].legend(["tau_PD"])
+    axes[0].grid(True)
+
+    axes[1].plot(ts, results["tau_FF"])
+    axes[1].set_ylabel("FF torque [N.m]")
+    axes[1].set_xlabel("Time [s]")
+    axes[1].legend(["tau_FF"])
+    axes[1].grid(True)
+
+    fig.tight_layout()
+
+    if show:
+        plt.show()
+
+    return fig, axes
