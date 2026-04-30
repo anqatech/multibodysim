@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from multibodysim import simulation_diagnostics, simulation_diagnostics_table
+from multibodysim.analysis import simulation_diagnostics, simulation_diagnostics_table
 
 
 def test_simulation_diagnostics_computes_attitude_and_flexible_metrics():

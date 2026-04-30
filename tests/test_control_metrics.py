@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from multibodysim import attitude_control_metrics, control_metrics_table
+from multibodysim.analysis import attitude_control_metrics, control_metrics_table
 
 
 def test_attitude_control_metrics_for_simple_slew():
