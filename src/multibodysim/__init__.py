@@ -8,6 +8,7 @@ from .flexible.flexible_ns_dynamics import FlexibleNonSymmetricDynamics
 from .flexible.flexible_ns_simulator import FlexibleNonSymmetricSimulator
 from .controllers.pd_attitude import PlanarAttitudeController
 from .controllers.metrics import attitude_control_metrics, control_metrics_table
+from .analysis.simulation_metrics import simulation_diagnostics, simulation_diagnostics_table
 
 
 __version__ = "0.1.0"

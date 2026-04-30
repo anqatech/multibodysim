@@ -20,6 +20,7 @@ def test_example_config_builds_simulator_and_initial_conditions(gg_off_short_con
 
 
 def test_default_solver_absolute_tolerances_match_existing_values(gg_off_short_config: dict):
+    gg_off_short_config["sim_parameters"].pop("state_atol", None)
     simulator = FlexibleNonSymmetricSimulator(gg_off_short_config)
 
     atol = simulator._build_absolute_tolerances(gg_off_short_config["sim_parameters"])
