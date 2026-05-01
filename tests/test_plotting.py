@@ -53,6 +53,20 @@ def test_plot_states_scales_positions_and_wraps_angle():
     plt.close(fig)
 
 
+def test_plot_states_accepts_data_slice():
+    fig, axes = plot_states_q1_q2_q3_motion(
+        motion_results(),
+        show=False,
+        data_slice=slice(1, None),
+    )
+
+    assert np.allclose(axes[0].lines[0].get_xdata(), np.array([1_000.0, 2_000.0]))
+    assert np.allclose(axes[0].lines[0].get_ydata(), np.array([1.0, 2.0]))
+    assert np.allclose(axes[2].lines[0].get_ydata(), np.array([90.0, -180.0]))
+
+    plt.close(fig)
+
+
 def test_plot_speeds_converts_angular_speed_to_degrees():
     fig, axes = plot_speeds_u1_u2_u3_motion(motion_results(), show=False)
 
@@ -61,6 +75,19 @@ def test_plot_speeds_converts_angular_speed_to_degrees():
     assert axes[2].get_ylabel() == "Angular Velocity [deg/s]"
     assert axes[2].get_xlabel() == "Time [s]"
     assert np.allclose(axes[2].lines[0].get_ydata(), np.array([0.0, 1.0, 2.0]))
+
+    plt.close(fig)
+
+
+def test_plot_speeds_accepts_data_slice():
+    fig, axes = plot_speeds_u1_u2_u3_motion(
+        motion_results(),
+        show=False,
+        data_slice=slice(None, 2),
+    )
+
+    assert np.allclose(axes[0].lines[0].get_xdata(), np.array([0.0, 1_000.0]))
+    assert np.allclose(axes[2].lines[0].get_ydata(), np.array([0.0, 1.0]))
 
     plt.close(fig)
 
@@ -83,6 +110,26 @@ def test_plot_flexible_motion_discovers_eta_and_zeta_keys():
     ]
     assert axes[0].get_ylabel() == "Modal Amplitude [-]"
     assert axes[-1].get_ylabel() == "Modal Velocity [-]"
+
+    plt.close(fig)
+
+
+def test_plot_flexible_motion_accepts_data_slice():
+    results = {
+        "time": np.array([0.0, 1.0, 2.0]),
+        "eta1_1": np.array([0.0, 0.1, 0.2]),
+    }
+
+    fig, axes = plot_flexible_motion(
+        results,
+        eta_keys=["eta1_1"],
+        zeta_keys=[],
+        show=False,
+        data_slice=slice(1, None),
+    )
+
+    assert np.allclose(axes[0].lines[0].get_xdata(), np.array([1.0, 2.0]))
+    assert np.allclose(axes[0].lines[0].get_ydata(), np.array([0.1, 0.2]))
 
     plt.close(fig)
 
@@ -135,6 +182,20 @@ def test_plot_nadir_angle_error_returns_labeled_axis():
     plt.close(fig)
 
 
+def test_plot_nadir_angle_error_accepts_data_slice():
+    fig, ax = plot_nadir_angle_error(
+        motion_results(),
+        axis="y",
+        show=False,
+        data_slice=slice(1, None),
+    )
+
+    assert np.allclose(ax.lines[0].get_xdata(), np.array([1_000.0, 2_000.0]))
+    assert np.allclose(ax.lines[0].get_ydata(), np.array([-90.0, -90.0]))
+
+    plt.close(fig)
+
+
 def test_plot_control_torques_returns_figure_and_axes():
     results = {
         "time": np.array([0.0, 1.0, 2.0]),
@@ -148,5 +209,21 @@ def test_plot_control_torques_returns_figure_and_axes():
     assert axes[0].get_ylabel() == "PD torque [N.m]"
     assert axes[1].get_ylabel() == "FF torque [N.m]"
     assert axes[1].get_xlabel() == "Time [s]"
+
+    plt.close(fig)
+
+
+def test_plot_control_torques_accepts_data_slice():
+    results = {
+        "time": np.array([0.0, 1.0, 2.0]),
+        "tau_PD": np.array([0.0, 0.1, 0.2]),
+        "tau_FF": np.array([1.0, 1.1, 1.2]),
+    }
+
+    fig, axes = plot_control_torques(results, show=False, data_slice=slice(None, 2))
+
+    assert np.allclose(axes[0].lines[0].get_xdata(), np.array([0.0, 1.0]))
+    assert np.allclose(axes[0].lines[0].get_ydata(), np.array([0.0, 0.1]))
+    assert np.allclose(axes[1].lines[0].get_ydata(), np.array([1.0, 1.1]))
 
     plt.close(fig)

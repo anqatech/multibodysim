@@ -11,11 +11,15 @@ def _format_large_number_axes(ax):
     ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{int(x):,}"))
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda y, _: f"{int(y):,}"))
 
-def plot_states_q1_q2_q3_motion(results, figsize=(10, 5), show=True):
-    ts = results["time"]
-    q1_km = results["q1"] / 1e3
-    q2_km = results["q2"] / 1e3
-    q3_wrapped = wrap_to_pi(results["q3"])
+def _as_plot_slice(data_slice):
+    return slice(None) if data_slice is None else data_slice
+
+def plot_states_q1_q2_q3_motion(results, figsize=(10, 5), show=True, data_slice=None):
+    plot_slice = _as_plot_slice(data_slice)
+    ts = results["time"][plot_slice]
+    q1_km = results["q1"][plot_slice] / 1e3
+    q2_km = results["q2"][plot_slice] / 1e3
+    q3_wrapped = wrap_to_pi(results["q3"][plot_slice])
 
     fig, axes = plt.subplots(3, 1, sharex=True, figsize=figsize)
 
@@ -43,20 +47,21 @@ def plot_states_q1_q2_q3_motion(results, figsize=(10, 5), show=True):
 
     return fig, axes
 
-def plot_speeds_u1_u2_u3_motion(results, figsize=(10, 5), show=True):
-    ts = results["time"]
+def plot_speeds_u1_u2_u3_motion(results, figsize=(10, 5), show=True, data_slice=None):
+    plot_slice = _as_plot_slice(data_slice)
+    ts = results["time"][plot_slice]
 
     fig, axes = plt.subplots(3, 1, sharex=True, figsize=figsize)
 
-    axes[0].plot(ts, results["u1"])
+    axes[0].plot(ts, results["u1"][plot_slice])
     axes[0].legend(["u1"])
     axes[0].set_ylabel("Velocity [m/s]")
 
-    axes[1].plot(ts, results["u2"])
+    axes[1].plot(ts, results["u2"][plot_slice])
     axes[1].legend(["u2"])
     axes[1].set_ylabel("Velocity [m/s]")
 
-    axes[2].plot(ts, np.rad2deg(results["u3"]))
+    axes[2].plot(ts, np.rad2deg(results["u3"][plot_slice]))
     axes[2].legend(["u3"])
     axes[2].set_ylabel("Angular Velocity [deg/s]")
     axes[2].set_xlabel("Time [s]")
@@ -71,8 +76,16 @@ def plot_speeds_u1_u2_u3_motion(results, figsize=(10, 5), show=True):
 
     return fig, axes
 
-def plot_flexible_motion(results, eta_keys=None, zeta_keys=None, figsize=(10, 8), show=True):
-    ts = results["time"]
+def plot_flexible_motion(
+    results,
+    eta_keys=None,
+    zeta_keys=None,
+    figsize=(10, 8),
+    show=True,
+    data_slice=None,
+):
+    plot_slice = _as_plot_slice(data_slice)
+    ts = results["time"][plot_slice]
 
     if eta_keys is None:
         eta_keys = sorted([k for k in results.keys() if k.startswith("eta")])
@@ -92,7 +105,7 @@ def plot_flexible_motion(results, eta_keys=None, zeta_keys=None, figsize=(10, 8)
         axes = [axes]
 
     for ax, key in zip(axes, keys):
-        ax.plot(ts, results[key])
+        ax.plot(ts, results[key][plot_slice])
         ax.legend([key])
 
         if key.startswith("eta"):
@@ -130,9 +143,10 @@ def nadir_angle_error(results, axis="x"):
 
     return wrap_to_pi(alpha_body - alpha_nadir)
 
-def plot_nadir_angle_error(results, axis="x", figsize=(10, 3), show=True):
-    ts = results["time"]
-    delta = nadir_angle_error(results, axis=axis)
+def plot_nadir_angle_error(results, axis="x", figsize=(10, 3), show=True, data_slice=None):
+    plot_slice = _as_plot_slice(data_slice)
+    ts = results["time"][plot_slice]
+    delta = nadir_angle_error(results, axis=axis)[plot_slice]
 
     fig, ax = plt.subplots(1, 1, figsize=figsize)
 
@@ -150,17 +164,18 @@ def plot_nadir_angle_error(results, axis="x", figsize=(10, 3), show=True):
 
     return fig, ax
 
-def plot_control_torques(results, figsize=(10, 5), show=True):
-    ts = results["time"]
+def plot_control_torques(results, figsize=(10, 5), show=True, data_slice=None):
+    plot_slice = _as_plot_slice(data_slice)
+    ts = results["time"][plot_slice]
 
     fig, axes = plt.subplots(2, 1, sharex=True, figsize=figsize)
 
-    axes[0].plot(ts, results["tau_PD"])
+    axes[0].plot(ts, results["tau_PD"][plot_slice])
     axes[0].set_ylabel("PD torque [N.m]")
     axes[0].legend(["tau_PD"])
     axes[0].grid(True)
 
-    axes[1].plot(ts, results["tau_FF"])
+    axes[1].plot(ts, results["tau_FF"][plot_slice])
     axes[1].set_ylabel("FF torque [N.m]")
     axes[1].set_xlabel("Time [s]")
     axes[1].legend(["tau_FF"])
