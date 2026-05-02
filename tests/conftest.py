@@ -8,6 +8,10 @@ import pytest
 
 
 CONFIG_DIRS = [
+    Path(
+        "/Users/jalalelhazzat/Documents/Packages/configuration/flexible/"
+        "3-Parts-Spacecraft/Zero-Initial-Flexing"
+    ),
     Path("/Users/jalalelhazzat/Documents/Packages/configuration/flexible/Zero-Initial-Flexing"),
     Path("/Users/jalalelhazzat/Documents/Packages/configuration/flexible/Best-Practices"),
 ]
