@@ -83,8 +83,8 @@ class FlexibleNonSymmetricSimulator:
         
         return np.hstack((qd, ud))
 
-    def setup_initial_conditions(self):
-        return self.dynamics.get_initial_conditions()
+    def setup_initial_conditions(self, verbose=True):
+        return self.dynamics.get_initial_conditions(verbose=verbose)
 
     def _absolute_tolerance_for_name(self, name, tolerance_map, default_key):
         if name in tolerance_map:
@@ -115,9 +115,9 @@ class FlexibleNonSymmetricSimulator:
 
         return np.array(atol, dtype=float)
 
-    def run_simulation(self, eval_flag):
+    def run_simulation(self, eval_flag, verbose=True):
         # ---------- Get initial conditions ---------- 
-        x0 = self.setup_initial_conditions()
+        x0 = self.setup_initial_conditions(verbose=verbose)
         
         # ---------- Extract simulation parameters ---------- 
         sim_params = self.config["sim_parameters"]
@@ -138,9 +138,10 @@ class FlexibleNonSymmetricSimulator:
             # "max_step": sim_params.get("max_step", 5e-4)
         }
         
-        print(f"Starting simulation from t={t_start} to t={t_end}")
-        print(f"Integration method: {integration_options["method"]}")
-        print(f"Tolerances: rtol={integration_options["rtol"]}, atol={integration_options["atol"]}\n")
+        if verbose:
+            print(f"Starting simulation from t={t_start} to t={t_end}")
+            print(f"Integration method: {integration_options["method"]}")
+            print(f"Tolerances: rtol={integration_options["rtol"]}, atol={integration_options["atol"]}\n")
 
         # ---------- Integrate equations of motion ---------- 
         result = solve_ivp(
@@ -156,9 +157,10 @@ class FlexibleNonSymmetricSimulator:
         xs = np.transpose(result.y)
         ts = result.t
         
-        print(f"Simulation completed: {result.success}")
-        print(f"Message: {result.message}")
-        print(f"Number of function evaluations: {result.nfev}\n")
+        if verbose:
+            print(f"Simulation completed: {result.success}")
+            print(f"Message: {result.message}")
+            print(f"Number of function evaluations: {result.nfev}\n")
         
         def _name(sym):
             return str(getattr(sym, "func", sym))

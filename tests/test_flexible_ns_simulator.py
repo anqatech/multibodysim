@@ -106,3 +106,15 @@ def test_short_simulation_runs_for_example_configs(
     for key in ("q3", "u3", "eta1_1", "eta2_1", "J_eff", "rG_x", "rG_y"):
         assert key in results
         assert np.all(np.isfinite(results[key]))
+
+
+def test_short_simulation_can_run_quietly(
+    gg_off_short_config: dict,
+    capsys: pytest.CaptureFixture[str],
+):
+    simulator = FlexibleNonSymmetricSimulator(gg_off_short_config)
+
+    results = simulator.run_simulation(eval_flag=True, verbose=False)
+
+    assert results["success"] is True
+    assert capsys.readouterr().out == ""

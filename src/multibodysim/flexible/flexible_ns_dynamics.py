@@ -734,7 +734,7 @@ class FlexibleNonSymmetricDynamics:
 
         return torque_weights
 
-    def get_initial_conditions(self):
+    def get_initial_conditions(self, verbose=True):
         # ---------- Setup ---------- 
         x0 = np.zeros(2 * self.state_dimension)
         
@@ -896,32 +896,33 @@ class FlexibleNonSymmetricDynamics:
         x0[self.state_dimension] = u1_consistent
         x0[self.state_dimension+1] = u2_consistent
 
-        print("\nInitial conditions set (with momentum conservation):\n")
+        if verbose:
+            print("\nInitial conditions set (with momentum conservation):\n")
 
-        # --- Positions ---
-        pos_parts = [
-            f"q1={initial_states["q1"]:.3f}",
-            f"q2={initial_states["q2"]:.3f}",
-            f"q3={np.degrees(initial_states["q3"]):.3f}°",
-        ]
-        for body, fb in self.flexible_bodies.items():
-            for eta_sym in fb["eta_list"]:
-                name = str(eta_sym).replace("(t)", "")
-                pos_parts.append(f"{name}={initial_states[name]:.3f}")
-        
-        print("  Positions: " + ", ".join(pos_parts) + "\n")
-        
-        # --- Velocities ---
-        vel_parts = [
-            f"u1={u1_consistent:.6f}",
-            f"u2={u2_consistent:.6f}",
-            f"u3={initial_speeds["u3"]:.3f}",
-        ]
-        for body, fb in self.flexible_bodies.items():
-            for zeta_sym in fb["zeta_list"]:
-                name = str(zeta_sym).replace("(t)", "")
-                vel_parts.append(f"{name}={initial_speeds[name]:.3f}")
-        
-        print("  Velocities: " + ", ".join(vel_parts) + "\n")
+            # --- Positions ---
+            pos_parts = [
+                f"q1={initial_states["q1"]:.3f}",
+                f"q2={initial_states["q2"]:.3f}",
+                f"q3={np.degrees(initial_states["q3"]):.3f}°",
+            ]
+            for body, fb in self.flexible_bodies.items():
+                for eta_sym in fb["eta_list"]:
+                    name = str(eta_sym).replace("(t)", "")
+                    pos_parts.append(f"{name}={initial_states[name]:.3f}")
+            
+            print("  Positions: " + ", ".join(pos_parts) + "\n")
+            
+            # --- Velocities ---
+            vel_parts = [
+                f"u1={u1_consistent:.6f}",
+                f"u2={u2_consistent:.6f}",
+                f"u3={initial_speeds["u3"]:.3f}",
+            ]
+            for body, fb in self.flexible_bodies.items():
+                for zeta_sym in fb["zeta_list"]:
+                    name = str(zeta_sym).replace("(t)", "")
+                    vel_parts.append(f"{name}={initial_speeds[name]:.3f}")
+            
+            print("  Velocities: " + ", ".join(vel_parts) + "\n")
         
         return x0
