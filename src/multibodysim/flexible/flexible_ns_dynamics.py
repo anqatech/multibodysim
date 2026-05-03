@@ -17,9 +17,7 @@ class FlexibleNonSymmetricDynamics:
             self.body_names = config["body_names"]
             self.central_body = config["central_body"]
             self.body_type = config["body_type"]
-# ----------------------------------------------------------------------------------------------------
             self.enable_gravity_gradient = self.config["enable_gravity_gradient"]
-# ----------------------------------------------------------------------------------------------------
 
         except KeyError as e:
             raise KeyError(f"Missing config key: {e}")
@@ -179,15 +177,12 @@ class FlexibleNonSymmetricDynamics:
             self.flexible_bodies[body]["phi_mean_list"] = phi_mean_list
             self.flexible_bodies[body]["k_modal_list"]  = k_modal_list
 
-# ----------------------------------------------------------------------------------------------------
             phi_norm_list  = [beam.mode_shape_norm(nb_pts, mode=k+1) for k in range(n_modes)]
             phi_m1_list    = [beam.mode_shape_first_moment(nb_pts, mode=k+1) for k in range(n_modes)]
 
             self.flexible_bodies[body]["phi_norm_list"] = phi_norm_list
             self.flexible_bodies[body]["phi_m1_list"]   = phi_m1_list
-# ----------------------------------------------------------------------------------------------------
 
-# ----------------------------------------------------------------------------------------------------
     def _define_inertia_matrices(self):
         for body, fb_dict in self.flexible_bodies.items():
             eta_list      = fb_dict["eta_list"]
@@ -235,8 +230,6 @@ class FlexibleNonSymmetricDynamics:
             # (Ixx, Iyy, Izz, Ixy, Iyz, Ixz)
             Inertia_matrix = me.inertia(self.frames[body], I_bus, I_bus, 2 * I_bus, 0, 0, 0)
             self.rigid_bodies[body] = {"Inertia": Inertia_matrix}
-
-# ----------------------------------------------------------------------------------------------------
 
     def _get_offset_vector(self, parent, child):
         parent_type = self.body_type[parent]
@@ -553,7 +546,6 @@ class FlexibleNonSymmetricDynamics:
         for i in range(self.state_dimension):
             self.generalised_active_forces[i] += vG_partials[i].dot(F_g)
 
-# ----------------------------------------------------------------------------------------------------
         # ---- express local vertical in each body frame ----
         self.e3_hat_inertial = -self.r_G / r
         self.e3_hat_body = {}
@@ -595,7 +587,6 @@ class FlexibleNonSymmetricDynamics:
                     flat_eta = self.flex_eta_index[(body, k)]
                     row = self.state_reference_dimension + flat_eta
                     self.generalised_active_forces[row] += -sm.diff(self.V_gg, eta_k)
-# ----------------------------------------------------------------------------------------------------
         
         # ---------- Strain potential energy stored in the flexible panels ---------- 
         self.V_strain = sm.S.Zero
@@ -624,9 +615,7 @@ class FlexibleNonSymmetricDynamics:
                 v_partial = self.partial_linear_velocities[body][i]
                 w_partial = self.partial_angular_velocities[body][i]
             
-# ----------------------------------------------------------------------------------------------------
                 Inertia_matrix = self.rigid_bodies[body]["Inertia"]
-# ----------------------------------------------------------------------------------------------------
     
                 body_linear_acceleration = self.linear_accelerations[body]
                 body_angular_velocity = self.angular_velocities[body]
