@@ -3,6 +3,8 @@ from __future__ import annotations
 import sympy as sm
 import pytest
 
+from multibodysim.beam.cantilever_beam import CantileverBeam
+from multibodysim.beam.clamped_clamped_beam import ClampedClampedBeam
 from multibodysim.multiangle import MultiAngleFlexibleDynamics
 
 
@@ -355,3 +357,41 @@ def test_multiangle_torque_symbols_scale_with_body_count():
         sm.symbols("tau_4"),
         sm.symbols("tau_5"),
     ]
+
+
+def test_multiangle_defines_mode_shapes_for_flexible_bodies():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    panel_1 = dynamics.flexible_bodies["panel_1"]
+    panel_2 = dynamics.flexible_bodies["panel_2"]
+
+    assert isinstance(panel_1["beam"], CantileverBeam)
+    assert isinstance(panel_2["beam"], ClampedClampedBeam)
+    assert panel_1["beam"].L == 3.0
+    assert panel_1["beam"].E == 140e9
+    assert panel_1["beam"].I == 2.5e-8
+
+    assert len(panel_1["phi_list"]) == 1
+    assert len(panel_1["phi_mean_list"]) == 1
+    assert len(panel_1["k_modal_list"]) == 1
+    assert len(panel_1["phi_norm_list"]) == 1
+    assert len(panel_1["phi_m1_list"]) == 1
+
+    assert len(panel_2["phi_list"]) == 2
+    assert len(panel_2["phi_mean_list"]) == 2
+    assert len(panel_2["k_modal_list"]) == 2
+    assert len(panel_2["phi_norm_list"]) == 2
+    assert len(panel_2["phi_m1_list"]) == 2
+
+    assert all(dynamics.s in phi.free_symbols for phi in panel_2["phi_list"])
+    assert all(value > 0 for value in panel_2["phi_norm_list"])
+    assert all(value > 0 for value in panel_2["k_modal_list"])
+
+
+def test_multiangle_rejects_unrecognised_beam_type_when_defining_mode_shapes():
+    config = seven_part_config()
+    config["flexible_types"]["panel_1"] = "mystery-beam"
+    config["beam_parameters"]["mystery-beam"] = {"nb_modes": 1}
+
+    with pytest.raises(TypeError, match="Unrecognised beam type"):
+        MultiAngleFlexibleDynamics(config)

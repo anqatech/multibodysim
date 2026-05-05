@@ -6,6 +6,9 @@ import re
 import sympy as sm
 import sympy.physics.mechanics as me
 
+from ..beam.cantilever_beam import CantileverBeam
+from ..beam.clamped_clamped_beam import ClampedClampedBeam
+
 
 class MultiAngleFlexibleDynamics:
     def __init__(self, config: dict):
@@ -41,6 +44,7 @@ class MultiAngleFlexibleDynamics:
             raise ValueError("central_body must be one of the rigid bodies.")
 
         self._define_symbols()
+        self._define_mode_shapes()
         self._define_frame_orientations()
 
     def _parents_from_adjacency(self, graph, body_names, central_body):
@@ -214,6 +218,54 @@ class MultiAngleFlexibleDynamics:
                 for body in self.rigid_body_names
             ]
         )
+
+    def _define_mode_shapes(self):
+        self.s = sm.symbols("s")
+
+        for body, values in self.flexible_bodies.items():
+            beam_type = values["beam_type"]
+            params = self.beam_parameters[beam_type]
+            n_modes = params["nb_modes"]
+            nb_points = params.get("nb_points", 200)
+
+            if beam_type == "cantilever":
+                beam = CantileverBeam(
+                    length=self.parameter_values["L"],
+                    E=self.parameter_values["E_mod"],
+                    I=self.parameter_values["I_area"],
+                    n=n_modes,
+                )
+            elif beam_type == "clamped-clamped":
+                beam = ClampedClampedBeam(
+                    length=self.parameter_values["L"],
+                    E=self.parameter_values["E_mod"],
+                    I=self.parameter_values["I_area"],
+                    n=n_modes,
+                )
+            else:
+                raise TypeError(f"Unrecognised beam type: {beam_type}")
+
+            values["beam"] = beam
+            values["phi_list"] = [
+                beam.mode_shape_symbolic(self.s, mode + 1)
+                for mode in range(n_modes)
+            ]
+            values["phi_mean_list"] = [
+                beam.mode_shape_mean(nb_points, mode=mode + 1)
+                for mode in range(n_modes)
+            ]
+            values["k_modal_list"] = [
+                beam.modal_stiffness(mode + 1)
+                for mode in range(n_modes)
+            ]
+            values["phi_norm_list"] = [
+                beam.mode_shape_norm(nb_points, mode=mode + 1)
+                for mode in range(n_modes)
+            ]
+            values["phi_m1_list"] = [
+                beam.mode_shape_first_moment(nb_points, mode=mode + 1)
+                for mode in range(n_modes)
+            ]
 
     def _orientation_offset(self, body_name: str):
         body_type = self.body_type[body_name]
