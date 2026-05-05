@@ -395,3 +395,38 @@ def test_multiangle_rejects_unrecognised_beam_type_when_defining_mode_shapes():
 
     with pytest.raises(TypeError, match="Unrecognised beam type"):
         MultiAngleFlexibleDynamics(config)
+
+
+def test_multiangle_defines_rigid_bus_inertia_matrices():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    m_bus_2 = dynamics.mass_symbols["bus_2"]
+    expected = sm.Matrix(
+        [
+            [m_bus_2 * dynamics.D**2 / 12, 0, 0],
+            [0, m_bus_2 * dynamics.D**2 / 12, 0],
+            [0, 0, m_bus_2 * dynamics.D**2 / 6],
+        ]
+    )
+
+    assert dynamics.inertia_matrices["bus_2"] == expected
+    assert set(dynamics.inertia_matrices) == set(dynamics.body_names)
+
+
+def test_multiangle_defines_flexible_panel_inertia_matrices():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    inertia = dynamics.inertia_matrices["panel_2"]
+    m_panel_2 = dynamics.mass_symbols["panel_2"]
+    eta21, eta22 = dynamics.flexible_bodies["panel_2"]["eta_list"]
+
+    assert inertia.shape == (3, 3)
+    assert sm.simplify(inertia[1, 1] - m_panel_2 * dynamics.L**2 / 12) == 0
+    assert sm.simplify(inertia[0, 1] - inertia[1, 0]) == 0
+    assert inertia[0, 2] == 0
+    assert inertia[1, 2] == 0
+    assert sm.simplify(inertia[2, 2] - (inertia[0, 0] + inertia[1, 1])) == 0
+    assert inertia[0, 0].has(eta21)
+    assert inertia[0, 0].has(eta22)
+    assert inertia[0, 1].has(eta21)
+    assert inertia[0, 1].has(eta22)

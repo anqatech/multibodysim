@@ -45,6 +45,7 @@ class MultiAngleFlexibleDynamics:
 
         self._define_symbols()
         self._define_mode_shapes()
+        self._define_inertia_matrices()
         self._define_frame_orientations()
 
     def _parents_from_adjacency(self, graph, body_names, central_body):
@@ -266,6 +267,58 @@ class MultiAngleFlexibleDynamics:
                 beam.mode_shape_first_moment(nb_points, mode=mode + 1)
                 for mode in range(n_modes)
             ]
+
+    def _define_inertia_matrices(self):
+        self.inertia_matrices = {}
+
+        for body in self.rigid_body_names:
+            mass = self.mass_symbols[body]
+            I11 = sm.Rational(1, 12) * mass * self.D**2
+            I22 = sm.Rational(1, 12) * mass * self.D**2
+            I33 = I11 + I22
+
+            self.inertia_matrices[body] = sm.Matrix(
+                [
+                    [I11, 0, 0],
+                    [0, I22, 0],
+                    [0, 0, I33],
+                ]
+            )
+
+        for body in self.flexible_body_names:
+            fb_dict = self.flexible_bodies[body]
+            eta_list = fb_dict["eta_list"]
+            phi_mean_list = fb_dict["phi_mean_list"]
+            phi_norm_list = fb_dict["phi_norm_list"]
+            phi_m1_list = fb_dict["phi_m1_list"]
+
+            mass = self.mass_symbols[body]
+
+            I22 = sm.Rational(1, 12) * mass * self.L**2
+
+            I12 = sm.S.Zero
+            for eta_k, phi_m1_k in zip(eta_list, phi_m1_list):
+                I12 += -eta_k * sm.Float(phi_m1_k)
+            I12 = mass * I12
+
+            first_term = sm.S.Zero
+            for eta_k, phi_norm_k in zip(eta_list, phi_norm_list):
+                first_term += eta_k**2 * sm.Float(phi_norm_k)
+
+            second_term = sm.S.Zero
+            for eta_k, phi_mean_k in zip(eta_list, phi_mean_list):
+                second_term += eta_k * sm.Float(phi_mean_k)
+
+            I11 = mass * (first_term - second_term**2)
+            I33 = I11 + I22
+
+            self.inertia_matrices[body] = sm.Matrix(
+                [
+                    [I11, I12, 0],
+                    [I12, I22, 0],
+                    [0, 0, I33],
+                ]
+            )
 
     def _orientation_offset(self, body_name: str):
         body_type = self.body_type[body_name]
