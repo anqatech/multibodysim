@@ -85,6 +85,7 @@ class MultiAngleFlexibleDynamics:
 
         self._define_dynamic_symbols()
         self._define_parameter_symbols()
+        self._define_torque_symbols()
 
     def _define_dynamic_symbols(self):
         self.q_translation = {
@@ -201,6 +202,18 @@ class MultiAngleFlexibleDynamics:
         self.planet_mu = self.parameter_symbols["planet_mu"]
         self.orbit_semi_major_axis = self.parameter_symbols["orbit_semi_major_axis"]
         self.orbit_eccentricity = self.parameter_symbols["orbit_eccentricity"]
+
+    def _define_torque_symbols(self):
+        self.bus_torque_symbols = {
+            body: sm.symbols(f"tau_{body.removeprefix('bus_')}")
+            for body in self.rigid_body_names
+        }
+        self.tau = sm.Matrix(
+            [
+                self.bus_torque_symbols[body]
+                for body in self.rigid_body_names
+            ]
+        )
 
     def _orientation_offset(self, body_name: str):
         body_type = self.body_type[body_name]

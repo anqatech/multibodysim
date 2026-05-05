@@ -327,3 +327,31 @@ def test_multiangle_requires_mass_parameter_for_each_body():
 
     with pytest.raises(KeyError, match="m_panel_4"):
         MultiAngleFlexibleDynamics(config)
+
+
+def test_multiangle_defines_bus_torque_symbols_for_seven_part_chain():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    assert dynamics.bus_torque_symbols == {
+        "bus_1": sm.symbols("tau_1"),
+        "bus_2": sm.symbols("tau_2"),
+        "bus_3": sm.symbols("tau_3"),
+    }
+    assert list(dynamics.tau) == [
+        sm.symbols("tau_1"),
+        sm.symbols("tau_2"),
+        sm.symbols("tau_3"),
+    ]
+
+
+def test_multiangle_torque_symbols_scale_with_body_count():
+    dynamics = MultiAngleFlexibleDynamics(eleven_part_config())
+
+    assert dynamics.bus_torque_symbols["bus_5"] == sm.symbols("tau_5")
+    assert list(dynamics.tau) == [
+        sm.symbols("tau_1"),
+        sm.symbols("tau_2"),
+        sm.symbols("tau_3"),
+        sm.symbols("tau_4"),
+        sm.symbols("tau_5"),
+    ]
