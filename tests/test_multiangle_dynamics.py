@@ -36,6 +36,16 @@ def seven_part_config():
             "panel_3": "flexible-right",
             "panel_4": "flexible-right",
         },
+        "flexible_types": {
+            "panel_1": "cantilever",
+            "panel_2": "clamped-clamped",
+            "panel_3": "clamped-clamped",
+            "panel_4": "cantilever",
+        },
+        "beam_parameters": {
+            "cantilever": {"nb_modes": 1},
+            "clamped-clamped": {"nb_modes": 2},
+        },
     }
 
 
@@ -80,6 +90,17 @@ def eleven_part_config():
             "panel_4": "flexible-right",
             "panel_5": "flexible-right",
             "panel_6": "flexible-right",
+        },
+        "flexible_types": {
+            "panel_1": "cantilever",
+            "panel_2": "cantilever",
+            "panel_3": "cantilever",
+            "panel_4": "cantilever",
+            "panel_5": "cantilever",
+            "panel_6": "cantilever",
+        },
+        "beam_parameters": {
+            "cantilever": {"nb_modes": 1},
         },
     }
 
@@ -166,3 +187,56 @@ def test_multiangle_symbol_names_reject_non_bus_names():
 
     with pytest.raises(ValueError, match="bus_<number>"):
         dynamics._speed_symbol_name("wer")
+
+
+def test_multiangle_defines_flexible_modal_symbols_and_state_vectors():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    q_names = [str(symbol.func) for symbol in dynamics.q]
+    u_names = [str(symbol.func) for symbol in dynamics.u]
+
+    assert q_names == [
+        "q1",
+        "q2",
+        "q3_1",
+        "q3_2",
+        "q3_3",
+        "eta1_1",
+        "eta2_1",
+        "eta2_2",
+        "eta3_1",
+        "eta3_2",
+        "eta4_1",
+    ]
+    assert u_names == [
+        "u1",
+        "u2",
+        "u3_1",
+        "u3_2",
+        "u3_3",
+        "zeta1_1",
+        "zeta2_1",
+        "zeta2_2",
+        "zeta3_1",
+        "zeta3_2",
+        "zeta4_1",
+    ]
+
+    assert len(dynamics.q) == len(dynamics.u) == 11
+    assert dynamics.flexible_bodies["panel_2"]["beam_type"] == "clamped-clamped"
+    assert len(dynamics.flexible_bodies["panel_2"]["eta_list"]) == 2
+    assert len(dynamics.flexible_bodies["panel_2"]["zeta_list"]) == 2
+
+    assert dynamics.flex_eta_index[("panel_1", 0)] == 0
+    assert dynamics.flex_eta_index[("panel_2", 0)] == 1
+    assert dynamics.flex_eta_index[("panel_2", 1)] == 2
+    assert dynamics.flex_eta_index[("panel_3", 0)] == 3
+    assert dynamics.flex_eta_index[("panel_3", 1)] == 4
+    assert dynamics.flex_eta_index[("panel_4", 0)] == 5
+
+    assert dynamics.flex_zeta_index[("panel_1", 0)] == 0
+    assert dynamics.flex_zeta_index[("panel_2", 0)] == 1
+    assert dynamics.flex_zeta_index[("panel_2", 1)] == 2
+    assert dynamics.flex_zeta_index[("panel_3", 0)] == 3
+    assert dynamics.flex_zeta_index[("panel_3", 1)] == 4
+    assert dynamics.flex_zeta_index[("panel_4", 0)] == 5

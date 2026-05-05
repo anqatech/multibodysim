@@ -17,6 +17,8 @@ class MultiAngleFlexibleDynamics:
             self.body_names = config["body_names"]
             self.central_body = config["central_body"]
             self.body_type = config["body_type"]
+            self.flexible_types = config["flexible_types"]
+            self.beam_parameters = config["beam_parameters"]
         except KeyError as exc:
             raise KeyError(f"Missing config key: {exc}") from exc
 
@@ -80,11 +82,11 @@ class MultiAngleFlexibleDynamics:
     def _define_symbols(self):
         self.t = me.dynamicsymbols._t
 
-        self.q_reference = {
+        self.q_translation = {
             "x": me.dynamicsymbols("q1"),
             "y": me.dynamicsymbols("q2"),
         }
-        self.u_reference = {
+        self.u_translation = {
             "x": me.dynamicsymbols("u1"),
             "y": me.dynamicsymbols("u2"),
         }
@@ -96,11 +98,71 @@ class MultiAngleFlexibleDynamics:
             u_symbol = me.dynamicsymbols(self._speed_symbol_name(body))
             self.bus_angle_coordinates[body] = q_symbol
             self.bus_speed_coordinates[body] = u_symbol
-            self.q_reference[body] = q_symbol
-            self.u_reference[body] = u_symbol
 
         self.central_angle = self.bus_angle_coordinates[self.central_body]
         self.central_speed = self.bus_speed_coordinates[self.central_body]
+
+        self.flexible_bodies = {}
+        self.flex_eta_index = {}
+        self.flex_zeta_index = {}
+        eta_all = []
+        zeta_all = []
+
+        flat_eta_idx = 0
+        flat_zeta_idx = 0
+        for i_body, body in enumerate(self.flexible_body_names):
+            beam_type = self.flexible_types[body]
+            n_modes = self.beam_parameters[beam_type]["nb_modes"]
+
+            eta_list = [
+                me.dynamicsymbols(f"eta{i_body + 1}_{mode + 1}")
+                for mode in range(n_modes)
+            ]
+            zeta_list = [
+                me.dynamicsymbols(f"zeta{i_body + 1}_{mode + 1}")
+                for mode in range(n_modes)
+            ]
+
+            self.flexible_bodies[body] = {
+                "beam_type": beam_type,
+                "eta_list": eta_list,
+                "zeta_list": zeta_list,
+            }
+
+            for mode in range(n_modes):
+                self.flex_eta_index[(body, mode)] = flat_eta_idx
+                self.flex_zeta_index[(body, mode)] = flat_zeta_idx
+                flat_eta_idx += 1
+                flat_zeta_idx += 1
+
+            eta_all.extend(eta_list)
+            zeta_all.extend(zeta_list)
+
+        self.q_reference = {
+            **self.q_translation,
+            **self.bus_angle_coordinates,
+        }
+        self.u_reference = {
+            **self.u_translation,
+            **self.bus_speed_coordinates,
+        }
+
+        self.q = sm.Matrix(
+            [
+                *self.q_translation.values(),
+                *self.bus_angle_coordinates.values(),
+                *eta_all,
+            ]
+        )
+        self.u = sm.Matrix(
+            [
+                *self.u_translation.values(),
+                *self.bus_speed_coordinates.values(),
+                *zeta_all,
+            ]
+        )
+        self.qd = self.q.diff(self.t)
+        self.ud = self.u.diff(self.t)
 
     def _orientation_offset(self, body_name: str):
         body_type = self.body_type[body_name]
