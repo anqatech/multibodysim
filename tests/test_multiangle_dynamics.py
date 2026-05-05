@@ -104,7 +104,7 @@ def test_multiangle_bus_orientation_convention_for_seven_part_chain():
     assert_symbolic_equal(dynamics.orientation_angle("bus_3"), q32 + q33)
 
 
-def test_multiangle_panel_orientation_inherits_parent_bus_convention():
+def test_multiangle_panel_orientation_uses_endpoint_bus_average_when_available():
     dynamics = MultiAngleFlexibleDynamics(seven_part_config())
 
     q31 = dynamics.bus_angle_coordinates["bus_1"]
@@ -112,8 +112,14 @@ def test_multiangle_panel_orientation_inherits_parent_bus_convention():
     q33 = dynamics.bus_angle_coordinates["bus_3"]
 
     assert_symbolic_equal(dynamics.orientation_angle("panel_1"), q32 + sm.pi + q31)
-    assert_symbolic_equal(dynamics.orientation_angle("panel_2"), q32 + sm.pi)
-    assert_symbolic_equal(dynamics.orientation_angle("panel_3"), q32)
+    assert_symbolic_equal(
+        dynamics.orientation_angle("panel_2"),
+        q32 + sm.pi / 2 + q31 / 2,
+    )
+    assert_symbolic_equal(
+        dynamics.orientation_angle("panel_3"),
+        q32 + q33 / 2,
+    )
     assert_symbolic_equal(dynamics.orientation_angle("panel_4"), q32 + q33)
 
 
@@ -131,6 +137,25 @@ def test_multiangle_convention_scales_to_more_buses():
     assert_symbolic_equal(dynamics.orientation_angle("bus_3"), q33)
     assert_symbolic_equal(dynamics.orientation_angle("bus_4"), q33 + q34)
     assert_symbolic_equal(dynamics.orientation_angle("bus_5"), q33 + q35)
+
+    assert_symbolic_equal(dynamics.orientation_angle("panel_1"), q33 + sm.pi + q31)
+    assert_symbolic_equal(
+        dynamics.orientation_angle("panel_2"),
+        q33 + sm.pi + (q31 + q32) / 2,
+    )
+    assert_symbolic_equal(
+        dynamics.orientation_angle("panel_3"),
+        q33 + sm.pi / 2 + q32 / 2,
+    )
+    assert_symbolic_equal(
+        dynamics.orientation_angle("panel_4"),
+        q33 + q34 / 2,
+    )
+    assert_symbolic_equal(
+        dynamics.orientation_angle("panel_5"),
+        q33 + (q34 + q35) / 2,
+    )
+    assert_symbolic_equal(dynamics.orientation_angle("panel_6"), q33 + q35)
 
 
 def test_multiangle_symbol_names_reject_non_bus_names():

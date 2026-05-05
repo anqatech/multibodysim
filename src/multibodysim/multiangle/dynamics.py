@@ -118,26 +118,37 @@ class MultiAngleFlexibleDynamics:
             + self.bus_angle_coordinates[body_name]
         )
 
-    def _orientation_source_bus(self, body_name: str) -> str:
-        parent = self.parents[body_name]
-        if parent in self.rigid_body_names:
-            return parent
-
-        for neighbor in self.graph[body_name]:
-            if neighbor in self.rigid_body_names:
-                return neighbor
-
-        raise ValueError(f"Flexible body '{body_name}' is not attached to a rigid bus.")
+    def _rigid_neighbors(self, body_name: str) -> list[str]:
+        return [
+            neighbor
+            for neighbor in self.graph[body_name]
+            if neighbor in self.rigid_body_names
+        ]
 
     def _body_orientation_angle(self, body_name: str):
         if body_name in self.rigid_body_names:
             return self._bus_orientation_angle(body_name)
 
-        source_bus = self._orientation_source_bus(body_name)
-        if source_bus == self.central_body:
-            return self._bus_orientation_angle(source_bus) + self._orientation_offset(body_name)
+        rigid_neighbors = self._rigid_neighbors(body_name)
+        if not rigid_neighbors:
+            raise ValueError(f"Flexible body '{body_name}' is not attached to a rigid bus.")
 
-        return self._bus_orientation_angle(source_bus)
+        if len(rigid_neighbors) == 1:
+            source_bus = rigid_neighbors[0]
+            if source_bus == self.central_body:
+                return self._bus_orientation_angle(source_bus) + self._orientation_offset(body_name)
+
+            return self._bus_orientation_angle(source_bus)
+
+        if len(rigid_neighbors) == 2:
+            first_angle = self._bus_orientation_angle(rigid_neighbors[0])
+            second_angle = self._bus_orientation_angle(rigid_neighbors[1])
+            return sm.Rational(1, 2) * (first_angle + second_angle)
+
+        raise ValueError(
+            f"Flexible body '{body_name}' is attached to more than two rigid buses: "
+            f"{rigid_neighbors}."
+        )
 
     def _define_frame_orientations(self):
         inertial_frame = me.ReferenceFrame("N")
