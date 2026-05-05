@@ -430,3 +430,41 @@ def test_multiangle_defines_flexible_panel_inertia_matrices():
     assert inertia[0, 0].has(eta22)
     assert inertia[0, 1].has(eta21)
     assert inertia[0, 1].has(eta22)
+
+
+def test_multiangle_offset_from_rigid_bus_to_flexible_panel():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    left_offset = dynamics._get_offset_vector("bus_2", "panel_2")
+    right_offset = dynamics._get_offset_vector("bus_2", "panel_3")
+
+    assert left_offset == -dynamics.D / 2 * dynamics.frames["bus_2"].x
+    assert right_offset == dynamics.D / 2 * dynamics.frames["bus_2"].x
+
+
+def test_multiangle_offset_from_flexible_panel_to_rigid_bus_uses_tip_deflection():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    offset = dynamics._get_offset_vector("panel_2", "bus_1")
+    eta_list = dynamics.flexible_bodies["panel_2"]["eta_list"]
+    phi_list = dynamics.flexible_bodies["panel_2"]["phi_list"]
+    expected_tip_deflection = sum(
+        phi_k.subs(dynamics.s, dynamics.L) * eta_k
+        for phi_k, eta_k in zip(phi_list, eta_list)
+    )
+    expected = (
+        dynamics.L * dynamics.frames["panel_2"].x
+        + expected_tip_deflection * dynamics.frames["panel_2"].y
+    )
+
+    assert offset == expected
+
+
+def test_multiangle_offset_rejects_unsupported_body_type_pairs():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    with pytest.raises(NotImplementedError, match="two rigid bodies"):
+        dynamics._get_offset_vector("bus_1", "bus_2")
+
+    with pytest.raises(NotImplementedError, match="two flexible bodies"):
+        dynamics._get_offset_vector("panel_1", "panel_2")

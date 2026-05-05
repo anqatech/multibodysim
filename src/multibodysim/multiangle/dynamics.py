@@ -368,6 +368,47 @@ class MultiAngleFlexibleDynamics:
             f"{rigid_neighbors}."
         )
 
+    def _get_offset_vector(self, parent: str, child: str):
+        parent_type = self.body_type[parent]
+        child_type = self.body_type[child]
+
+        parent_is_rigid = parent_type.startswith("rigid-")
+        parent_is_flexible = parent_type.startswith("flexible-")
+        child_is_rigid = child_type.startswith("rigid-")
+        child_is_flexible = child_type.startswith("flexible-")
+
+        if parent_is_flexible and child_is_flexible:
+            raise NotImplementedError(
+                "Offset between two flexible bodies is not implemented: "
+                f"parent={parent!r}, child={child!r}."
+            )
+
+        if parent_is_rigid and child_is_rigid:
+            raise NotImplementedError(
+                "Offset between two rigid bodies is not implemented: "
+                f"parent={parent!r}, child={child!r}."
+            )
+
+        if parent_is_rigid and child_is_flexible:
+            sign = -1 if child_type.endswith("-left") else 1
+            return sign * (self.D / 2) * self.frames[parent].x
+
+        if parent_is_flexible and child_is_rigid:
+            frame = self.frames[parent]
+            eta_list = self.flexible_bodies[parent]["eta_list"]
+            phi_list = self.flexible_bodies[parent]["phi_list"]
+
+            phi_tip = sm.S.Zero
+            for phi_k, eta_k in zip(phi_list, eta_list):
+                phi_tip += phi_k.subs(self.s, self.L) * eta_k
+
+            return self.L * frame.x + phi_tip * frame.y
+
+        raise NotImplementedError(
+            "Unsupported body type pair for offset vector: "
+            f"parent={parent!r} ({parent_type!r}), child={child!r} ({child_type!r})."
+        )
+
     def _define_frame_orientations(self):
         inertial_frame = me.ReferenceFrame("N")
         self.frames = {"inertial": inertial_frame}
