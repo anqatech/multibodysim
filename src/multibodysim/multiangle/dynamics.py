@@ -19,6 +19,7 @@ class MultiAngleFlexibleDynamics:
             self.body_type = config["body_type"]
             self.flexible_types = config["flexible_types"]
             self.beam_parameters = config["beam_parameters"]
+            self.parameter_values = config["parameters"]
         except KeyError as exc:
             raise KeyError(f"Missing config key: {exc}") from exc
 
@@ -82,6 +83,10 @@ class MultiAngleFlexibleDynamics:
     def _define_symbols(self):
         self.t = me.dynamicsymbols._t
 
+        self._define_dynamic_symbols()
+        self._define_parameter_symbols()
+
+    def _define_dynamic_symbols(self):
         self.q_translation = {
             "x": me.dynamicsymbols("q1"),
             "y": me.dynamicsymbols("q2"),
@@ -163,6 +168,39 @@ class MultiAngleFlexibleDynamics:
         )
         self.qd = self.q.diff(self.t)
         self.ud = self.u.diff(self.t)
+
+    def _define_parameter_symbols(self):
+        parameter_names = [
+            "D",
+            "L",
+            *[f"m_{body}" for body in self.body_names],
+            "E_mod",
+            "I_area",
+            "planet_mu",
+            "orbit_semi_major_axis",
+            "orbit_eccentricity",
+        ]
+        missing = [name for name in parameter_names if name not in self.parameter_values]
+        if missing:
+            raise KeyError(f"Missing parameters entries: {missing}")
+
+        self.parameter_symbols = {
+            name: sm.symbols(name)
+            for name in parameter_names
+        }
+        self.p = sm.Matrix(list(self.parameter_symbols.values()))
+
+        self.D = self.parameter_symbols["D"]
+        self.L = self.parameter_symbols["L"]
+        self.mass_symbols = {
+            body: self.parameter_symbols[f"m_{body}"]
+            for body in self.body_names
+        }
+        self.E_mod = self.parameter_symbols["E_mod"]
+        self.I_area = self.parameter_symbols["I_area"]
+        self.planet_mu = self.parameter_symbols["planet_mu"]
+        self.orbit_semi_major_axis = self.parameter_symbols["orbit_semi_major_axis"]
+        self.orbit_eccentricity = self.parameter_symbols["orbit_eccentricity"]
 
     def _orientation_offset(self, body_name: str):
         body_type = self.body_type[body_name]

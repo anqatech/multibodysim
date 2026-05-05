@@ -46,6 +46,22 @@ def seven_part_config():
             "cantilever": {"nb_modes": 1},
             "clamped-clamped": {"nb_modes": 2},
         },
+        "parameters": {
+            "D": 1.0,
+            "L": 3.0,
+            "m_bus_1": 3.0,
+            "m_bus_2": 3.0,
+            "m_bus_3": 3.0,
+            "m_panel_1": 2.0,
+            "m_panel_2": 2.0,
+            "m_panel_3": 30.0,
+            "m_panel_4": 30.0,
+            "E_mod": 140e9,
+            "I_area": 2.5e-8,
+            "planet_mu": 3.986004418e14,
+            "orbit_semi_major_axis": 6778000.0,
+            "orbit_eccentricity": 0.0,
+        },
     }
 
 
@@ -101,6 +117,26 @@ def eleven_part_config():
         },
         "beam_parameters": {
             "cantilever": {"nb_modes": 1},
+        },
+        "parameters": {
+            "D": 1.0,
+            "L": 3.0,
+            "m_bus_1": 3.0,
+            "m_bus_2": 3.0,
+            "m_bus_3": 3.0,
+            "m_bus_4": 3.0,
+            "m_bus_5": 3.0,
+            "m_panel_1": 2.0,
+            "m_panel_2": 2.0,
+            "m_panel_3": 2.0,
+            "m_panel_4": 2.0,
+            "m_panel_5": 2.0,
+            "m_panel_6": 2.0,
+            "E_mod": 140e9,
+            "I_area": 2.5e-8,
+            "planet_mu": 3.986004418e14,
+            "orbit_semi_major_axis": 6778000.0,
+            "orbit_eccentricity": 0.0,
         },
     }
 
@@ -240,3 +276,54 @@ def test_multiangle_defines_flexible_modal_symbols_and_state_vectors():
     assert dynamics.flex_zeta_index[("panel_3", 0)] == 3
     assert dynamics.flex_zeta_index[("panel_3", 1)] == 4
     assert dynamics.flex_zeta_index[("panel_4", 0)] == 5
+
+
+def test_multiangle_defines_static_parameter_symbols_from_parameters():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    assert dynamics.parameter_symbols["D"] == sm.symbols("D")
+    assert dynamics.parameter_symbols["L"] == sm.symbols("L")
+    assert dynamics.D == sm.symbols("D")
+    assert dynamics.L == sm.symbols("L")
+    assert dynamics.mass_symbols["bus_2"] == sm.symbols("m_bus_2")
+    assert dynamics.mass_symbols["panel_4"] == sm.symbols("m_panel_4")
+    assert dynamics.E_mod == sm.symbols("E_mod")
+    assert dynamics.I_area == sm.symbols("I_area")
+    assert dynamics.planet_mu == sm.symbols("planet_mu")
+    assert dynamics.orbit_semi_major_axis == sm.symbols("orbit_semi_major_axis")
+    assert dynamics.orbit_eccentricity == sm.symbols("orbit_eccentricity")
+
+    p_names = [str(symbol) for symbol in dynamics.p]
+    assert p_names == [
+        "D",
+        "L",
+        "m_bus_1",
+        "m_bus_2",
+        "m_bus_3",
+        "m_panel_1",
+        "m_panel_2",
+        "m_panel_3",
+        "m_panel_4",
+        "E_mod",
+        "I_area",
+        "planet_mu",
+        "orbit_semi_major_axis",
+        "orbit_eccentricity",
+    ]
+
+
+def test_multiangle_parameter_symbols_scale_with_body_count():
+    dynamics = MultiAngleFlexibleDynamics(eleven_part_config())
+
+    assert dynamics.mass_symbols["bus_5"] == sm.symbols("m_bus_5")
+    assert dynamics.mass_symbols["panel_6"] == sm.symbols("m_panel_6")
+    assert len(dynamics.mass_symbols) == 11
+    assert len(dynamics.p) == 18
+
+
+def test_multiangle_requires_mass_parameter_for_each_body():
+    config = seven_part_config()
+    del config["parameters"]["m_panel_4"]
+
+    with pytest.raises(KeyError, match="m_panel_4"):
+        MultiAngleFlexibleDynamics(config)
