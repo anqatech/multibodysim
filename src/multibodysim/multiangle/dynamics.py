@@ -49,6 +49,7 @@ class MultiAngleFlexibleDynamics:
         self._define_frame_orientations()
         self._define_points()
         self._define_system_center_of_mass()
+        self._define_kinematic_equations()
 
     def _parents_from_adjacency(self, graph, body_names, central_body):
         visited = {body: False for body in body_names}
@@ -495,6 +496,21 @@ class MultiAngleFlexibleDynamics:
         self.G = self.O.locatenew("G", r_G)
         self.r_GB = self.points[self.central_body].pos_from(self.G)
         self.points["center_of_mass"] = self.G
+
+    def _define_kinematic_equations(self):
+        self.qd_zero = {qdi: 0 for qdi in self.qd}
+        self.ud_zero = {udi: 0 for udi in self.ud}
+
+        self.fk = self.qd - self.u
+        self.Mk = self.fk.jacobian(self.qd)
+        self.gk = self.fk.xreplace(self.qd_zero)
+
+        qd_sol = -self.Mk.LUsolve(self.gk)
+        self.qd_repl = dict(zip(self.qd, qd_sol))
+        self.qdd_repl = {
+            q.diff(self.t): u.diff(self.t)
+            for q, u in self.qd_repl.items()
+        }
 
     def _define_frame_orientations(self):
         inertial_frame = me.ReferenceFrame("N")

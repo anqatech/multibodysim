@@ -561,3 +561,21 @@ def test_multiangle_defines_central_bus_position_relative_to_system_center_of_ma
     expected = dynamics.points[dynamics.central_body].pos_from(dynamics.G)
 
     assert dynamics.r_GB == expected
+
+
+def test_multiangle_defines_kinematic_differential_equations():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    assert dynamics.fk == dynamics.qd - dynamics.u
+    assert dynamics.Mk == sm.eye(len(dynamics.q))
+    assert dynamics.gk == -dynamics.u
+
+
+def test_multiangle_defines_coordinate_derivative_replacements():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    assert dynamics.qd_repl == dict(zip(dynamics.qd, dynamics.u))
+    assert dynamics.qdd_repl == {
+        q.diff(dynamics.t): u.diff(dynamics.t)
+        for q, u in zip(dynamics.qd, dynamics.u)
+    }
