@@ -147,6 +147,11 @@ def assert_symbolic_equal(lhs, rhs):
     assert sm.simplify(lhs - rhs) == 0
 
 
+def assert_vector_equal(lhs, rhs, frame):
+    diff = lhs - rhs
+    assert all(sm.simplify(component) == 0 for component in diff.to_matrix(frame))
+
+
 def test_multiangle_bus_orientation_convention_for_seven_part_chain():
     dynamics = MultiAngleFlexibleDynamics(seven_part_config())
 
@@ -579,3 +584,38 @@ def test_multiangle_defines_coordinate_derivative_replacements():
         q.diff(dynamics.t): u.diff(dynamics.t)
         for q, u in zip(dynamics.qd, dynamics.u)
     }
+
+
+def test_multiangle_defines_bus_angular_velocities():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+    N = dynamics.frames["inertial"]
+
+    u31 = dynamics.bus_speed_coordinates["bus_1"]
+    u32 = dynamics.bus_speed_coordinates["bus_2"]
+    u33 = dynamics.bus_speed_coordinates["bus_3"]
+
+    assert_vector_equal(dynamics.angular_velocities["bus_1"], (u32 + u31) * N.z, N)
+    assert_vector_equal(dynamics.angular_velocities["bus_2"], u32 * N.z, N)
+    assert_vector_equal(dynamics.angular_velocities["bus_3"], (u32 + u33) * N.z, N)
+
+
+def test_multiangle_defines_panel_angular_velocities_from_orientation_convention():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+    N = dynamics.frames["inertial"]
+
+    u31 = dynamics.bus_speed_coordinates["bus_1"]
+    u32 = dynamics.bus_speed_coordinates["bus_2"]
+    u33 = dynamics.bus_speed_coordinates["bus_3"]
+
+    assert_vector_equal(dynamics.angular_velocities["panel_1"], (u32 + u31) * N.z, N)
+    assert_vector_equal(
+        dynamics.angular_velocities["panel_2"],
+        (u32 + u31 / 2) * N.z,
+        N,
+    )
+    assert_vector_equal(
+        dynamics.angular_velocities["panel_3"],
+        (u32 + u33 / 2) * N.z,
+        N,
+    )
+    assert_vector_equal(dynamics.angular_velocities["panel_4"], (u32 + u33) * N.z, N)
