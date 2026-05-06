@@ -47,6 +47,7 @@ class MultiAngleFlexibleDynamics:
         self._define_mode_shapes()
         self._define_inertia_matrices()
         self._define_frame_orientations()
+        self._define_points()
 
     def _parents_from_adjacency(self, graph, body_names, central_body):
         visited = {body: False for body in body_names}
@@ -408,6 +409,76 @@ class MultiAngleFlexibleDynamics:
             "Unsupported body type pair for offset vector: "
             f"parent={parent!r} ({parent_type!r}), child={child!r} ({child_type!r})."
         )
+
+    def _define_points(self):
+        inertial_frame = self.frames["inertial"]
+
+        self.points = {}
+        self.inertial_position = {body: None for body in self.body_names}
+
+        self.O = me.Point("O")
+        self.O.set_vel(inertial_frame, 0)
+        self.points["N"] = self.O
+
+        self.central_cm = me.Point(f"{self.central_body}_cm")
+        self.central_cm.set_pos(
+            self.O,
+            self.q_translation["x"] * inertial_frame.x
+            + self.q_translation["y"] * inertial_frame.y,
+        )
+        self.points[self.central_body] = self.central_cm
+        self.inertial_position[self.central_body] = self.central_cm.pos_from(self.O)
+
+        for child, parent in self.parents.items():
+            if child == self.central_body:
+                continue
+
+            parent_type = self.body_type[parent]
+            child_type = self.body_type[child]
+            attach = self._get_offset_vector(parent, child)
+
+            if parent_type.startswith("rigid-"):
+                parent_point = self.points[parent]
+            else:
+                joint_name = f"joint_{parent}_{self.parents[parent]}"
+                parent_point = self.points[joint_name]
+
+            child_joint = parent_point.locatenew(f"joint_{child}_{parent}", attach)
+            self.points[f"joint_{child}_{parent}"] = child_joint
+
+            if child_type.startswith("flexible-"):
+                frame = self.frames[child]
+                eta_list = self.flexible_bodies[child]["eta_list"]
+                phi_list = self.flexible_bodies[child]["phi_list"]
+                phi_sum = sum(
+                    phi_k * eta_k
+                    for phi_k, eta_k in zip(phi_list, eta_list)
+                )
+
+                dm_offset = self.s * frame.x + phi_sum * frame.y
+                dm_point = child_joint.locatenew(f"dm_{child}", dm_offset)
+                self.points[f"dm_{child}"] = dm_point
+
+                phi_mean_list = self.flexible_bodies[child]["phi_mean_list"]
+                phi_mean_sum = sum(
+                    sm.Float(phi_mean_k) * eta_k
+                    for phi_mean_k, eta_k in zip(phi_mean_list, eta_list)
+                )
+                cm_offset = self.L / 2 * frame.x + phi_mean_sum * frame.y
+                cm_point = child_joint.locatenew(
+                    f"dm_center_of_mass_{child}",
+                    cm_offset,
+                )
+                self.points[f"dm_center_of_mass_{child}"] = cm_point
+                self.inertial_position[child] = cm_point.pos_from(self.O)
+
+            elif child_type.startswith("rigid-"):
+                frame = self.frames[child]
+                sign = -1 if child_type.endswith("-left") else 1
+                cm_offset = sign * self.D / 2 * frame.x
+                cm_point = child_joint.locatenew(f"{child}_cm", cm_offset)
+                self.points[child] = cm_point
+                self.inertial_position[child] = cm_point.pos_from(self.O)
 
     def _define_frame_orientations(self):
         inertial_frame = me.ReferenceFrame("N")

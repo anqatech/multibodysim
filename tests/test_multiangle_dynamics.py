@@ -468,3 +468,71 @@ def test_multiangle_offset_rejects_unsupported_body_type_pairs():
 
     with pytest.raises(NotImplementedError, match="two flexible bodies"):
         dynamics._get_offset_vector("panel_1", "panel_2")
+
+
+def test_multiangle_defines_expected_points_for_seven_part_chain():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    expected_points = {
+        "N",
+        "bus_1",
+        "bus_2",
+        "bus_3",
+        "joint_panel_2_bus_2",
+        "joint_panel_3_bus_2",
+        "joint_bus_1_panel_2",
+        "joint_bus_3_panel_3",
+        "joint_panel_1_bus_1",
+        "joint_panel_4_bus_3",
+        "dm_panel_1",
+        "dm_panel_2",
+        "dm_panel_3",
+        "dm_panel_4",
+        "dm_center_of_mass_panel_1",
+        "dm_center_of_mass_panel_2",
+        "dm_center_of_mass_panel_3",
+        "dm_center_of_mass_panel_4",
+    }
+
+    assert expected_points.issubset(dynamics.points)
+    assert all(dynamics.inertial_position[body] is not None for body in dynamics.body_names)
+
+
+def test_multiangle_places_central_bus_at_reference_translation():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+    N = dynamics.frames["inertial"]
+
+    expected = dynamics.q_translation["x"] * N.x + dynamics.q_translation["y"] * N.y
+
+    assert dynamics.inertial_position["bus_2"] == expected
+
+
+def test_multiangle_places_flexible_panel_mass_center_from_panel_joint():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    panel = "panel_3"
+    joint = dynamics.points["joint_panel_3_bus_2"]
+    panel_cm = dynamics.points["dm_center_of_mass_panel_3"]
+    eta_list = dynamics.flexible_bodies[panel]["eta_list"]
+    phi_mean_list = dynamics.flexible_bodies[panel]["phi_mean_list"]
+    phi_mean_sum = sum(
+        sm.Float(phi_mean_k) * eta_k
+        for phi_mean_k, eta_k in zip(phi_mean_list, eta_list)
+    )
+    expected = (
+        dynamics.L / 2 * dynamics.frames[panel].x
+        + phi_mean_sum * dynamics.frames[panel].y
+    )
+
+    assert panel_cm.pos_from(joint) == expected
+
+
+def test_multiangle_places_rigid_bus_mass_center_from_bus_joint():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    bus = "bus_3"
+    joint = dynamics.points["joint_bus_3_panel_3"]
+    bus_cm = dynamics.points[bus]
+    expected = dynamics.D / 2 * dynamics.frames[bus].x
+
+    assert bus_cm.pos_from(joint) == expected
