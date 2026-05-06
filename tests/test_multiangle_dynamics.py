@@ -536,3 +536,28 @@ def test_multiangle_places_rigid_bus_mass_center_from_bus_joint():
     expected = dynamics.D / 2 * dynamics.frames[bus].x
 
     assert bus_cm.pos_from(joint) == expected
+
+
+def test_multiangle_defines_system_center_of_mass_from_body_mass_centers():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    expected_total_mass = sum(
+        dynamics.mass_symbols[body]
+        for body in dynamics.body_names
+    )
+    expected_position = sum(
+        dynamics.mass_symbols[body] * dynamics.inertial_position[body]
+        for body in dynamics.body_names
+    ) / expected_total_mass
+
+    assert dynamics.total_mass == expected_total_mass
+    assert dynamics.points["center_of_mass"] is dynamics.G
+    assert dynamics.G.pos_from(dynamics.O) == expected_position
+
+
+def test_multiangle_defines_central_bus_position_relative_to_system_center_of_mass():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    expected = dynamics.points[dynamics.central_body].pos_from(dynamics.G)
+
+    assert dynamics.r_GB == expected

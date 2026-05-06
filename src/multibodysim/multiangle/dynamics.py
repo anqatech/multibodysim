@@ -48,6 +48,7 @@ class MultiAngleFlexibleDynamics:
         self._define_inertia_matrices()
         self._define_frame_orientations()
         self._define_points()
+        self._define_system_center_of_mass()
 
     def _parents_from_adjacency(self, graph, body_names, central_body):
         visited = {body: False for body in body_names}
@@ -479,6 +480,21 @@ class MultiAngleFlexibleDynamics:
                 cm_point = child_joint.locatenew(f"{child}_cm", cm_offset)
                 self.points[child] = cm_point
                 self.inertial_position[child] = cm_point.pos_from(self.O)
+
+    def _define_system_center_of_mass(self):
+        self.total_mass = sum(
+            self.mass_symbols[body]
+            for body in self.body_names
+        )
+
+        r_G = sm.S.Zero
+        for body in self.body_names:
+            r_G += self.mass_symbols[body] * self.inertial_position[body]
+        r_G /= self.total_mass
+
+        self.G = self.O.locatenew("G", r_G)
+        self.r_GB = self.points[self.central_body].pos_from(self.G)
+        self.points["center_of_mass"] = self.G
 
     def _define_frame_orientations(self):
         inertial_frame = me.ReferenceFrame("N")
