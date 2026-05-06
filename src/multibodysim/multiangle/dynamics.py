@@ -51,6 +51,7 @@ class MultiAngleFlexibleDynamics:
         self._define_system_center_of_mass()
         self._define_kinematic_equations()
         self._define_angular_velocities()
+        self._define_linear_velocities()
 
     def _parents_from_adjacency(self, graph, body_names, central_body):
         visited = {body: False for body in body_names}
@@ -522,6 +523,17 @@ class MultiAngleFlexibleDynamics:
             angular_velocity = frame.ang_vel_in(inertial_frame).xreplace(self.qd_repl)
             frame.set_ang_vel(inertial_frame, angular_velocity)
             self.angular_velocities[body] = angular_velocity
+
+    def _define_linear_velocities(self):
+        inertial_frame = self.frames["inertial"]
+        self.linear_velocities = {}
+
+        central_velocity = (
+            self.u_translation["x"] * inertial_frame.x
+            + self.u_translation["y"] * inertial_frame.y
+        )
+        self.points[self.central_body].set_vel(inertial_frame, central_velocity)
+        self.linear_velocities[self.central_body] = central_velocity
 
     def _define_frame_orientations(self):
         inertial_frame = me.ReferenceFrame("N")

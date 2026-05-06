@@ -619,3 +619,16 @@ def test_multiangle_defines_panel_angular_velocities_from_orientation_convention
         N,
     )
     assert_vector_equal(dynamics.angular_velocities["panel_4"], (u32 + u33) * N.z, N)
+
+
+def test_multiangle_defines_central_bus_linear_velocity():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+    N = dynamics.frames["inertial"]
+
+    expected = (
+        dynamics.u_translation["x"] * N.x
+        + dynamics.u_translation["y"] * N.y
+    )
+
+    assert_vector_equal(dynamics.points[dynamics.central_body].vel(N), expected, N)
+    assert_vector_equal(dynamics.linear_velocities[dynamics.central_body], expected, N)
