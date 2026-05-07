@@ -465,6 +465,23 @@ def test_multiangle_offset_from_flexible_panel_to_rigid_bus_uses_tip_deflection(
     assert offset == expected
 
 
+def test_multiangle_classifies_supported_connection_kinds():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    assert dynamics._connection_kind("bus_2", "panel_2") == "rigid_to_flexible"
+    assert dynamics._connection_kind("panel_2", "bus_1") == "flexible_to_rigid"
+
+
+def test_multiangle_connection_kind_rejects_unsupported_body_type_pairs():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    with pytest.raises(NotImplementedError, match="two rigid bodies"):
+        dynamics._connection_kind("bus_1", "bus_2")
+
+    with pytest.raises(NotImplementedError, match="two flexible bodies"):
+        dynamics._connection_kind("panel_1", "panel_2")
+
+
 def test_multiangle_offset_rejects_unsupported_body_type_pairs():
     dynamics = MultiAngleFlexibleDynamics(seven_part_config())
 

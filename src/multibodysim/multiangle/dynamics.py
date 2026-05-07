@@ -373,7 +373,7 @@ class MultiAngleFlexibleDynamics:
             f"{rigid_neighbors}."
         )
 
-    def _get_offset_vector(self, parent: str, child: str):
+    def _connection_kind(self, parent: str, child: str) -> str:
         parent_type = self.body_type[parent]
         child_type = self.body_type[child]
 
@@ -382,23 +382,38 @@ class MultiAngleFlexibleDynamics:
         child_is_rigid = child_type.startswith("rigid-")
         child_is_flexible = child_type.startswith("flexible-")
 
+        if parent_is_rigid and child_is_flexible:
+            return "rigid_to_flexible"
+
+        if parent_is_flexible and child_is_rigid:
+            return "flexible_to_rigid"
+
         if parent_is_flexible and child_is_flexible:
             raise NotImplementedError(
-                "Offset between two flexible bodies is not implemented: "
+                "Connection between two flexible bodies is not implemented: "
                 f"parent={parent!r}, child={child!r}."
             )
 
         if parent_is_rigid and child_is_rigid:
             raise NotImplementedError(
-                "Offset between two rigid bodies is not implemented: "
+                "Connection between two rigid bodies is not implemented: "
                 f"parent={parent!r}, child={child!r}."
             )
 
-        if parent_is_rigid and child_is_flexible:
+        raise NotImplementedError(
+            "Unsupported body type pair: "
+            f"parent={parent!r} ({parent_type!r}), child={child!r} ({child_type!r})."
+        )
+
+    def _get_offset_vector(self, parent: str, child: str):
+        connection_kind = self._connection_kind(parent, child)
+        child_type = self.body_type[child]
+
+        if connection_kind == "rigid_to_flexible":
             sign = -1 if child_type.endswith("-left") else 1
             return sign * (self.D / 2) * self.frames[parent].x
 
-        if parent_is_flexible and child_is_rigid:
+        if connection_kind == "flexible_to_rigid":
             frame = self.frames[parent]
             eta_list = self.flexible_bodies[parent]["eta_list"]
             phi_list = self.flexible_bodies[parent]["phi_list"]
@@ -409,10 +424,7 @@ class MultiAngleFlexibleDynamics:
 
             return self.L * frame.x + phi_tip * frame.y
 
-        raise NotImplementedError(
-            "Unsupported body type pair for offset vector: "
-            f"parent={parent!r} ({parent_type!r}), child={child!r} ({child_type!r})."
-        )
+        raise NotImplementedError(f"Unsupported connection kind: {connection_kind!r}.")
 
     def _define_points(self):
         inertial_frame = self.frames["inertial"]
@@ -541,17 +553,17 @@ class MultiAngleFlexibleDynamics:
             if child == self.central_body:
                 continue
 
-            parent_type = self.body_type[parent]
+            connection_kind = self._connection_kind(parent, child)
             child_type = self.body_type[child]
             joint_name = f"joint_{child}_{parent}"
             child_joint = self.points[joint_name]
 
-            if parent_type.startswith("rigid-"):
+            if connection_kind == "rigid_to_flexible":
                 parent_point = self.points[parent]
                 parent_frame = self.frames[parent]
                 child_joint.v2pt_theory(parent_point, inertial_frame, parent_frame)
 
-            elif parent_type.startswith("flexible-"):
+            elif connection_kind == "flexible_to_rigid":
                 parent_frame = self.frames[parent]
                 parent_root_name = f"joint_{parent}_{self.parents[parent]}"
                 parent_root = self.points[parent_root_name]
@@ -564,7 +576,9 @@ class MultiAngleFlexibleDynamics:
                 child_joint.v1pt_theory(parent_root, inertial_frame, parent_frame)
 
             else:
-                raise KeyError(f"Unknown parent type for '{parent}': {parent_type}")
+                raise NotImplementedError(
+                    f"Unsupported connection kind: {connection_kind!r}."
+                )
 
             self.joint_velocities[joint_name] = child_joint.vel(inertial_frame)
 
