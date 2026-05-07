@@ -632,3 +632,88 @@ def test_multiangle_defines_central_bus_linear_velocity():
 
     assert_vector_equal(dynamics.points[dynamics.central_body].vel(N), expected, N)
     assert_vector_equal(dynamics.linear_velocities[dynamics.central_body], expected, N)
+
+
+def test_multiangle_defines_rigid_parent_joint_velocity_with_two_point_theory():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+    N = dynamics.frames["inertial"]
+
+    joint = dynamics.points["joint_panel_2_bus_2"]
+    parent_point = dynamics.points["bus_2"]
+    parent_frame = dynamics.frames["bus_2"]
+    relative_position = joint.pos_from(parent_point)
+    expected = (
+        parent_point.vel(N)
+        + parent_frame.ang_vel_in(N).cross(relative_position)
+    )
+
+    assert "joint_panel_2_bus_2" in dynamics.joint_velocities
+    assert_vector_equal(joint.vel(N), expected, N)
+    assert_vector_equal(dynamics.joint_velocities["joint_panel_2_bus_2"], expected, N)
+
+
+def test_multiangle_defines_flexible_parent_distal_joint_tip_velocity():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    panel = "panel_2"
+    frame = dynamics.frames[panel]
+    joint = dynamics.points["joint_bus_1_panel_2"]
+    expected_relative_velocity = dynamics._flexible_tip_velocity_sum(panel) * frame.y
+
+    assert_vector_equal(joint.vel(frame), expected_relative_velocity, frame)
+
+
+def test_multiangle_defines_flexible_parent_distal_joint_inertial_velocity():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+    N = dynamics.frames["inertial"]
+
+    panel = "panel_2"
+    frame = dynamics.frames[panel]
+    parent_root = dynamics.points["joint_panel_2_bus_2"]
+    joint = dynamics.points["joint_bus_1_panel_2"]
+    expected = (
+        parent_root.vel(N)
+        + dynamics._flexible_tip_velocity_sum(panel) * frame.y
+        + frame.ang_vel_in(N).cross(joint.pos_from(parent_root))
+    )
+
+    assert "joint_bus_1_panel_2" in dynamics.joint_velocities
+    assert_vector_equal(joint.vel(N), expected, N)
+    assert_vector_equal(dynamics.joint_velocities["joint_bus_1_panel_2"], expected, N)
+
+
+def test_multiangle_defines_rigid_child_bus_velocity_from_distal_joint():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+    N = dynamics.frames["inertial"]
+
+    bus = "bus_1"
+    joint = dynamics.points["joint_bus_1_panel_2"]
+    bus_point = dynamics.points[bus]
+    bus_frame = dynamics.frames[bus]
+    expected = (
+        joint.vel(N)
+        + bus_frame.ang_vel_in(N).cross(bus_point.pos_from(joint))
+    )
+
+    assert_vector_equal(dynamics.linear_velocities[bus], expected, N)
+
+
+def test_multiangle_defines_flexible_body_distributed_and_center_of_mass_velocities():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    panel = "panel_3"
+    frame = dynamics.frames[panel]
+    dm_point = dynamics.points[f"dm_{panel}"]
+    cm_point = dynamics.points[f"dm_center_of_mass_{panel}"]
+
+    expected_dm_relative_velocity = (
+        dynamics._flexible_distributed_velocity_sum(panel) * frame.y
+    )
+    expected_cm_relative_velocity = (
+        dynamics._flexible_center_of_mass_velocity_sum(panel) * frame.y
+    )
+
+    assert_vector_equal(dm_point.vel(frame), expected_dm_relative_velocity, frame)
+    assert_vector_equal(cm_point.vel(frame), expected_cm_relative_velocity, frame)
+    assert panel in dynamics.linear_velocities
+    assert panel in dynamics.flexible_center_of_mass_velocities

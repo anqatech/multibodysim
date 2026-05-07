@@ -527,6 +527,8 @@ class MultiAngleFlexibleDynamics:
     def _define_linear_velocities(self):
         inertial_frame = self.frames["inertial"]
         self.linear_velocities = {}
+        self.joint_velocities = {}
+        self.flexible_center_of_mass_velocities = {}
 
         central_velocity = (
             self.u_translation["x"] * inertial_frame.x
@@ -534,6 +536,95 @@ class MultiAngleFlexibleDynamics:
         )
         self.points[self.central_body].set_vel(inertial_frame, central_velocity)
         self.linear_velocities[self.central_body] = central_velocity
+
+        for child, parent in self.parents.items():
+            if child == self.central_body:
+                continue
+
+            parent_type = self.body_type[parent]
+            child_type = self.body_type[child]
+            joint_name = f"joint_{child}_{parent}"
+            child_joint = self.points[joint_name]
+
+            if parent_type.startswith("rigid-"):
+                parent_point = self.points[parent]
+                parent_frame = self.frames[parent]
+                child_joint.v2pt_theory(parent_point, inertial_frame, parent_frame)
+
+            elif parent_type.startswith("flexible-"):
+                parent_frame = self.frames[parent]
+                parent_root_name = f"joint_{parent}_{self.parents[parent]}"
+                parent_root = self.points[parent_root_name]
+                phi_tip_zeta_sum = self._flexible_tip_velocity_sum(parent)
+
+                child_joint.set_vel(
+                    parent_frame,
+                    phi_tip_zeta_sum * parent_frame.y,
+                )
+                child_joint.v1pt_theory(parent_root, inertial_frame, parent_frame)
+
+            else:
+                raise KeyError(f"Unknown parent type for '{parent}': {parent_type}")
+
+            self.joint_velocities[joint_name] = child_joint.vel(inertial_frame)
+
+            if child_type.startswith("flexible-"):
+                frame = self.frames[child]
+                dm_point = self.points[f"dm_{child}"]
+                dm_point.set_vel(
+                    frame,
+                    self._flexible_distributed_velocity_sum(child) * frame.y,
+                )
+                dm_vel = dm_point.v1pt_theory(child_joint, inertial_frame, frame)
+                self.linear_velocities[child] = dm_vel.xreplace(self.qd_repl)
+
+                cm_point = self.points[f"dm_center_of_mass_{child}"]
+                cm_point.set_vel(
+                    frame,
+                    self._flexible_center_of_mass_velocity_sum(child) * frame.y,
+                )
+                cm_vel = cm_point.v1pt_theory(child_joint, inertial_frame, frame)
+                self.flexible_center_of_mass_velocities[child] = cm_vel.xreplace(
+                    self.qd_repl
+                )
+
+            elif child_type.startswith("rigid-"):
+                child_point = self.points[child]
+                child_frame = self.frames[child]
+                child_point.v2pt_theory(child_joint, inertial_frame, child_frame)
+                self.linear_velocities[child] = child_point.vel(inertial_frame).xreplace(
+                    self.qd_repl
+                )
+
+            else:
+                raise KeyError(f"Unknown child type for '{child}': {child_type}")
+
+    def _flexible_distributed_velocity_sum(self, body: str):
+        phi_list = self.flexible_bodies[body]["phi_list"]
+        zeta_list = self.flexible_bodies[body]["zeta_list"]
+
+        return sum(
+            phi_k * zeta_k
+            for phi_k, zeta_k in zip(phi_list, zeta_list)
+        )
+
+    def _flexible_center_of_mass_velocity_sum(self, body: str):
+        phi_mean_list = self.flexible_bodies[body]["phi_mean_list"]
+        zeta_list = self.flexible_bodies[body]["zeta_list"]
+
+        return sum(
+            sm.Float(phi_mean_k) * zeta_k
+            for phi_mean_k, zeta_k in zip(phi_mean_list, zeta_list)
+        )
+
+    def _flexible_tip_velocity_sum(self, body: str):
+        phi_list = self.flexible_bodies[body]["phi_list"]
+        zeta_list = self.flexible_bodies[body]["zeta_list"]
+
+        return sum(
+            phi_k.subs(self.s, self.L) * zeta_k
+            for phi_k, zeta_k in zip(phi_list, zeta_list)
+        )
 
     def _define_frame_orientations(self):
         inertial_frame = me.ReferenceFrame("N")
