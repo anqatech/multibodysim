@@ -55,6 +55,7 @@ class MultiAngleFlexibleDynamics:
         self._define_accelerations()
         self.external_forces = self._get_external_forces()
         self.external_torques = self._get_external_torques()
+        self._define_partial_velocities()
 
     def _parents_from_adjacency(self, graph, body_names, central_body):
         visited = {body: False for body in body_names}
@@ -716,6 +717,27 @@ class MultiAngleFlexibleDynamics:
                 torques[body] = 0 * frame.z
 
         return torques
+
+    def _define_partial_velocities(self):
+        inertial_frame = self.frames["inertial"]
+
+        partial_angular_velocities = me.partial_velocity(
+            list(self.angular_velocities.values()),
+            self.u,
+            inertial_frame,
+        )
+        self.partial_angular_velocities = dict(
+            zip(self.angular_velocities.keys(), partial_angular_velocities)
+        )
+
+        partial_linear_velocities = me.partial_velocity(
+            list(self.linear_velocities.values()),
+            self.u,
+            inertial_frame,
+        )
+        self.partial_linear_velocities = dict(
+            zip(self.linear_velocities.keys(), partial_linear_velocities)
+        )
 
     def _define_frame_orientations(self):
         inertial_frame = me.ReferenceFrame("N")

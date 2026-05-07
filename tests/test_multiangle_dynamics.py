@@ -905,3 +905,62 @@ def test_multiangle_external_torques_are_symbolic_on_rigid_buses_only():
             0 * dynamics.frames[panel].z,
             dynamics.frames[panel],
         )
+
+
+def test_multiangle_defines_partial_velocity_vectors_for_all_bodies():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    assert set(dynamics.partial_angular_velocities) == set(dynamics.body_names)
+    assert set(dynamics.partial_linear_velocities) == set(dynamics.body_names)
+
+    for body in dynamics.body_names:
+        assert len(dynamics.partial_angular_velocities[body]) == len(dynamics.u)
+        assert len(dynamics.partial_linear_velocities[body]) == len(dynamics.u)
+
+
+def test_multiangle_bus_angular_partials_distinguish_bus_torque_locations():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+    N = dynamics.frames["inertial"]
+
+    u31 = dynamics.bus_speed_coordinates["bus_1"]
+    u32 = dynamics.bus_speed_coordinates["bus_2"]
+    u33 = dynamics.bus_speed_coordinates["bus_3"]
+    i31 = list(dynamics.u).index(u31)
+    i32 = list(dynamics.u).index(u32)
+    i33 = list(dynamics.u).index(u33)
+
+    partials = dynamics.partial_angular_velocities
+
+    assert_vector_equal(partials["bus_1"][i31], N.z, N)
+    assert_vector_equal(partials["bus_2"][i31], 0 * N.z, N)
+    assert_vector_equal(partials["bus_3"][i31], 0 * N.z, N)
+
+    assert_vector_equal(partials["bus_1"][i32], N.z, N)
+    assert_vector_equal(partials["bus_2"][i32], N.z, N)
+    assert_vector_equal(partials["bus_3"][i32], N.z, N)
+
+    assert_vector_equal(partials["bus_1"][i33], 0 * N.z, N)
+    assert_vector_equal(partials["bus_2"][i33], 0 * N.z, N)
+    assert_vector_equal(partials["bus_3"][i33], N.z, N)
+
+
+def test_multiangle_panel_angular_partials_follow_level_1_5_orientation_model():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+    N = dynamics.frames["inertial"]
+
+    u31 = dynamics.bus_speed_coordinates["bus_1"]
+    u32 = dynamics.bus_speed_coordinates["bus_2"]
+    u33 = dynamics.bus_speed_coordinates["bus_3"]
+    i31 = list(dynamics.u).index(u31)
+    i32 = list(dynamics.u).index(u32)
+    i33 = list(dynamics.u).index(u33)
+
+    partials = dynamics.partial_angular_velocities
+
+    assert_vector_equal(partials["panel_2"][i31], sm.Rational(1, 2) * N.z, N)
+    assert_vector_equal(partials["panel_2"][i32], N.z, N)
+    assert_vector_equal(partials["panel_2"][i33], 0 * N.z, N)
+
+    assert_vector_equal(partials["panel_3"][i31], 0 * N.z, N)
+    assert_vector_equal(partials["panel_3"][i32], N.z, N)
+    assert_vector_equal(partials["panel_3"][i33], sm.Rational(1, 2) * N.z, N)
