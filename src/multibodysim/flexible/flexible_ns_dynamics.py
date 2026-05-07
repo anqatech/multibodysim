@@ -413,7 +413,15 @@ class FlexibleNonSymmetricDynamics:
                 reference_joint_name = f"joint_{parent}_{parent_of_parent}"
                 reference_joint_point = self.points[reference_joint_name]
                 child_joint_point = self.points[f"joint_{child}_{parent}"]
-                child_joint_velocity = child_joint_point.v1pt_theory(reference_joint_point, inertial_frame, self.frames[parent])
+                child_joint_point.set_vel(
+                    self.frames[parent],
+                    self._flexible_tip_velocity_sum(parent) * self.frames[parent].y,
+                )
+                child_joint_point.v1pt_theory(
+                    reference_joint_point,
+                    inertial_frame,
+                    self.frames[parent],
+                )
 
                 child_point = self.points[child]
                 child_point.v2pt_theory(child_joint_point, inertial_frame, self.frames[child])
@@ -460,6 +468,15 @@ class FlexibleNonSymmetricDynamics:
             _ = self.points[f"dm_center_of_mass_{item}"].v1pt_theory(
                 self.points[f"joint_{item}_{parent}"], inertial_frame, self.frames[item]
             )
+
+    def _flexible_tip_velocity_sum(self, body):
+        phi_list = self.flexible_bodies[body]["phi_list"]
+        zeta_list = self.flexible_bodies[body]["zeta_list"]
+
+        return sum(
+            phi_k.subs(self.s, self.p_symbols["L"]) * zeta_k
+            for phi_k, zeta_k in zip(phi_list, zeta_list)
+        )
 
     def _setup_accelerations(self):
         # ---------- Setup ----------
