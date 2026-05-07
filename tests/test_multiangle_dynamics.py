@@ -872,3 +872,36 @@ def test_multiangle_accelerations_are_stored_in_speed_variables():
         dynamics.flexible_center_of_mass_accelerations,
         dynamics,
     )
+
+
+def test_multiangle_external_forces_are_zero_for_all_bodies():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    assert set(dynamics.external_forces) == set(dynamics.body_names)
+    for body in dynamics.body_names:
+        assert_vector_equal(
+            dynamics.external_forces[body],
+            0 * dynamics.frames[body].x,
+            dynamics.frames[body],
+        )
+
+
+def test_multiangle_external_torques_are_symbolic_on_rigid_buses_only():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    assert set(dynamics.external_torques) == set(dynamics.body_names)
+
+    for bus in dynamics.rigid_body_names:
+        expected = dynamics.bus_torque_symbols[bus] * dynamics.frames[bus].z
+        assert_vector_equal(
+            dynamics.external_torques[bus],
+            expected,
+            dynamics.frames[bus],
+        )
+
+    for panel in dynamics.flexible_body_names:
+        assert_vector_equal(
+            dynamics.external_torques[panel],
+            0 * dynamics.frames[panel].z,
+            dynamics.frames[panel],
+        )

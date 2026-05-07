@@ -53,6 +53,8 @@ class MultiAngleFlexibleDynamics:
         self._define_angular_velocities()
         self._define_linear_velocities()
         self._define_accelerations()
+        self.external_forces = self._get_external_forces()
+        self.external_torques = self._get_external_torques()
 
     def _parents_from_adjacency(self, graph, body_names, central_body):
         visited = {body: False for body in body_names}
@@ -696,6 +698,24 @@ class MultiAngleFlexibleDynamics:
 
             else:
                 raise KeyError(f"Unknown child type for '{child}': {child_type}")
+
+    def _get_external_forces(self):
+        return {
+            body: 0 * self.frames[body].x + 0 * self.frames[body].y
+            for body in self.body_names
+        }
+
+    def _get_external_torques(self):
+        torques = {}
+
+        for body in self.body_names:
+            frame = self.frames[body]
+            if body in self.bus_torque_symbols:
+                torques[body] = self.bus_torque_symbols[body] * frame.z
+            else:
+                torques[body] = 0 * frame.z
+
+        return torques
 
     def _define_frame_orientations(self):
         inertial_frame = me.ReferenceFrame("N")
