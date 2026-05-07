@@ -918,6 +918,70 @@ def test_multiangle_defines_partial_velocity_vectors_for_all_bodies():
         assert len(dynamics.partial_linear_velocities[body]) == len(dynamics.u)
 
 
+def test_multiangle_partial_linear_velocities_reconstruct_body_velocities():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+    N = dynamics.frames["inertial"]
+
+    for body, velocity in dynamics.linear_velocities.items():
+        reconstructed = sum(
+            partial_velocity * speed
+            for partial_velocity, speed in zip(
+                dynamics.partial_linear_velocities[body],
+                dynamics.u,
+            )
+        )
+
+        assert_vector_equal(reconstructed, velocity, N)
+
+
+def test_multiangle_central_bus_linear_partials_are_translation_basis_vectors():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+    N = dynamics.frames["inertial"]
+
+    u1 = dynamics.u_translation["x"]
+    u2 = dynamics.u_translation["y"]
+    i_u1 = list(dynamics.u).index(u1)
+    i_u2 = list(dynamics.u).index(u2)
+    partials = dynamics.partial_linear_velocities[dynamics.central_body]
+
+    assert_vector_equal(partials[i_u1], N.x, N)
+    assert_vector_equal(partials[i_u2], N.y, N)
+
+    for index, speed in enumerate(dynamics.u):
+        if speed not in {u1, u2}:
+            assert_vector_equal(partials[index], 0 * N.x, N)
+
+
+def test_multiangle_rigid_parent_panel_linear_partials_include_root_translation():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+    N = dynamics.frames["inertial"]
+
+    panel = "panel_3"
+    u1 = dynamics.u_translation["x"]
+    u2 = dynamics.u_translation["y"]
+    i_u1 = list(dynamics.u).index(u1)
+    i_u2 = list(dynamics.u).index(u2)
+    partials = dynamics.partial_linear_velocities[panel]
+
+    assert_vector_equal(partials[i_u1], N.x, N)
+    assert_vector_equal(partials[i_u2], N.y, N)
+
+
+def test_multiangle_rigid_parent_panel_linear_partials_include_modal_speeds():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+    N = dynamics.frames["inertial"]
+
+    panel = "panel_3"
+    frame = dynamics.frames[panel]
+    zeta_list = dynamics.flexible_bodies[panel]["zeta_list"]
+    phi_list = dynamics.flexible_bodies[panel]["phi_list"]
+    partials = dynamics.partial_linear_velocities[panel]
+
+    for zeta_k, phi_k in zip(zeta_list, phi_list):
+        index = list(dynamics.u).index(zeta_k)
+        assert_vector_equal(partials[index], phi_k * frame.y, N)
+
+
 def test_multiangle_bus_angular_partials_distinguish_bus_torque_locations():
     dynamics = MultiAngleFlexibleDynamics(seven_part_config())
     N = dynamics.frames["inertial"]
