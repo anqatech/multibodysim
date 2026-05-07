@@ -52,6 +52,7 @@ class MultiAngleFlexibleDynamics:
         self._define_kinematic_equations()
         self._define_angular_velocities()
         self._define_linear_velocities()
+        self._define_accelerations()
 
     def _parents_from_adjacency(self, graph, body_names, central_body):
         visited = {body: False for body in body_names}
@@ -639,6 +640,62 @@ class MultiAngleFlexibleDynamics:
             phi_k.subs(self.s, self.L) * zeta_k
             for phi_k, zeta_k in zip(phi_list, zeta_list)
         )
+
+    def _as_speed_acceleration_expression(self, vector):
+        return vector.xreplace(self.qdd_repl).xreplace(self.qd_repl)
+
+    def _define_accelerations(self):
+        inertial_frame = self.frames["inertial"]
+        self.angular_accelerations = {}
+        self.linear_accelerations = {}
+        self.joint_accelerations = {}
+        self.flexible_center_of_mass_accelerations = {}
+
+        for body in self.body_names:
+            angular_acceleration = self.frames[body].ang_acc_in(inertial_frame)
+            self.angular_accelerations[body] = (
+                self._as_speed_acceleration_expression(angular_acceleration)
+            )
+
+        central_acceleration = self.points[self.central_body].acc(inertial_frame)
+        self.linear_accelerations[self.central_body] = (
+            self._as_speed_acceleration_expression(central_acceleration)
+        )
+
+        for child, parent in self.parents.items():
+            if child == self.central_body:
+                continue
+
+            child_type = self.body_type[child]
+            joint_name = f"joint_{child}_{parent}"
+            child_joint = self.points[joint_name]
+            joint_acceleration = child_joint.acc(inertial_frame)
+            self.joint_accelerations[joint_name] = (
+                self._as_speed_acceleration_expression(joint_acceleration)
+            )
+
+            if child_type.startswith("flexible-"):
+                dm_point = self.points[f"dm_{child}"]
+                dm_acceleration = dm_point.acc(inertial_frame)
+                self.linear_accelerations[child] = (
+                    self._as_speed_acceleration_expression(dm_acceleration)
+                )
+
+                cm_point = self.points[f"dm_center_of_mass_{child}"]
+                cm_acceleration = cm_point.acc(inertial_frame)
+                self.flexible_center_of_mass_accelerations[child] = (
+                    self._as_speed_acceleration_expression(cm_acceleration)
+                )
+
+            elif child_type.startswith("rigid-"):
+                child_point = self.points[child]
+                child_acceleration = child_point.acc(inertial_frame)
+                self.linear_accelerations[child] = (
+                    self._as_speed_acceleration_expression(child_acceleration)
+                )
+
+            else:
+                raise KeyError(f"Unknown child type for '{child}': {child_type}")
 
     def _define_frame_orientations(self):
         inertial_frame = me.ReferenceFrame("N")

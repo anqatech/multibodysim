@@ -149,7 +149,20 @@ def assert_symbolic_equal(lhs, rhs):
 
 def assert_vector_equal(lhs, rhs, frame):
     diff = lhs - rhs
-    assert all(sm.simplify(component) == 0 for component in diff.to_matrix(frame))
+    assert all(
+        sm.trigsimp(sm.simplify(component)) == 0
+        for component in diff.to_matrix(frame)
+    )
+
+
+def assert_vectors_do_not_contain_coordinate_derivatives(vectors, dynamics):
+    inertial_frame = dynamics.frames["inertial"]
+    forbidden = set(dynamics.qd)
+    forbidden.update(qdi.diff(dynamics.t) for qdi in dynamics.qd)
+
+    for vector in vectors.values():
+        for component in vector.to_matrix(inertial_frame):
+            assert not (component.atoms(sm.Derivative) & forbidden)
 
 
 def test_multiangle_bus_orientation_convention_for_seven_part_chain():
@@ -734,3 +747,128 @@ def test_multiangle_defines_flexible_body_distributed_and_center_of_mass_velocit
     assert_vector_equal(cm_point.vel(frame), expected_cm_relative_velocity, frame)
     assert panel in dynamics.linear_velocities
     assert panel in dynamics.flexible_center_of_mass_velocities
+
+
+def test_multiangle_defines_bus_angular_accelerations():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+    N = dynamics.frames["inertial"]
+    t = dynamics.t
+
+    u31 = dynamics.bus_speed_coordinates["bus_1"]
+    u32 = dynamics.bus_speed_coordinates["bus_2"]
+    u33 = dynamics.bus_speed_coordinates["bus_3"]
+
+    assert_vector_equal(
+        dynamics.angular_accelerations["bus_1"],
+        (u32.diff(t) + u31.diff(t)) * N.z,
+        N,
+    )
+    assert_vector_equal(
+        dynamics.angular_accelerations["bus_2"],
+        u32.diff(t) * N.z,
+        N,
+    )
+    assert_vector_equal(
+        dynamics.angular_accelerations["bus_3"],
+        (u32.diff(t) + u33.diff(t)) * N.z,
+        N,
+    )
+
+
+def test_multiangle_defines_central_bus_linear_acceleration():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+    N = dynamics.frames["inertial"]
+    t = dynamics.t
+
+    expected = (
+        dynamics.u_translation["x"].diff(t) * N.x
+        + dynamics.u_translation["y"].diff(t) * N.y
+    )
+
+    assert_vector_equal(
+        dynamics.points[dynamics.central_body].acc(N),
+        expected,
+        N,
+    )
+    assert_vector_equal(
+        dynamics.linear_accelerations[dynamics.central_body],
+        expected,
+        N,
+    )
+
+
+def test_multiangle_defines_rigid_parent_joint_acceleration_with_two_point_theory():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+    N = dynamics.frames["inertial"]
+
+    joint = dynamics.points["joint_panel_2_bus_2"]
+    parent_point = dynamics.points["bus_2"]
+    parent_frame = dynamics.frames["bus_2"]
+    relative_position = joint.pos_from(parent_point)
+    omega = parent_frame.ang_vel_in(N)
+    alpha = parent_frame.ang_acc_in(N)
+    expected = (
+        parent_point.acc(N)
+        + alpha.cross(relative_position)
+        + omega.cross(omega.cross(relative_position))
+    ).xreplace(dynamics.qd_repl)
+    actual = joint.acc(N).xreplace(dynamics.qd_repl)
+
+    assert "joint_panel_2_bus_2" in dynamics.joint_accelerations
+    assert_vector_equal(actual, expected, N)
+    assert_vector_equal(
+        dynamics.joint_accelerations["joint_panel_2_bus_2"],
+        expected,
+        N,
+    )
+
+
+def test_multiangle_defines_flexible_parent_distal_joint_acceleration():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+    N = dynamics.frames["inertial"]
+
+    panel = "panel_2"
+    frame = dynamics.frames[panel]
+    parent_root = dynamics.points["joint_panel_2_bus_2"]
+    joint = dynamics.points["joint_bus_1_panel_2"]
+    relative_position = joint.pos_from(parent_root)
+    relative_velocity = dynamics._flexible_tip_velocity_sum(panel) * frame.y
+    omega = frame.ang_vel_in(N)
+    alpha = frame.ang_acc_in(N)
+    expected = (
+        parent_root.acc(N)
+        + relative_velocity.dt(frame)
+        + 2 * omega.cross(relative_velocity)
+        + alpha.cross(relative_position)
+        + omega.cross(omega.cross(relative_position))
+    ).xreplace(dynamics.qd_repl)
+    actual = joint.acc(N).xreplace(dynamics.qd_repl)
+
+    assert "joint_bus_1_panel_2" in dynamics.joint_accelerations
+    assert_vector_equal(actual, expected, N)
+    assert_vector_equal(
+        dynamics.joint_accelerations["joint_bus_1_panel_2"],
+        expected,
+        N,
+    )
+
+
+def test_multiangle_accelerations_are_stored_in_speed_variables():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    assert_vectors_do_not_contain_coordinate_derivatives(
+        dynamics.angular_accelerations,
+        dynamics,
+    )
+    assert_vectors_do_not_contain_coordinate_derivatives(
+        dynamics.linear_accelerations,
+        dynamics,
+    )
+    assert_vectors_do_not_contain_coordinate_derivatives(
+        dynamics.joint_accelerations,
+        dynamics,
+    )
+    assert_vectors_do_not_contain_coordinate_derivatives(
+        dynamics.flexible_center_of_mass_accelerations,
+        dynamics,
+    )
