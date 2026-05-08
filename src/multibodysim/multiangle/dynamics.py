@@ -56,6 +56,7 @@ class MultiAngleFlexibleDynamics:
         self.external_forces = self._get_external_forces()
         self.external_torques = self._get_external_torques()
         self._define_partial_velocities()
+        self._define_system_center_of_mass_kinematics()
         self._define_generalised_active_forces()
 
     def _parents_from_adjacency(self, graph, body_names, central_body):
@@ -516,6 +517,19 @@ class MultiAngleFlexibleDynamics:
         self.r_GB = self.points[self.central_body].pos_from(self.G)
         self.points["center_of_mass"] = self.G
 
+    def _define_system_center_of_mass_kinematics(self):
+        inertial_frame = self.frames["inertial"]
+
+        self.r_G = self.points["center_of_mass"].pos_from(self.O).express(
+            inertial_frame
+        )
+        self.v_G = self.r_G.dt(inertial_frame).xreplace(self.qd_repl)
+        self.partial_v_G = me.partial_velocity(
+            [self.v_G],
+            self.u,
+            inertial_frame,
+        )[0]
+
     def _define_kinematic_equations(self):
         self.qd_zero = {qdi: 0 for qdi in self.qd}
         self.ud_zero = {udi: 0 for udi in self.ud}
@@ -757,6 +771,21 @@ class MultiAngleFlexibleDynamics:
                     + w_partial.dot(torque)
                 )
 
+    def _add_kepler_gravity_generalised_forces(self):
+        self.r_G_squared = self.r_G.dot(self.r_G)
+        self.r_G_norm = sm.sqrt(self.r_G_squared)
+        self.F_gravity = (
+            -self.planet_mu
+            * self.total_mass
+            * self.r_G
+            / self.r_G_norm**3
+        )
+
+        for i in range(self.state_dimension):
+            self.generalised_active_forces[i] += self.partial_v_G[i].dot(
+                self.F_gravity
+            )
+
     def _add_flexible_strain_generalised_forces(self):
         self.V_strain = sm.S.Zero
 
@@ -774,6 +803,7 @@ class MultiAngleFlexibleDynamics:
     def _define_generalised_active_forces(self):
         self._initialise_generalised_active_forces()
         self._add_external_load_generalised_forces()
+        self._add_kepler_gravity_generalised_forces()
         self._add_flexible_strain_generalised_forces()
 
     def _define_frame_orientations(self):

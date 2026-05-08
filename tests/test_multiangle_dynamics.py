@@ -1063,10 +1063,14 @@ def test_multiangle_external_bus_torques_create_distinct_generalised_forces():
             zip(values["eta_list"], values["k_modal_list"])
         ):
             row = modal_offset + dynamics.flex_eta_index[(body, mode)]
-            expected[row] = -K_k * eta_k
+            expected[row] += -K_k * eta_k
 
     for i in range(len(dynamics.u)):
-        assert_symbolic_equal(dynamics.generalised_active_forces[i], expected[i])
+        actual_without_gravity = (
+            dynamics.generalised_active_forces[i]
+            - dynamics.partial_v_G[i].dot(dynamics.F_gravity)
+        )
+        assert_symbolic_equal(actual_without_gravity, expected[i])
 
 
 def test_multiangle_generalised_active_forces_match_implemented_force_blocks():
@@ -1094,7 +1098,63 @@ def test_multiangle_generalised_active_forces_match_implemented_force_blocks():
             expected[row] += -K_k * eta_k
 
     for i in range(len(dynamics.u)):
-        assert_symbolic_equal(dynamics.generalised_active_forces[i], expected[i])
+        actual_without_gravity = (
+            dynamics.generalised_active_forces[i]
+            - dynamics.partial_v_G[i].dot(dynamics.F_gravity)
+        )
+        assert_symbolic_equal(actual_without_gravity, expected[i])
+
+
+def test_multiangle_kepler_gravity_quantities_are_stored():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+    N = dynamics.frames["inertial"]
+
+    expected_r_G = dynamics.points["center_of_mass"].pos_from(dynamics.O).express(N)
+    expected_r_norm = sm.sqrt(expected_r_G.dot(expected_r_G))
+    expected_force = (
+        -dynamics.planet_mu
+        * dynamics.total_mass
+        * expected_r_G
+        / expected_r_norm**3
+    )
+    expected_v_G = expected_r_G.dt(N).xreplace(dynamics.qd_repl)
+
+    assert dynamics.r_G == expected_r_G
+    assert dynamics.r_G_squared == expected_r_G.dot(expected_r_G)
+    assert dynamics.r_G_norm == expected_r_norm
+    assert dynamics.F_gravity == expected_force
+    assert dynamics.v_G == expected_v_G
+    assert len(dynamics.partial_v_G) == len(dynamics.u)
+
+
+def test_multiangle_kepler_gravity_force_is_com_partial_velocity_projection():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    for i in range(len(dynamics.u)):
+        external_and_strain = sm.S.Zero
+
+        for body in dynamics.body_names:
+            external_and_strain += (
+                dynamics.partial_linear_velocities[body][i].dot(
+                    dynamics.external_forces[body]
+                )
+                + dynamics.partial_angular_velocities[body][i].dot(
+                    dynamics.external_torques[body]
+                )
+            )
+
+        modal_offset = len(dynamics.u_reference)
+        for body, values in dynamics.flexible_bodies.items():
+            for mode, (eta_k, K_k) in enumerate(
+                zip(values["eta_list"], values["k_modal_list"])
+            ):
+                row = modal_offset + dynamics.flex_eta_index[(body, mode)]
+                if row == i:
+                    external_and_strain += -K_k * eta_k
+
+        actual_gravity = dynamics.generalised_active_forces[i] - external_and_strain
+        expected_gravity = dynamics.partial_v_G[i].dot(dynamics.F_gravity)
+        assert_symbolic_equal(actual_gravity, expected_gravity)
 
 
 def test_multiangle_flexible_strain_potential_energy_is_stored():
@@ -1118,21 +1178,9 @@ def test_multiangle_flexible_strain_forces_are_added_to_modal_rows():
         ):
             row = modal_offset + dynamics.flex_eta_index[(body, mode)]
             expected = -K_k * eta_k
-            actual = dynamics.generalised_active_forces[row]
+            actual = (
+                dynamics.generalised_active_forces[row]
+                - dynamics.partial_v_G[row].dot(dynamics.F_gravity)
+            )
 
             assert_symbolic_equal(actual.coeff(eta_k), expected.coeff(eta_k))
-
-    rigid_rows = [
-        list(dynamics.u).index(speed)
-        for speed in [
-            *dynamics.u_translation.values(),
-            *dynamics.bus_speed_coordinates.values(),
-        ]
-    ]
-    for i in range(len(dynamics.u)):
-        if i in rigid_rows:
-            assert not any(
-                dynamics.generalised_active_forces[i].has(eta_k)
-                for values in dynamics.flexible_bodies.values()
-                for eta_k in values["eta_list"]
-            )
