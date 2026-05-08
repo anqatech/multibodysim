@@ -757,9 +757,24 @@ class MultiAngleFlexibleDynamics:
                     + w_partial.dot(torque)
                 )
 
+    def _add_flexible_strain_generalised_forces(self):
+        self.V_strain = sm.S.Zero
+
+        modal_offset = len(self.u_reference)
+        for body, values in self.flexible_bodies.items():
+            eta_list = values["eta_list"]
+            k_modal_list = values["k_modal_list"]
+
+            for mode, (eta_k, K_k) in enumerate(zip(eta_list, k_modal_list)):
+                self.V_strain += sm.Rational(1, 2) * K_k * eta_k**2
+
+                modal_row = modal_offset + self.flex_eta_index[(body, mode)]
+                self.generalised_active_forces[modal_row] += -(K_k * eta_k)
+
     def _define_generalised_active_forces(self):
         self._initialise_generalised_active_forces()
         self._add_external_load_generalised_forces()
+        self._add_flexible_strain_generalised_forces()
 
     def _define_frame_orientations(self):
         inertial_frame = me.ReferenceFrame("N")

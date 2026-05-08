@@ -1057,11 +1057,19 @@ def test_multiangle_external_bus_torques_create_distinct_generalised_forces():
     expected[list(dynamics.u).index(u32)] = tau1 + tau2 + tau3
     expected[list(dynamics.u).index(u33)] = tau3
 
+    modal_offset = len(dynamics.u_reference)
+    for body, values in dynamics.flexible_bodies.items():
+        for mode, (eta_k, K_k) in enumerate(
+            zip(values["eta_list"], values["k_modal_list"])
+        ):
+            row = modal_offset + dynamics.flex_eta_index[(body, mode)]
+            expected[row] = -K_k * eta_k
+
     for i in range(len(dynamics.u)):
         assert_symbolic_equal(dynamics.generalised_active_forces[i], expected[i])
 
 
-def test_multiangle_external_generalised_forces_match_partial_velocity_definition():
+def test_multiangle_generalised_active_forces_match_implemented_force_blocks():
     dynamics = MultiAngleFlexibleDynamics(seven_part_config())
 
     expected = sm.zeros(len(dynamics.u), 1)
@@ -1077,5 +1085,54 @@ def test_multiangle_external_generalised_forces_match_partial_velocity_definitio
                 )
             )
 
+    modal_offset = len(dynamics.u_reference)
+    for body, values in dynamics.flexible_bodies.items():
+        for mode, (eta_k, K_k) in enumerate(
+            zip(values["eta_list"], values["k_modal_list"])
+        ):
+            row = modal_offset + dynamics.flex_eta_index[(body, mode)]
+            expected[row] += -K_k * eta_k
+
     for i in range(len(dynamics.u)):
         assert_symbolic_equal(dynamics.generalised_active_forces[i], expected[i])
+
+
+def test_multiangle_flexible_strain_potential_energy_is_stored():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    expected = sm.S.Zero
+    for values in dynamics.flexible_bodies.values():
+        for eta_k, K_k in zip(values["eta_list"], values["k_modal_list"]):
+            expected += sm.Rational(1, 2) * K_k * eta_k**2
+
+    assert_symbolic_equal(dynamics.V_strain, expected)
+
+
+def test_multiangle_flexible_strain_forces_are_added_to_modal_rows():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    modal_offset = len(dynamics.u_reference)
+    for body, values in dynamics.flexible_bodies.items():
+        for mode, (eta_k, K_k) in enumerate(
+            zip(values["eta_list"], values["k_modal_list"])
+        ):
+            row = modal_offset + dynamics.flex_eta_index[(body, mode)]
+            expected = -K_k * eta_k
+            actual = dynamics.generalised_active_forces[row]
+
+            assert_symbolic_equal(actual.coeff(eta_k), expected.coeff(eta_k))
+
+    rigid_rows = [
+        list(dynamics.u).index(speed)
+        for speed in [
+            *dynamics.u_translation.values(),
+            *dynamics.bus_speed_coordinates.values(),
+        ]
+    ]
+    for i in range(len(dynamics.u)):
+        if i in rigid_rows:
+            assert not any(
+                dynamics.generalised_active_forces[i].has(eta_k)
+                for values in dynamics.flexible_bodies.values()
+                for eta_k in values["eta_list"]
+            )
