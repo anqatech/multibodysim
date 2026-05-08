@@ -1028,3 +1028,54 @@ def test_multiangle_panel_angular_partials_follow_level_1_5_orientation_model():
     assert_vector_equal(partials["panel_3"][i31], 0 * N.z, N)
     assert_vector_equal(partials["panel_3"][i32], N.z, N)
     assert_vector_equal(partials["panel_3"][i33], sm.Rational(1, 2) * N.z, N)
+
+
+def test_multiangle_initialises_generalised_active_force_vector():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    assert dynamics.state_dimension == len(dynamics.u)
+    assert dynamics.generalised_active_forces.shape == (len(dynamics.u), 1)
+
+
+def test_multiangle_external_bus_torques_create_distinct_generalised_forces():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    tau1 = dynamics.bus_torque_symbols["bus_1"]
+    tau2 = dynamics.bus_torque_symbols["bus_2"]
+    tau3 = dynamics.bus_torque_symbols["bus_3"]
+
+    u1 = dynamics.u_translation["x"]
+    u2 = dynamics.u_translation["y"]
+    u31 = dynamics.bus_speed_coordinates["bus_1"]
+    u32 = dynamics.bus_speed_coordinates["bus_2"]
+    u33 = dynamics.bus_speed_coordinates["bus_3"]
+
+    expected = sm.zeros(len(dynamics.u), 1)
+    expected[list(dynamics.u).index(u1)] = 0
+    expected[list(dynamics.u).index(u2)] = 0
+    expected[list(dynamics.u).index(u31)] = tau1
+    expected[list(dynamics.u).index(u32)] = tau1 + tau2 + tau3
+    expected[list(dynamics.u).index(u33)] = tau3
+
+    for i in range(len(dynamics.u)):
+        assert_symbolic_equal(dynamics.generalised_active_forces[i], expected[i])
+
+
+def test_multiangle_external_generalised_forces_match_partial_velocity_definition():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    expected = sm.zeros(len(dynamics.u), 1)
+
+    for i in range(len(dynamics.u)):
+        for body in dynamics.body_names:
+            expected[i] += (
+                dynamics.partial_linear_velocities[body][i].dot(
+                    dynamics.external_forces[body]
+                )
+                + dynamics.partial_angular_velocities[body][i].dot(
+                    dynamics.external_torques[body]
+                )
+            )
+
+    for i in range(len(dynamics.u)):
+        assert_symbolic_equal(dynamics.generalised_active_forces[i], expected[i])
