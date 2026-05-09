@@ -67,6 +67,60 @@ def seven_part_config():
     }
 
 
+def compact_gravity_gradient_config():
+    return {
+        "body_names": [
+            "bus_1",
+            "bus_2",
+            "bus_3",
+            "panel_1",
+            "panel_2",
+        ],
+        "central_body": "bus_2",
+        "adjacency_graph": {
+            "bus_1": ["panel_1"],
+            "bus_2": ["panel_1", "panel_2"],
+            "bus_3": ["panel_2"],
+            "panel_1": ["bus_1", "bus_2"],
+            "panel_2": ["bus_2", "bus_3"],
+        },
+        "body_type": {
+            "bus_1": "rigid-left",
+            "bus_2": "rigid-central",
+            "bus_3": "rigid-right",
+            "panel_1": "flexible-left",
+            "panel_2": "flexible-right",
+        },
+        "flexible_types": {
+            "panel_1": "cantilever",
+            "panel_2": "cantilever",
+        },
+        "beam_parameters": {
+            "cantilever": {"nb_modes": 1},
+        },
+        "parameters": {
+            "D": 1.0,
+            "L": 3.0,
+            "m_bus_1": 3.0,
+            "m_bus_2": 3.0,
+            "m_bus_3": 3.0,
+            "m_panel_1": 2.0,
+            "m_panel_2": 2.0,
+            "E_mod": 140e9,
+            "I_area": 2.5e-8,
+            "planet_mu": 3.986004418e14,
+            "orbit_semi_major_axis": 6778000.0,
+            "orbit_eccentricity": 0.0,
+        },
+        "enable_gravity_gradient": True,
+    }
+
+
+@pytest.fixture(scope="module")
+def gravity_gradient_dynamics():
+    return MultiAngleFlexibleDynamics(compact_gravity_gradient_config())
+
+
 def eleven_part_config():
     return {
         "body_names": [
@@ -1125,6 +1179,154 @@ def test_multiangle_kepler_gravity_quantities_are_stored():
     assert dynamics.F_gravity == expected_force
     assert dynamics.v_G == expected_v_G
     assert len(dynamics.partial_v_G) == len(dynamics.u)
+
+
+def test_multiangle_gravity_gradient_is_disabled_by_default():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    assert dynamics.enable_gravity_gradient is False
+    assert dynamics.V_gg == 0
+    assert dynamics.V_gg_trace == 0
+    assert dynamics.V_gg_directional == 0
+    assert dynamics.gravity_gradient_trace_inertia == 0
+    assert dynamics.gravity_gradient_directional_inertia == 0
+    assert dynamics.e3_hat_inertial == -dynamics.r_G / dynamics.r_G_norm
+    assert dynamics.e3_hat_body == {}
+    assert dynamics.body_centre_offsets == {}
+
+
+def test_multiangle_gravity_gradient_potential_energy_is_stored_when_enabled(
+    gravity_gradient_dynamics,
+):
+    dynamics = gravity_gradient_dynamics
+
+    expected_directional_inertia = sm.S.Zero
+    expected_trace_inertia = sm.S.Zero
+    for body in dynamics.body_names:
+        expected_directional_inertia += dynamics._body_gravity_gradient_energy(body)
+        expected_trace_inertia += dynamics._body_gravity_gradient_trace_inertia(body)
+
+    expected_trace = (
+        -sm.Rational(1, 2)
+        * dynamics.planet_mu
+        * expected_trace_inertia
+        / dynamics.r_G_norm**3
+    )
+    expected_directional = (
+        sm.Rational(3, 2)
+        * dynamics.planet_mu
+        * expected_directional_inertia
+        / dynamics.r_G_norm**3
+    )
+    expected = expected_trace + expected_directional
+
+    assert dynamics.enable_gravity_gradient is True
+    assert dynamics.V_gg == expected
+    assert dynamics.V_gg_trace == expected_trace
+    assert dynamics.V_gg_directional == expected_directional
+    assert dynamics.gravity_gradient_trace_inertia == expected_trace_inertia
+    assert dynamics.gravity_gradient_directional_inertia == expected_directional_inertia
+    assert set(dynamics.e3_hat_body) == set(dynamics.body_names)
+    assert set(dynamics.body_centre_offsets) == set(dynamics.body_names)
+    assert dynamics.V_gg.has(dynamics.planet_mu)
+
+
+def test_multiangle_gravity_gradient_directional_inertia_includes_parallel_axis(
+    gravity_gradient_dynamics,
+):
+    dynamics = gravity_gradient_dynamics
+    body = "panel_1"
+    frame = dynamics.frames[body]
+
+    local_vertical_body = dynamics.e3_hat_inertial.express(frame)
+    e_body_components = local_vertical_body.to_matrix(frame)
+    local_inertia = dynamics.inertia_matrices[body]
+    body_offset = dynamics._body_centre_offset_from_system_centre(body).express(frame)
+    expected = (
+        (e_body_components.T * local_inertia * e_body_components)[0]
+        + dynamics.mass_symbols[body]
+        * (
+            body_offset.dot(body_offset)
+            - local_vertical_body.dot(body_offset) ** 2
+        )
+    )
+
+    assert_symbolic_equal(dynamics._body_gravity_gradient_energy(body), expected)
+    assert dynamics._body_gravity_gradient_energy(body).has(
+        *dynamics.flexible_bodies[body]["eta_list"]
+    )
+
+
+def test_multiangle_gravity_gradient_trace_inertia_includes_parallel_axis(
+    gravity_gradient_dynamics,
+):
+    dynamics = gravity_gradient_dynamics
+    body = "panel_1"
+
+    body_offset = dynamics._body_centre_offset_from_system_centre(body)
+    expected = (
+        sm.trace(dynamics.inertia_matrices[body])
+        + 2 * dynamics.mass_symbols[body] * body_offset.dot(body_offset)
+    )
+
+    assert_symbolic_equal(
+        dynamics._body_gravity_gradient_trace_inertia(body),
+        expected,
+    )
+    assert dynamics._body_gravity_gradient_trace_inertia(body).has(
+        *dynamics.flexible_bodies[body]["eta_list"]
+    )
+
+
+def test_multiangle_gravity_gradient_adds_attitude_row_forces_when_enabled(
+    gravity_gradient_dynamics,
+):
+    dynamics = gravity_gradient_dynamics
+
+    for body, angle_coordinate in dynamics.bus_angle_coordinates.items():
+        row = list(dynamics.u).index(dynamics.bus_speed_coordinates[body])
+        external_and_kepler = (
+            dynamics.partial_v_G[row].dot(dynamics.F_gravity)
+        )
+        for loaded_body in dynamics.body_names:
+            external_and_kepler += (
+                dynamics.partial_linear_velocities[loaded_body][row].dot(
+                    dynamics.external_forces[loaded_body]
+                )
+                + dynamics.partial_angular_velocities[loaded_body][row].dot(
+                    dynamics.external_torques[loaded_body]
+                )
+            )
+
+        actual_gravity_gradient = (
+            dynamics.generalised_active_forces[row]
+            - external_and_kepler
+        )
+        expected_gravity_gradient = -sm.diff(dynamics.V_gg, angle_coordinate)
+
+        assert actual_gravity_gradient == expected_gravity_gradient
+        assert actual_gravity_gradient.has(dynamics.planet_mu)
+
+
+def test_multiangle_gravity_gradient_adds_modal_row_forces_when_enabled(
+    gravity_gradient_dynamics,
+):
+    dynamics = gravity_gradient_dynamics
+
+    modal_offset = len(dynamics.u_reference)
+    for body, values in dynamics.flexible_bodies.items():
+        for mode, (eta_k, K_k) in enumerate(
+            zip(values["eta_list"], values["k_modal_list"])
+        ):
+            row = modal_offset + dynamics.flex_eta_index[(body, mode)]
+            actual_gravity_gradient = (
+                dynamics.generalised_active_forces[row]
+                - dynamics.partial_v_G[row].dot(dynamics.F_gravity)
+                + K_k * eta_k
+            )
+            expected_gravity_gradient = -sm.diff(dynamics.V_gg, eta_k)
+
+            assert actual_gravity_gradient == expected_gravity_gradient
 
 
 def test_multiangle_kepler_gravity_force_is_com_partial_velocity_projection():
