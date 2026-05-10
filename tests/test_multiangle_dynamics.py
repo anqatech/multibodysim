@@ -1159,6 +1159,52 @@ def test_multiangle_generalised_active_forces_match_implemented_force_blocks():
         assert_symbolic_equal(actual_without_gravity, expected[i])
 
 
+def test_multiangle_initialises_generalised_inertia_force_vector():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    assert dynamics.state_dimension == len(dynamics.u)
+    assert dynamics.generalised_inertia_forces.shape == (len(dynamics.u), 1)
+    assert set(dynamics.rigid_body_inertia_forces) == set(dynamics.rigid_body_names)
+    assert set(dynamics.rigid_body_inertia_torques) == set(dynamics.rigid_body_names)
+
+
+def test_multiangle_central_bus_rigid_body_inertia_loads_have_newton_euler_form():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+    N = dynamics.frames["inertial"]
+    body = dynamics.central_body
+
+    m_bus = dynamics.mass_symbols[body]
+    u1_dot = dynamics.u_translation["x"].diff(dynamics.t)
+    u2_dot = dynamics.u_translation["y"].diff(dynamics.t)
+    u3_dot = dynamics.bus_speed_coordinates[body].diff(dynamics.t)
+    Izz = dynamics.inertia_matrices[body][2, 2]
+
+    expected_force = -m_bus * (u1_dot * N.x + u2_dot * N.y)
+    expected_torque = -Izz * u3_dot * N.z
+
+    assert_vector_equal(dynamics.rigid_body_inertia_forces[body], expected_force, N)
+    assert_vector_equal(dynamics.rigid_body_inertia_torques[body], expected_torque, N)
+
+
+def test_multiangle_generalised_inertia_forces_match_rigid_body_projections():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    expected = sm.zeros(len(dynamics.u), 1)
+    for i in range(len(dynamics.u)):
+        for body in dynamics.rigid_body_names:
+            expected[i] += (
+                dynamics.partial_linear_velocities[body][i].dot(
+                    dynamics.rigid_body_inertia_forces[body]
+                )
+                + dynamics.partial_angular_velocities[body][i].dot(
+                    dynamics.rigid_body_inertia_torques[body]
+                )
+            )
+
+    for i in range(len(dynamics.u)):
+        assert_symbolic_equal(dynamics.generalised_inertia_forces[i], expected[i])
+
+
 def test_multiangle_kepler_gravity_quantities_are_stored():
     dynamics = MultiAngleFlexibleDynamics(seven_part_config())
     N = dynamics.frames["inertial"]

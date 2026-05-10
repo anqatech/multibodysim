@@ -45,6 +45,9 @@ class MultiAngleFlexibleDynamics:
             raise ValueError("central_body must be one of the rigid bodies.")
 
         self._define_symbols()
+
+        self.state_dimension = len(self.u)
+        
         self._define_mode_shapes()
         self._define_inertia_matrices()
         self._define_frame_orientations()
@@ -61,6 +64,7 @@ class MultiAngleFlexibleDynamics:
         self._define_partial_velocities()
         self._define_system_center_of_mass_kinematics()
         self._define_generalised_active_forces()
+        self._define_generalised_inertia_forces()
 
     def _parents_from_adjacency(self, graph, body_names, central_body):
         visited = {body: False for body in body_names}
@@ -758,7 +762,6 @@ class MultiAngleFlexibleDynamics:
         )
 
     def _initialise_generalised_active_forces(self):
-        self.state_dimension = len(self.u)
         self.generalised_active_forces = sm.zeros(self.state_dimension, 1)
 
     def _add_external_load_generalised_forces(self):
@@ -894,6 +897,61 @@ class MultiAngleFlexibleDynamics:
         self._add_kepler_gravity_generalised_forces()
         self._add_gravity_gradient_generalised_forces()
         self._add_flexible_strain_generalised_forces()
+
+    def _body_inertia_times_vector(self, body: str, vector):
+        frame = self.frames[body]
+        components = self.inertia_matrices[body] * vector.to_matrix(frame)
+        return (
+            components[0] * frame.x
+            + components[1] * frame.y
+            + components[2] * frame.z
+        )
+
+    def _initialise_generalised_inertia_forces(self):
+        self.generalised_inertia_forces = sm.zeros(self.state_dimension, 1)
+        self.rigid_body_inertia_forces = {}
+        self.rigid_body_inertia_torques = {}
+
+    def _define_rigid_body_inertia_loads(self):
+        for body in self.rigid_body_names:
+            mass = self.mass_symbols[body]
+            linear_acceleration = self.linear_accelerations[body]
+            angular_velocity = self.angular_velocities[body]
+            angular_acceleration = self.angular_accelerations[body]
+
+            inertia_alpha = self._body_inertia_times_vector(
+                body,
+                angular_acceleration,
+            )
+            inertia_omega = self._body_inertia_times_vector(
+                body,
+                angular_velocity,
+            )
+
+            self.rigid_body_inertia_forces[body] = -mass * linear_acceleration
+            self.rigid_body_inertia_torques[body] = -(
+                inertia_alpha
+                + angular_velocity.cross(inertia_omega)
+            )
+
+    def _add_rigid_body_generalised_inertia_forces(self):
+        self._define_rigid_body_inertia_loads()
+
+        for i in range(self.state_dimension):
+            for body in self.rigid_body_names:
+                v_partial = self.partial_linear_velocities[body][i]
+                w_partial = self.partial_angular_velocities[body][i]
+                inertia_force = self.rigid_body_inertia_forces[body]
+                inertia_torque = self.rigid_body_inertia_torques[body]
+
+                self.generalised_inertia_forces[i] += (
+                    v_partial.dot(inertia_force)
+                    + w_partial.dot(inertia_torque)
+                )
+
+    def _define_generalised_inertia_forces(self):
+        self._initialise_generalised_inertia_forces()
+        self._add_rigid_body_generalised_inertia_forces()
 
     def _define_frame_orientations(self):
         inertial_frame = me.ReferenceFrame("N")
