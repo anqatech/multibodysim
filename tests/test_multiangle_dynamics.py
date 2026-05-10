@@ -1159,6 +1159,38 @@ def test_multiangle_generalised_active_forces_match_implemented_force_blocks():
         assert_symbolic_equal(actual_without_gravity, expected[i])
 
 
+def test_multiangle_defaults_flexible_inertia_integration_to_quadrature():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    assert dynamics.flexible_inertia_integration == {
+        "method": "gauss-legendre",
+        "quadrature_points": 8,
+    }
+
+
+def test_multiangle_accepts_canonical_flexible_inertia_integration_config():
+    settings = (
+        MultiAngleFlexibleDynamics._normalise_flexible_inertia_integration_config(
+            {
+                "method": "symbolic",
+                "quadrature_points": "4",
+            }
+        )
+    )
+
+    assert settings == {
+        "method": "symbolic",
+        "quadrature_points": 4,
+    }
+
+
+def test_multiangle_rejects_non_canonical_flexible_inertia_integration_method():
+    with pytest.raises(ValueError, match="flexible_inertia_integration.method"):
+        MultiAngleFlexibleDynamics._normalise_flexible_inertia_integration_config(
+            {"method": "sympy"}
+        )
+
+
 def test_multiangle_initialises_generalised_inertia_force_vector():
     dynamics = MultiAngleFlexibleDynamics(seven_part_config())
 
@@ -1166,6 +1198,12 @@ def test_multiangle_initialises_generalised_inertia_force_vector():
     assert dynamics.generalised_inertia_forces.shape == (len(dynamics.u), 1)
     assert set(dynamics.rigid_body_inertia_forces) == set(dynamics.rigid_body_names)
     assert set(dynamics.rigid_body_inertia_torques) == set(dynamics.rigid_body_names)
+    assert set(dynamics.flexible_body_inertia_force_densities) == set(
+        dynamics.flexible_body_names
+    )
+    assert set(dynamics.flexible_body_generalised_inertia_forces) == set(
+        dynamics.flexible_body_names
+    )
 
 
 def test_multiangle_central_bus_rigid_body_inertia_loads_have_newton_euler_form():
@@ -1186,7 +1224,61 @@ def test_multiangle_central_bus_rigid_body_inertia_loads_have_newton_euler_form(
     assert_vector_equal(dynamics.rigid_body_inertia_torques[body], expected_torque, N)
 
 
-def test_multiangle_generalised_inertia_forces_match_rigid_body_projections():
+def test_multiangle_flexible_body_inertia_density_has_expected_form():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+    N = dynamics.frames["inertial"]
+    body = "panel_1"
+
+    expected_density = (
+        -dynamics.mass_symbols[body]
+        / dynamics.L
+        * dynamics.linear_accelerations[body]
+    )
+
+    assert_vector_equal(
+        dynamics.flexible_body_inertia_force_densities[body],
+        expected_density,
+        N,
+    )
+
+
+def test_multiangle_flexible_body_inertia_quadrature_integrates_polynomial():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    result = dynamics._integrate_flexible_body_expression("panel_1", dynamics.s**2)
+
+    assert abs(float(result) - 9.0) < 1e-12
+
+
+def test_multiangle_flexible_body_inertia_symbolic_integration_uses_sympy():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+    dynamics.flexible_inertia_integration["method"] = "symbolic"
+
+    result = dynamics._integrate_flexible_body_expression("panel_1", dynamics.s**2)
+
+    assert_symbolic_equal(result, dynamics.L**3 / 3)
+
+
+def test_multiangle_flexible_body_inertia_is_integrated_density_projection():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+    body = "panel_1"
+    row = len(dynamics.u_reference) + dynamics.flex_zeta_index[(body, 0)]
+
+    v_partial = dynamics.partial_linear_velocities[body][row]
+    force_density = dynamics.flexible_body_inertia_force_densities[body]
+    expected_integrand = v_partial.dot(force_density)
+    expected_contribution = dynamics._integrate_flexible_body_expression(
+        body,
+        expected_integrand,
+    )
+
+    assert_symbolic_equal(
+        dynamics.flexible_body_generalised_inertia_forces[body][row],
+        expected_contribution,
+    )
+
+
+def test_multiangle_generalised_inertia_forces_match_body_projections():
     dynamics = MultiAngleFlexibleDynamics(seven_part_config())
 
     expected = sm.zeros(len(dynamics.u), 1)
@@ -1200,6 +1292,9 @@ def test_multiangle_generalised_inertia_forces_match_rigid_body_projections():
                     dynamics.rigid_body_inertia_torques[body]
                 )
             )
+
+    for body in dynamics.flexible_body_names:
+        expected += dynamics.flexible_body_generalised_inertia_forces[body]
 
     for i in range(len(dynamics.u)):
         assert_symbolic_equal(dynamics.generalised_inertia_forces[i], expected[i])

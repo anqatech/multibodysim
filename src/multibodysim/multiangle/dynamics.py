@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import deque
 import re
 
+import numpy as np
 import sympy as sm
 import sympy.physics.mechanics as me
 
@@ -27,6 +28,12 @@ class MultiAngleFlexibleDynamics:
         except KeyError as exc:
             raise KeyError(f"Missing config key: {exc}") from exc
 
+        self.flexible_inertia_integration = (
+            self._normalise_flexible_inertia_integration_config(
+                config.get("flexible_inertia_integration", {})
+            )
+        )
+
         self.parents = self._parents_from_adjacency(
             self.graph, self.body_names, self.central_body
         )
@@ -47,7 +54,7 @@ class MultiAngleFlexibleDynamics:
         self._define_symbols()
 
         self.state_dimension = len(self.u)
-        
+
         self._define_mode_shapes()
         self._define_inertia_matrices()
         self._define_frame_orientations()
@@ -88,6 +95,29 @@ class MultiAngleFlexibleDynamics:
             raise ValueError(f"Disconnected bodies from central body: {missing}")
 
         return parents
+
+    @staticmethod
+    def _normalise_flexible_inertia_integration_config(settings: dict):
+        valid_methods = {"gauss-legendre", "symbolic"}
+
+        method = settings.get("method", "gauss-legendre")
+        if method not in valid_methods:
+            valid_method_names = ", ".join(sorted(valid_methods))
+            raise ValueError(
+                "flexible_inertia_integration.method must be one of "
+                f"{valid_method_names}; got {method!r}."
+            )
+
+        quadrature_points = int(settings.get("quadrature_points", 8))
+        if quadrature_points < 1:
+            raise ValueError(
+                "flexible_inertia_integration.quadrature_points must be >= 1."
+            )
+
+        return {
+            "method": method,
+            "quadrature_points": quadrature_points,
+        }
 
     def _angle_symbol_name(self, body_name: str) -> str:
         match = re.fullmatch(r"bus_(\d+)", body_name)
@@ -911,6 +941,8 @@ class MultiAngleFlexibleDynamics:
         self.generalised_inertia_forces = sm.zeros(self.state_dimension, 1)
         self.rigid_body_inertia_forces = {}
         self.rigid_body_inertia_torques = {}
+        self.flexible_body_inertia_force_densities = {}
+        self.flexible_body_generalised_inertia_forces = {}
 
     def _define_rigid_body_inertia_loads(self):
         for body in self.rigid_body_names:
@@ -949,9 +981,83 @@ class MultiAngleFlexibleDynamics:
                     + w_partial.dot(inertia_torque)
                 )
 
+    def _define_flexible_body_inertia_loads(self):
+        for body in self.flexible_body_names:
+            mass_per_length = self.mass_symbols[body] / self.L
+            linear_acceleration = self.linear_accelerations[body]
+
+            self.flexible_body_inertia_force_densities[body] = (
+                -mass_per_length * linear_acceleration
+            )
+
+    def _flexible_body_inertia_quadrature_points(self, body: str) -> int:
+        beam_type = self.flexible_bodies[body]["beam_type"]
+        return int(
+            self.beam_parameters[beam_type].get(
+                "inertia_quadrature_points",
+                self.flexible_inertia_integration["quadrature_points"],
+            )
+        )
+
+    def _integrate_flexible_body_expression_symbolically(self, expression):
+        return sm.integrate(expression, (self.s, 0, self.L))
+
+    def _integrate_flexible_body_expression_by_quadrature(
+        self,
+        body: str,
+        expression,
+    ):
+        n_points = self._flexible_body_inertia_quadrature_points(body)
+        nodes, weights = np.polynomial.legendre.leggauss(n_points)
+
+        length = sm.Float(self.parameter_values["L"])
+        half_length = length / 2
+        integral = sm.S.Zero
+
+        for node, weight in zip(nodes, weights):
+            s_value = half_length * (sm.Float(node) + 1)
+            integral += sm.Float(weight) * expression.subs(self.s, s_value)
+
+        return half_length * integral
+
+    def _integrate_flexible_body_expression(self, body: str, expression):
+        method = self.flexible_inertia_integration["method"]
+
+        if method == "symbolic":
+            return self._integrate_flexible_body_expression_symbolically(expression)
+
+        if method == "gauss-legendre":
+            return self._integrate_flexible_body_expression_by_quadrature(
+                body,
+                expression,
+            )
+
+        raise ValueError(f"Unsupported flexible inertia integration method: {method}")
+
+    def _add_flexible_body_generalised_inertia_forces(self):
+        self._define_flexible_body_inertia_loads()
+
+        for body in self.flexible_body_names:
+            force_density = self.flexible_body_inertia_force_densities[body]
+            body_contributions = sm.zeros(self.state_dimension, 1)
+
+            for i in range(self.state_dimension):
+                v_partial = self.partial_linear_velocities[body][i]
+                integrand = v_partial.dot(force_density)
+                contribution = self._integrate_flexible_body_expression(
+                    body,
+                    integrand,
+                )
+
+                body_contributions[i] = contribution
+                self.generalised_inertia_forces[i] += contribution
+
+            self.flexible_body_generalised_inertia_forces[body] = body_contributions
+
     def _define_generalised_inertia_forces(self):
         self._initialise_generalised_inertia_forces()
         self._add_rigid_body_generalised_inertia_forces()
+        self._add_flexible_body_generalised_inertia_forces()
 
     def _define_frame_orientations(self):
         inertial_frame = me.ReferenceFrame("N")
