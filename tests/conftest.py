@@ -1,44 +1,10 @@
 from __future__ import annotations
 
 import copy
-import json
-from pathlib import Path
 
 import pytest
 
 from multibodysim.multiangle import MultiAngleFlexibleDynamics
-
-
-CONFIG_DIRS = [
-    Path(
-        "/Users/jalalelhazzat/Documents/Packages/configuration/flexible/"
-        "3-Parts-Spacecraft/Zero-Initial-Flexing"
-    ),
-    Path("/Users/jalalelhazzat/Documents/Packages/configuration/flexible/Zero-Initial-Flexing"),
-    Path("/Users/jalalelhazzat/Documents/Packages/configuration/flexible/Best-Practices"),
-]
-
-
-DIST_CONFIG_DIR = Path(
-    "/Users/jalalelhazzat/Documents/Packages/configuration/flexible/distributed"
-)
-
-
-def _load_config(*filenames: str) -> dict:
-    for config_dir in CONFIG_DIRS:
-        for filename in filenames:
-            config_path = config_dir / filename
-            if config_path.exists():
-                return json.loads(config_path.read_text())
-    names = ", ".join(filenames)
-    dirs = ", ".join(str(config_dir) for config_dir in CONFIG_DIRS)
-    raise FileNotFoundError(f"Missing test config. Tried: {names} in {dirs}")
-
-
-def _load_config_path(config_path: Path) -> dict:
-    if not config_path.exists():
-        raise FileNotFoundError(f"Missing test config: {config_path}")
-    return json.loads(config_path.read_text())
 
 
 def _make_short_test_config(config: dict) -> dict:
@@ -84,6 +50,206 @@ def _as_multiangle_config(config: dict) -> dict:
                 state_atol.setdefault(f"u3_{suffix}", u3_atol)
 
     return multiangle_config
+
+
+def _three_part_single_angle_config(*, enable_gravity_gradient: bool) -> dict:
+    return {
+        "robot_name": "3-Link Arm",
+        "central_body": "bus_1",
+        "body_names": ["bus_1", "panel_1", "panel_2"],
+        "body_type": {
+            "bus_1": "rigid-central",
+            "panel_1": "flexible-left",
+            "panel_2": "flexible-right",
+        },
+        "adjacency_graph": {
+            "bus_1": ["panel_1", "panel_2"],
+            "panel_1": ["bus_1"],
+            "panel_2": ["bus_1"],
+        },
+        "flexible_types": {
+            "panel_1": "cantilever",
+            "panel_2": "cantilever",
+        },
+        "forces": {
+            "bus_1": {"x": 0, "y": 0, "z": 0},
+            "panel_1": {"x": 0, "y": 0, "z": 0},
+            "panel_2": {"x": 0, "y": 0, "z": 0},
+        },
+        "torques": {
+            "bus_1": 0.0,
+        },
+        "torque_weights": {
+            "bus_1": 1.0,
+        },
+        "enable_gravity_gradient": enable_gravity_gradient,
+        "p_values": {
+            "D": 1.0,
+            "L": 3.0,
+            "m_bus_1": 3.0,
+            "m_panel_1": 2.0,
+            "m_panel_2": 30.0,
+            "E_mod": 140e9,
+            "I_area": 2.5e-8,
+            "planet_mu": 3.986004418e14,
+            "orbit_semi_major_axis": 6778000.0,
+            "orbit_eccentricity": 0.0,
+        },
+        "q_initial": {
+            "q3": 0.0349066,
+            "eta1_1": 0.0,
+            "eta2_1": 0.0,
+        },
+        "initial_speeds": {
+            "u3": 0.001131 if enable_gravity_gradient else 0.0,
+            "zeta1_1": 0.0,
+            "zeta2_1": 0.0,
+        },
+        "sim_parameters": {
+            "t_start": 0.0,
+            "t_end": 15000.0,
+            "nb_timesteps": 2000,
+            "simulation_type": "flexible",
+            "method": "Radau",
+            "rtol": 1e-5,
+            "state_atol": {
+                "q3": 1e-7,
+                "u3": 1e-8,
+                "eta": 1e-5,
+                "zeta": 1e-6,
+            },
+        },
+        "beam_parameters": {
+            "cantilever": {
+                "nb_modes": 1,
+                "nb_points": 200,
+            },
+        },
+    }
+
+
+def _distributed_7part_single_angle_config(
+    *,
+    enable_gravity_gradient: bool,
+    nonzero_initial_flexing: bool,
+) -> dict:
+    eta1_initial = 0.003 if nonzero_initial_flexing else 0.0
+
+    return {
+        "robot_name": "7-Link Arm",
+        "central_body": "bus_2",
+        "body_names": [
+            "bus_1",
+            "bus_2",
+            "bus_3",
+            "panel_1",
+            "panel_2",
+            "panel_3",
+            "panel_4",
+        ],
+        "body_type": {
+            "bus_1": "rigid-left",
+            "bus_2": "rigid-central",
+            "bus_3": "rigid-right",
+            "panel_1": "flexible-left",
+            "panel_2": "flexible-left",
+            "panel_3": "flexible-right",
+            "panel_4": "flexible-right",
+        },
+        "adjacency_graph": {
+            "bus_1": ["panel_1", "panel_2"],
+            "bus_2": ["panel_2", "panel_3"],
+            "bus_3": ["panel_3", "panel_4"],
+            "panel_1": ["bus_1"],
+            "panel_2": ["bus_1", "bus_2"],
+            "panel_3": ["bus_2", "bus_3"],
+            "panel_4": ["bus_3"],
+        },
+        "flexible_types": {
+            "panel_1": "cantilever",
+            "panel_2": "clamped-clamped",
+            "panel_3": "clamped-clamped",
+            "panel_4": "cantilever",
+        },
+        "forces": {
+            "bus_1": {"x": 0, "y": 0, "z": 0},
+            "bus_2": {"x": 0, "y": 0, "z": 0},
+            "bus_3": {"x": 0, "y": 0, "z": 0},
+            "panel_1": {"x": 0, "y": 0, "z": 0},
+            "panel_2": {"x": 0, "y": 0, "z": 0},
+            "panel_3": {"x": 0, "y": 0, "z": 0},
+            "panel_4": {"x": 0, "y": 0, "z": 0},
+        },
+        "torques": {
+            "bus_1": 0.0,
+            "bus_2": 0.0,
+            "bus_3": 0.0,
+        },
+        "torque_weights": {
+            "bus_1": 0.0,
+            "bus_2": 1.0,
+            "bus_3": 0.0,
+        },
+        "enable_gravity_gradient": enable_gravity_gradient,
+        "parameters": {
+            "D": 1.0,
+            "L": 3.0,
+            "m_bus_1": 3.0,
+            "m_bus_2": 3.0,
+            "m_bus_3": 3.0,
+            "m_panel_1": 2.0,
+            "m_panel_2": 2.0,
+            "m_panel_3": 30.0,
+            "m_panel_4": 30.0,
+            "E_mod": 140e9,
+            "I_area": 2.5e-8,
+            "planet_mu": 3.986004418e14,
+            "orbit_semi_major_axis": 6778000.0,
+            "orbit_eccentricity": 0.0,
+        },
+        "q_initial": {
+            "q3": 0.0349066,
+            "eta1_1": eta1_initial,
+            "eta2_1": 0.0,
+            "eta3_1": 0.0,
+            "eta4_1": 0.0,
+        },
+        "initial_speeds": {
+            "u3": 0.0,
+            "zeta1_1": 0.0,
+            "zeta2_1": 0.0,
+            "zeta3_1": 0.0,
+            "zeta4_1": 0.0,
+        },
+        "sim_parameters": {
+            "t_start": 0.0,
+            "t_end": 15000.0,
+            "nb_timesteps": 2000,
+            "simulation_type": "flexible",
+            "method": "Radau",
+            "rtol": 1e-5,
+            "state_atol": {
+                "q3": 1e-7,
+                "u3": 1e-8,
+                "eta": 1e-5,
+                "zeta": 1e-6,
+            },
+        },
+        "beam_parameters": {
+            "cantilever": {
+                "nb_modes": 1,
+                "nb_points": 200,
+                "flexible_inertia_integration": "gauss-legendre",
+                "inertia_quadrature_points": 8,
+            },
+            "clamped-clamped": {
+                "nb_modes": 1,
+                "nb_points": 200,
+                "flexible_inertia_integration": "gauss-legendre",
+                "inertia_quadrature_points": 8,
+            },
+        },
+    }
 
 
 def _seven_part_config() -> dict:
@@ -302,18 +468,12 @@ def eleven_part_config() -> dict:
 
 @pytest.fixture(scope="session")
 def gg_off_config() -> dict:
-    return _load_config(
-        "GG_off_mode_1_flex_init_0_bodies_3_conf.json",
-        "GG_off_mode_1_bodies_3_conf.json",
-    )
+    return _three_part_single_angle_config(enable_gravity_gradient=False)
 
 
 @pytest.fixture(scope="session")
 def gg_on_config() -> dict:
-    return _load_config(
-        "GG_on_mode_1_flex_init_0_bodies_3_conf.json",
-        "GG_on_mode_1_bodies_3_conf.json",
-    )
+    return _three_part_single_angle_config(enable_gravity_gradient=True)
 
 
 @pytest.fixture
@@ -328,37 +488,33 @@ def gg_on_short_config(gg_on_config: dict) -> dict:
 
 @pytest.fixture
 def distributed_7part_zf_gg_off_single_angle_config() -> dict:
-    return _load_config_path(
-        DIST_CONFIG_DIR
-        / "Zero-Initial-Flexing"
-        / "dist-GG_off_mode_1_flex_init_0_bodies_7_conf.json"
+    return _distributed_7part_single_angle_config(
+        enable_gravity_gradient=False,
+        nonzero_initial_flexing=False,
     )
 
 
 @pytest.fixture
 def distributed_7part_zf_gg_on_single_angle_config() -> dict:
-    return _load_config_path(
-        DIST_CONFIG_DIR
-        / "Zero-Initial-Flexing"
-        / "dist-GG_on_mode_1_flex_init_0_bodies_7_conf.json"
+    return _distributed_7part_single_angle_config(
+        enable_gravity_gradient=True,
+        nonzero_initial_flexing=False,
     )
 
 
 @pytest.fixture
 def distributed_7part_nzf_gg_off_single_angle_config() -> dict:
-    return _load_config_path(
-        DIST_CONFIG_DIR
-        / "Non-Zero-Initial-Flexing"
-        / "dist-GG_off_mode_1_flex_init_non_0_bodies_7_conf.json"
+    return _distributed_7part_single_angle_config(
+        enable_gravity_gradient=False,
+        nonzero_initial_flexing=True,
     )
 
 
 @pytest.fixture
 def distributed_7part_nzf_gg_on_single_angle_config() -> dict:
-    return _load_config_path(
-        DIST_CONFIG_DIR
-        / "Non-Zero-Initial-Flexing"
-        / "dist-GG_on_mode_1_flex_init_non_0_bodies_7_conf.json"
+    return _distributed_7part_single_angle_config(
+        enable_gravity_gradient=True,
+        nonzero_initial_flexing=True,
     )
 
 
