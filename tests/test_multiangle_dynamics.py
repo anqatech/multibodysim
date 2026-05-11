@@ -1124,10 +1124,15 @@ def test_multiangle_flexible_body_inertia_quadrature_integrates_polynomial(seven
 
 
 def test_multiangle_flexible_body_inertia_symbolic_integration_uses_sympy(
-    seven_part_config,
+    seven_part_dynamics,
+    monkeypatch,
 ):
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config)
-    dynamics.flexible_inertia_integration["method"] = "symbolic"
+    dynamics = seven_part_dynamics
+    monkeypatch.setitem(
+        dynamics.flexible_inertia_integration,
+        "method",
+        "symbolic",
+    )
 
     result = dynamics._integrate_flexible_body_expression("panel_1", dynamics.s**2)
 
@@ -1367,13 +1372,19 @@ def test_multiangle_initial_conditions_match_explicit_centre_offset_formula(
     np.testing.assert_allclose(u0[:2], expected_u_translation, rtol=1e-12, atol=1e-9)
 
 
-def test_multiangle_numeric_value_helpers_follow_symbol_order(seven_part_config):
-    config = seven_part_config
-    config["torques"] = {
-        "bus_1": 1.2,
-        "bus_3": -0.4,
-    }
-    dynamics = MultiAngleFlexibleDynamics(config)
+def test_multiangle_numeric_value_helpers_follow_symbol_order(
+    seven_part_dynamics,
+    monkeypatch,
+):
+    dynamics = seven_part_dynamics
+    monkeypatch.setitem(
+        dynamics.config,
+        "torques",
+        {
+            "bus_1": 1.2,
+            "bus_3": -0.4,
+        },
+    )
 
     assert dynamics.get_parameter_values() == [
         dynamics.parameter_values[name]
