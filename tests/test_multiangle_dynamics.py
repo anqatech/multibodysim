@@ -1300,6 +1300,41 @@ def test_multiangle_generalised_inertia_forces_match_body_projections():
         assert_symbolic_equal(dynamics.generalised_inertia_forces[i], expected[i])
 
 
+def test_multiangle_derives_equations_of_motion_from_kane_forces():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    assert dynamics.kane_eq == (
+        dynamics.generalised_active_forces + dynamics.generalised_inertia_forces
+    )
+    assert dynamics.mass_matrix == -dynamics.kane_eq.jacobian(dynamics.ud)
+    assert dynamics.forcing == dynamics.kane_eq.xreplace(dynamics.ud_zero)
+
+    assert dynamics.kane_eq.shape == (len(dynamics.u), 1)
+    assert dynamics.mass_matrix.shape == (len(dynamics.u), len(dynamics.u))
+    assert dynamics.forcing.shape == (len(dynamics.u), 1)
+
+
+def test_multiangle_equation_forcing_has_no_speed_derivatives():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+    forcing_derivatives = dynamics.forcing.atoms(sm.Derivative)
+
+    assert not set(dynamics.ud) & forcing_derivatives
+
+
+def test_multiangle_translation_mass_matrix_contains_total_mass():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+    length_subs = {dynamics.L: dynamics.parameter_values["L"]}
+
+    assert_symbolic_equal(
+        dynamics.mass_matrix[0, 0].subs(length_subs),
+        dynamics.total_mass.subs(length_subs),
+    )
+    assert_symbolic_equal(
+        dynamics.mass_matrix[1, 1].subs(length_subs),
+        dynamics.total_mass.subs(length_subs),
+    )
+
+
 def test_multiangle_kepler_gravity_quantities_are_stored():
     dynamics = MultiAngleFlexibleDynamics(seven_part_config())
     N = dynamics.frames["inertial"]

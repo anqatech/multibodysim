@@ -72,6 +72,7 @@ class MultiAngleFlexibleDynamics:
         self._define_system_center_of_mass_kinematics()
         self._define_generalised_active_forces()
         self._define_generalised_inertia_forces()
+        self._derive_equations_of_motion()
 
     def _parents_from_adjacency(self, graph, body_names, central_body):
         visited = {body: False for body in body_names}
@@ -1058,6 +1059,12 @@ class MultiAngleFlexibleDynamics:
         self._initialise_generalised_inertia_forces()
         self._add_rigid_body_generalised_inertia_forces()
         self._add_flexible_body_generalised_inertia_forces()
+
+    def _derive_equations_of_motion(self):
+        self.kane_eq = self.generalised_active_forces + self.generalised_inertia_forces
+
+        self.mass_matrix = -self.kane_eq.jacobian(self.ud)
+        self.forcing = self.kane_eq.xreplace(self.ud_zero)
 
     def _define_frame_orientations(self):
         inertial_frame = me.ReferenceFrame("N")
