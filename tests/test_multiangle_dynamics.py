@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import numpy as np
 import sympy as sm
 import pytest
 
@@ -1312,6 +1313,52 @@ def test_multiangle_derives_equations_of_motion_from_kane_forces():
     assert dynamics.kane_eq.shape == (len(dynamics.u), 1)
     assert dynamics.mass_matrix.shape == (len(dynamics.u), len(dynamics.u))
     assert dynamics.forcing.shape == (len(dynamics.u), 1)
+
+
+def test_multiangle_creates_lambdified_equation_evaluators_at_initialisation():
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+
+    q_values = np.zeros(len(dynamics.q))
+    u_values = np.zeros(len(dynamics.u))
+    parameter_values = dynamics.get_parameter_values()
+    torque_values = dynamics.get_torque_values()
+
+    Mk, gk = dynamics.eval_kinematics(
+        q_values,
+        u_values,
+        parameter_values,
+        torque_values,
+    )
+    mass_matrix, forcing = dynamics.eval_differentials(
+        q_values,
+        u_values,
+        parameter_values,
+        torque_values,
+    )
+    r_G = dynamics.rG_func(q_values, u_values, parameter_values)
+    v_G = dynamics.vG_func(q_values, u_values, parameter_values)
+
+    assert np.asarray(Mk).shape == (len(dynamics.q), len(dynamics.q))
+    assert np.asarray(gk).shape == (len(dynamics.q), 1)
+    assert np.asarray(mass_matrix).shape == (len(dynamics.u), len(dynamics.u))
+    assert np.asarray(forcing).shape == (len(dynamics.u), 1)
+    assert np.asarray(r_G).shape == (3, 1)
+    assert np.asarray(v_G).shape == (3, 1)
+
+
+def test_multiangle_numeric_value_helpers_follow_symbol_order():
+    config = seven_part_config()
+    config["torques"] = {
+        "bus_1": 1.2,
+        "bus_3": -0.4,
+    }
+    dynamics = MultiAngleFlexibleDynamics(config)
+
+    assert dynamics.get_parameter_values() == [
+        dynamics.parameter_values[name]
+        for name in dynamics.parameter_symbols
+    ]
+    assert dynamics.get_torque_values() == [1.2, 0.0, -0.4]
 
 
 def test_multiangle_equation_forcing_has_no_speed_derivatives():

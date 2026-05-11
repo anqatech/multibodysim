@@ -73,6 +73,7 @@ class MultiAngleFlexibleDynamics:
         self._define_generalised_active_forces()
         self._define_generalised_inertia_forces()
         self._derive_equations_of_motion()
+        self._create_lambdified_functions()
 
     def _parents_from_adjacency(self, graph, body_names, central_body):
         visited = {body: False for body in body_names}
@@ -1065,6 +1066,67 @@ class MultiAngleFlexibleDynamics:
 
         self.mass_matrix = -self.kane_eq.jacobian(self.ud)
         self.forcing = self.kane_eq.xreplace(self.ud_zero)
+
+    def _create_lambdified_functions(self):
+        parameters = list(self.parameter_symbols.values())
+        torques = list(self.bus_torque_symbols.values())
+        inertial_frame = self.frames["inertial"]
+
+        self.eval_kinematics = sm.lambdify(
+            (
+                self.q,
+                self.u,
+                parameters,
+                torques,
+            ),
+            (self.Mk, self.gk),
+            "numpy",
+            cse=True,
+        )
+        self.eval_differentials = sm.lambdify(
+            (
+                self.q,
+                self.u,
+                parameters,
+                torques,
+            ),
+            (self.mass_matrix, self.forcing),
+            "numpy",
+            cse=True,
+        )
+        self.rG_func = sm.lambdify(
+            (
+                self.q,
+                self.u,
+                parameters,
+            ),
+            self.r_G.to_matrix(inertial_frame),
+            "numpy",
+            cse=True,
+        )
+        self.vG_func = sm.lambdify(
+            (
+                self.q,
+                self.u,
+                parameters,
+            ),
+            self.v_G.to_matrix(inertial_frame),
+            "numpy",
+            cse=True,
+        )
+
+    def get_parameter_values(self):
+        return [
+            self.parameter_values[name]
+            for name in self.parameter_symbols
+        ]
+
+    def get_torque_values(self):
+        configured_torques = self.config.get("torques", {})
+        return [
+            configured_torques.get(body, 0.0)
+            for body in self.rigid_body_names
+        ]
 
     def _define_frame_orientations(self):
         inertial_frame = me.ReferenceFrame("N")
