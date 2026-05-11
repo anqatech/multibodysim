@@ -1128,6 +1128,95 @@ class MultiAngleFlexibleDynamics:
             for body in self.rigid_body_names
         ]
 
+    def _kepler_initial_centre_of_mass_state(self):
+        mu = float(self.parameter_values["planet_mu"])
+        a = float(self.parameter_values["orbit_semi_major_axis"])
+        e = float(self.parameter_values["orbit_eccentricity"])
+
+        initial_true_anomaly = 0.0
+        r0 = a * (1.0 - e**2) / (
+            1.0 + e * np.cos(initial_true_anomaly)
+        )
+        h = np.sqrt(mu * a * (1.0 - e**2))
+
+        r_G0 = np.array([r0, 0.0, 0.0], dtype=float)
+        v_G0 = np.array(
+            [
+                -(mu / h) * e * np.sin(initial_true_anomaly),
+                (mu / h) * (1.0 + e * np.cos(initial_true_anomaly)),
+                0.0,
+            ],
+            dtype=float,
+        )
+
+        return r_G0, v_G0
+
+    def get_initial_conditions(self, verbose=True):
+        configured_states = self.config.get("q_initial", {})
+        configured_speeds = self.config.get("initial_speeds", {})
+
+        q_values = np.array(
+            [
+                float(configured_states.get(state_symbol.name, 0.0))
+                for state_symbol in self.q
+            ],
+            dtype=float,
+        )
+        u_values = np.array(
+            [
+                float(configured_speeds.get(speed_symbol.name, 0.0))
+                for speed_symbol in self.u
+            ],
+            dtype=float,
+        )
+
+        q1_index = list(self.q).index(self.q_translation["x"])
+        q2_index = list(self.q).index(self.q_translation["y"])
+        u1_index = list(self.u).index(self.u_translation["x"])
+        u2_index = list(self.u).index(self.u_translation["y"])
+
+        parameter_values = self.get_parameter_values()
+        r_G0, v_G0 = self._kepler_initial_centre_of_mass_state()
+
+        q_values[q1_index] = 0.0
+        q_values[q2_index] = 0.0
+        r_G_at_origin = np.asarray(
+            self.rG_func(q_values, u_values, parameter_values),
+            dtype=float,
+        ).reshape(3)
+        q_values[q1_index] = r_G0[0] - r_G_at_origin[0]
+        q_values[q2_index] = r_G0[1] - r_G_at_origin[1]
+
+        u_values[u1_index] = 0.0
+        u_values[u2_index] = 0.0
+        v_G_without_translation = np.asarray(
+            self.vG_func(q_values, u_values, parameter_values),
+            dtype=float,
+        ).reshape(3)
+        u_values[u1_index] = v_G0[0] - v_G_without_translation[0]
+        u_values[u2_index] = v_G0[1] - v_G_without_translation[1]
+
+        if verbose:
+            print("\nInitial conditions set (with momentum conservation):\n")
+            position_parts = []
+            for state_symbol, value in zip(self.q, q_values):
+                if state_symbol.name.startswith("q3_"):
+                    position_parts.append(
+                        f"{state_symbol.name}={np.degrees(value):.3f}°"
+                    )
+                else:
+                    position_parts.append(f"{state_symbol.name}={value:.3f}")
+
+            speed_parts = [
+                f"{speed_symbol.name}={value:.6f}"
+                for speed_symbol, value in zip(self.u, u_values)
+            ]
+
+            print("  Positions: " + ", ".join(position_parts) + "\n")
+            print("  Velocities: " + ", ".join(speed_parts) + "\n")
+
+        return np.concatenate([q_values, u_values])
+
     def _define_frame_orientations(self):
         inertial_frame = me.ReferenceFrame("N")
         self.frames = {"inertial": inertial_frame}

@@ -1346,6 +1346,151 @@ def test_multiangle_creates_lambdified_equation_evaluators_at_initialisation():
     assert np.asarray(v_G).shape == (3, 1)
 
 
+def test_multiangle_initial_conditions_make_centre_of_mass_keplerian():
+    config = seven_part_config()
+    config["q_initial"] = {
+        "q3_1": np.deg2rad(-1.5),
+        "q3_2": np.deg2rad(2.0),
+        "q3_3": np.deg2rad(1.0),
+        "eta1_1": 1.0e-3,
+        "eta2_1": -2.0e-4,
+        "eta2_2": 3.0e-4,
+        "eta3_1": 4.0e-4,
+        "eta3_2": -1.0e-4,
+        "eta4_1": -7.5e-4,
+    }
+    config["initial_speeds"] = {
+        "u3_1": -1.5e-4,
+        "u3_2": 1.131e-3,
+        "u3_3": 2.0e-4,
+        "zeta1_1": 1.0e-5,
+        "zeta2_1": -2.0e-5,
+        "zeta2_2": 1.5e-5,
+        "zeta3_1": -1.2e-5,
+        "zeta3_2": 2.5e-5,
+        "zeta4_1": 7.0e-6,
+    }
+    dynamics = MultiAngleFlexibleDynamics(config)
+
+    x0 = dynamics.get_initial_conditions(verbose=False)
+    q0 = x0[:dynamics.state_dimension]
+    u0 = x0[dynamics.state_dimension:]
+    parameter_values = dynamics.get_parameter_values()
+
+    r_G = np.asarray(dynamics.rG_func(q0, u0, parameter_values), dtype=float).reshape(3)
+    v_G = np.asarray(dynamics.vG_func(q0, u0, parameter_values), dtype=float).reshape(3)
+
+    mu = config["parameters"]["planet_mu"]
+    a = config["parameters"]["orbit_semi_major_axis"]
+    e = config["parameters"]["orbit_eccentricity"]
+    initial_true_anomaly = 0.0
+    r0 = a * (1.0 - e**2) / (1.0 + e * np.cos(initial_true_anomaly))
+    h = np.sqrt(mu * a * (1.0 - e**2))
+    v_G_expected = np.array(
+        [
+            -(mu / h) * e * np.sin(initial_true_anomaly),
+            (mu / h) * (1.0 + e * np.cos(initial_true_anomaly)),
+            0.0,
+        ]
+    )
+
+    assert x0.shape == (2 * dynamics.state_dimension,)
+    np.testing.assert_allclose(r_G, np.array([r0, 0.0, 0.0]), atol=1e-8)
+    np.testing.assert_allclose(v_G, v_G_expected, rtol=1e-12, atol=1e-9)
+
+
+def test_multiangle_initial_conditions_match_explicit_centre_offset_formula():
+    config = seven_part_config()
+    theta0 = np.deg2rad(12.0)
+    central_speed = 2.5e-4
+    config["q_initial"] = {
+        "q3_1": 0.0,
+        "q3_2": theta0,
+        "q3_3": 0.0,
+        "eta1_1": 7.5e-4,
+        "eta2_1": -2.0e-4,
+        "eta2_2": 3.0e-4,
+        "eta3_1": 4.0e-4,
+        "eta3_2": -1.0e-4,
+        "eta4_1": -6.0e-4,
+    }
+    config["initial_speeds"] = {
+        "u3_1": 0.0,
+        "u3_2": central_speed,
+        "u3_3": 0.0,
+        "zeta1_1": 1.0e-5,
+        "zeta2_1": -2.0e-5,
+        "zeta2_2": 1.5e-5,
+        "zeta3_1": -1.2e-5,
+        "zeta3_2": 2.5e-5,
+        "zeta4_1": 7.0e-6,
+    }
+    dynamics = MultiAngleFlexibleDynamics(config)
+
+    x0 = dynamics.get_initial_conditions(verbose=False)
+    q0 = x0[:dynamics.state_dimension]
+    u0 = x0[dynamics.state_dimension:]
+
+    central_frame = dynamics.frames[dynamics.central_body]
+    rho = dynamics.r_GB.express(central_frame)
+    rho_vector = sm.Matrix(
+        [
+            rho.dot(central_frame.x),
+            rho.dot(central_frame.y),
+        ]
+    )
+    rho_dot = rho.dt(central_frame).xreplace(dynamics.qd_repl)
+    rho_dot_vector = sm.Matrix(
+        [
+            rho_dot.dot(central_frame.x),
+            rho_dot.dot(central_frame.y),
+        ]
+    )
+    rho_func = sm.lambdify(
+        (
+            dynamics.q,
+            dynamics.u,
+            list(dynamics.parameter_symbols.values()),
+        ),
+        (rho_vector, rho_dot_vector),
+        "numpy",
+    )
+
+    rho0, rho_dot0 = rho_func(q0, u0, dynamics.get_parameter_values())
+    rho0 = np.asarray(rho0, dtype=float).reshape(2)
+    rho_dot0 = np.asarray(rho_dot0, dtype=float).reshape(2)
+
+    mu = config["parameters"]["planet_mu"]
+    a = config["parameters"]["orbit_semi_major_axis"]
+    e = config["parameters"]["orbit_eccentricity"]
+    r0 = a * (1.0 - e**2) / (1.0 + e)
+    h = np.sqrt(mu * a * (1.0 - e**2))
+    r_G0 = np.array([r0, 0.0])
+    v_G0 = np.array([0.0, (mu / h) * (1.0 + e)])
+    rotation = np.array(
+        [
+            [np.cos(theta0), -np.sin(theta0)],
+            [np.sin(theta0), np.cos(theta0)],
+        ]
+    )
+    skew = np.array(
+        [
+            [0.0, -1.0],
+            [1.0, 0.0],
+        ]
+    )
+
+    expected_q_translation = r_G0 + rotation @ rho0
+    expected_u_translation = (
+        v_G0
+        + central_speed * skew @ rotation @ rho0
+        + rotation @ rho_dot0
+    )
+
+    np.testing.assert_allclose(q0[:2], expected_q_translation, rtol=1e-12, atol=1e-8)
+    np.testing.assert_allclose(u0[:2], expected_u_translation, rtol=1e-12, atol=1e-9)
+
+
 def test_multiangle_numeric_value_helpers_follow_symbol_order():
     config = seven_part_config()
     config["torques"] = {
