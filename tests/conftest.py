@@ -128,6 +128,65 @@ def _three_part_single_angle_config(*, enable_gravity_gradient: bool) -> dict:
     }
 
 
+def _single_angle_seven_part_config() -> dict:
+    return {
+        "body_names": [
+            "bus_1",
+            "bus_2",
+            "bus_3",
+            "panel_1",
+            "panel_2",
+            "panel_3",
+            "panel_4",
+        ],
+        "central_body": "bus_2",
+        "enable_gravity_gradient": False,
+        "adjacency_graph": {
+            "bus_1": ["panel_1", "panel_2"],
+            "bus_2": ["panel_2", "panel_3"],
+            "bus_3": ["panel_3", "panel_4"],
+            "panel_1": ["bus_1"],
+            "panel_2": ["bus_1", "bus_2"],
+            "panel_3": ["bus_2", "bus_3"],
+            "panel_4": ["bus_3"],
+        },
+        "body_type": {
+            "bus_1": "rigid-left",
+            "bus_2": "rigid-central",
+            "bus_3": "rigid-right",
+            "panel_1": "flexible-left",
+            "panel_2": "flexible-left",
+            "panel_3": "flexible-right",
+            "panel_4": "flexible-right",
+        },
+        "flexible_types": {
+            "panel_1": "cantilever",
+            "panel_2": "cantilever",
+            "panel_3": "cantilever",
+            "panel_4": "cantilever",
+        },
+        "beam_parameters": {
+            "cantilever": {"nb_modes": 1, "nb_points": 50},
+        },
+        "p_values": {
+            "D": 1.0,
+            "L": 3.0,
+            "m_bus_1": 3.0,
+            "m_bus_2": 3.0,
+            "m_bus_3": 3.0,
+            "m_panel_1": 2.0,
+            "m_panel_2": 2.0,
+            "m_panel_3": 2.0,
+            "m_panel_4": 2.0,
+            "E_mod": 140e9,
+            "I_area": 2.5e-8,
+            "planet_mu": 3.986004418e14,
+            "orbit_semi_major_axis": 6778000.0,
+            "orbit_eccentricity": 0.0,
+        },
+    }
+
+
 def _distributed_7part_single_angle_config(
     *,
     enable_gravity_gradient: bool,
@@ -484,6 +543,11 @@ def gg_off_short_config(gg_off_config: dict) -> dict:
 @pytest.fixture
 def gg_on_short_config(gg_on_config: dict) -> dict:
     return _make_short_test_config(gg_on_config)
+
+
+@pytest.fixture
+def single_angle_seven_part_config() -> dict:
+    return _single_angle_seven_part_config()
 
 
 @pytest.fixture
