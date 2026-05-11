@@ -215,6 +215,65 @@ def test_multiangle_requires_mass_parameter_for_each_body(seven_part_config):
         MultiAngleFlexibleDynamics(config)
 
 
+@pytest.mark.parametrize(
+    ("single_angle_fixture", "multiangle_fixture", "expected_gravity_gradient"),
+    [
+        (
+            "distributed_7part_zf_gg_off_single_angle_config",
+            "distributed_7part_zf_gg_off_multiangle_config",
+            False,
+        ),
+        (
+            "distributed_7part_zf_gg_on_single_angle_config",
+            "distributed_7part_zf_gg_on_multiangle_config",
+            True,
+        ),
+        (
+            "distributed_7part_nzf_gg_off_single_angle_config",
+            "distributed_7part_nzf_gg_off_multiangle_config",
+            False,
+        ),
+        (
+            "distributed_7part_nzf_gg_on_single_angle_config",
+            "distributed_7part_nzf_gg_on_multiangle_config",
+            True,
+        ),
+    ],
+)
+def test_distributed_7part_multiangle_fixtures_adapt_single_angle_initial_states(
+    request,
+    single_angle_fixture,
+    multiangle_fixture,
+    expected_gravity_gradient,
+):
+    single_angle_config = request.getfixturevalue(single_angle_fixture)
+    multiangle_config = request.getfixturevalue(multiangle_fixture)
+
+    assert single_angle_config["central_body"] == "bus_2"
+    assert multiangle_config["central_body"] == "bus_2"
+    assert multiangle_config["enable_gravity_gradient"] is expected_gravity_gradient
+
+    assert "q3" in single_angle_config["q_initial"]
+    assert "u3" in single_angle_config["initial_speeds"]
+    assert "q3" not in multiangle_config["q_initial"]
+    assert "u3" not in multiangle_config["initial_speeds"]
+
+    assert multiangle_config["q_initial"]["q3_1"] == 0.0
+    assert multiangle_config["q_initial"]["q3_2"] == single_angle_config["q_initial"]["q3"]
+    assert multiangle_config["q_initial"]["q3_3"] == 0.0
+    assert multiangle_config["initial_speeds"]["u3_1"] == 0.0
+    assert (
+        multiangle_config["initial_speeds"]["u3_2"]
+        == single_angle_config["initial_speeds"]["u3"]
+    )
+    assert multiangle_config["initial_speeds"]["u3_3"] == 0.0
+
+    state_atol = multiangle_config["sim_parameters"]["state_atol"]
+    assert "q3" not in state_atol
+    assert "u3" not in state_atol
+    assert {"q3_1", "q3_2", "q3_3", "u3_1", "u3_2", "u3_3"} <= set(state_atol)
+
+
 def test_multiangle_defines_bus_torque_symbols_for_seven_part_chain(seven_part_dynamics):
     dynamics = seven_part_dynamics
 

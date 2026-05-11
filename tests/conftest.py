@@ -19,6 +19,11 @@ CONFIG_DIRS = [
 ]
 
 
+DIST_CONFIG_DIR = Path(
+    "/Users/jalalelhazzat/Documents/Packages/configuration/flexible/distributed"
+)
+
+
 def _load_config(*filenames: str) -> dict:
     for config_dir in CONFIG_DIRS:
         for filename in filenames:
@@ -30,11 +35,55 @@ def _load_config(*filenames: str) -> dict:
     raise FileNotFoundError(f"Missing test config. Tried: {names} in {dirs}")
 
 
+def _load_config_path(config_path: Path) -> dict:
+    if not config_path.exists():
+        raise FileNotFoundError(f"Missing test config: {config_path}")
+    return json.loads(config_path.read_text())
+
+
 def _make_short_test_config(config: dict) -> dict:
     short_config = copy.deepcopy(config)
     short_config["sim_parameters"]["t_end"] = 5.0
     short_config["sim_parameters"]["nb_timesteps"] = 5
     return short_config
+
+
+def _as_multiangle_config(config: dict) -> dict:
+    multiangle_config = copy.deepcopy(config)
+    rigid_bodies = [
+        body
+        for body in multiangle_config["body_names"]
+        if multiangle_config["body_type"][body].startswith("rigid-")
+    ]
+    central_body = multiangle_config["central_body"]
+    central_suffix = central_body.split("_", maxsplit=1)[1]
+
+    q_initial = multiangle_config.setdefault("q_initial", {})
+    old_q3 = q_initial.pop("q3", 0.0)
+    for body in rigid_bodies:
+        suffix = body.split("_", maxsplit=1)[1]
+        q_initial.setdefault(f"q3_{suffix}", 0.0)
+    q_initial[f"q3_{central_suffix}"] = old_q3
+
+    initial_speeds = multiangle_config.setdefault("initial_speeds", {})
+    old_u3 = initial_speeds.pop("u3", 0.0)
+    for body in rigid_bodies:
+        suffix = body.split("_", maxsplit=1)[1]
+        initial_speeds.setdefault(f"u3_{suffix}", 0.0)
+    initial_speeds[f"u3_{central_suffix}"] = old_u3
+
+    state_atol = multiangle_config.get("sim_parameters", {}).get("state_atol")
+    if isinstance(state_atol, dict):
+        q3_atol = state_atol.pop("q3", None)
+        u3_atol = state_atol.pop("u3", None)
+        for body in rigid_bodies:
+            suffix = body.split("_", maxsplit=1)[1]
+            if q3_atol is not None:
+                state_atol.setdefault(f"q3_{suffix}", q3_atol)
+            if u3_atol is not None:
+                state_atol.setdefault(f"u3_{suffix}", u3_atol)
+
+    return multiangle_config
 
 
 def _seven_part_config() -> dict:
@@ -275,3 +324,67 @@ def gg_off_short_config(gg_off_config: dict) -> dict:
 @pytest.fixture
 def gg_on_short_config(gg_on_config: dict) -> dict:
     return _make_short_test_config(gg_on_config)
+
+
+@pytest.fixture
+def distributed_7part_zf_gg_off_single_angle_config() -> dict:
+    return _load_config_path(
+        DIST_CONFIG_DIR
+        / "Zero-Initial-Flexing"
+        / "dist-GG_off_mode_1_flex_init_0_bodies_7_conf.json"
+    )
+
+
+@pytest.fixture
+def distributed_7part_zf_gg_on_single_angle_config() -> dict:
+    return _load_config_path(
+        DIST_CONFIG_DIR
+        / "Zero-Initial-Flexing"
+        / "dist-GG_on_mode_1_flex_init_0_bodies_7_conf.json"
+    )
+
+
+@pytest.fixture
+def distributed_7part_nzf_gg_off_single_angle_config() -> dict:
+    return _load_config_path(
+        DIST_CONFIG_DIR
+        / "Non-Zero-Initial-Flexing"
+        / "dist-GG_off_mode_1_flex_init_non_0_bodies_7_conf.json"
+    )
+
+
+@pytest.fixture
+def distributed_7part_nzf_gg_on_single_angle_config() -> dict:
+    return _load_config_path(
+        DIST_CONFIG_DIR
+        / "Non-Zero-Initial-Flexing"
+        / "dist-GG_on_mode_1_flex_init_non_0_bodies_7_conf.json"
+    )
+
+
+@pytest.fixture
+def distributed_7part_zf_gg_off_multiangle_config(
+    distributed_7part_zf_gg_off_single_angle_config: dict,
+) -> dict:
+    return _as_multiangle_config(distributed_7part_zf_gg_off_single_angle_config)
+
+
+@pytest.fixture
+def distributed_7part_zf_gg_on_multiangle_config(
+    distributed_7part_zf_gg_on_single_angle_config: dict,
+) -> dict:
+    return _as_multiangle_config(distributed_7part_zf_gg_on_single_angle_config)
+
+
+@pytest.fixture
+def distributed_7part_nzf_gg_off_multiangle_config(
+    distributed_7part_nzf_gg_off_single_angle_config: dict,
+) -> dict:
+    return _as_multiangle_config(distributed_7part_nzf_gg_off_single_angle_config)
+
+
+@pytest.fixture
+def distributed_7part_nzf_gg_on_multiangle_config(
+    distributed_7part_nzf_gg_on_single_angle_config: dict,
+) -> dict:
+    return _as_multiangle_config(distributed_7part_nzf_gg_on_single_angle_config)
