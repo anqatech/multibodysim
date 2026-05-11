@@ -9,195 +9,6 @@ from multibodysim.beam.clamped_clamped_beam import ClampedClampedBeam
 from multibodysim.multiangle import MultiAngleFlexibleDynamics
 
 
-def seven_part_config():
-    return {
-        "body_names": [
-            "bus_1",
-            "bus_2",
-            "bus_3",
-            "panel_1",
-            "panel_2",
-            "panel_3",
-            "panel_4",
-        ],
-        "central_body": "bus_2",
-        "adjacency_graph": {
-            "bus_1": ["panel_1", "panel_2"],
-            "bus_2": ["panel_2", "panel_3"],
-            "bus_3": ["panel_3", "panel_4"],
-            "panel_1": ["bus_1"],
-            "panel_2": ["bus_1", "bus_2"],
-            "panel_3": ["bus_2", "bus_3"],
-            "panel_4": ["bus_3"],
-        },
-        "body_type": {
-            "bus_1": "rigid-left",
-            "bus_2": "rigid-central",
-            "bus_3": "rigid-right",
-            "panel_1": "flexible-left",
-            "panel_2": "flexible-left",
-            "panel_3": "flexible-right",
-            "panel_4": "flexible-right",
-        },
-        "flexible_types": {
-            "panel_1": "cantilever",
-            "panel_2": "clamped-clamped",
-            "panel_3": "clamped-clamped",
-            "panel_4": "cantilever",
-        },
-        "beam_parameters": {
-            "cantilever": {"nb_modes": 1},
-            "clamped-clamped": {"nb_modes": 2},
-        },
-        "parameters": {
-            "D": 1.0,
-            "L": 3.0,
-            "m_bus_1": 3.0,
-            "m_bus_2": 3.0,
-            "m_bus_3": 3.0,
-            "m_panel_1": 2.0,
-            "m_panel_2": 2.0,
-            "m_panel_3": 30.0,
-            "m_panel_4": 30.0,
-            "E_mod": 140e9,
-            "I_area": 2.5e-8,
-            "planet_mu": 3.986004418e14,
-            "orbit_semi_major_axis": 6778000.0,
-            "orbit_eccentricity": 0.0,
-        },
-    }
-
-
-def compact_gravity_gradient_config():
-    return {
-        "body_names": [
-            "bus_1",
-            "bus_2",
-            "bus_3",
-            "panel_1",
-            "panel_2",
-        ],
-        "central_body": "bus_2",
-        "adjacency_graph": {
-            "bus_1": ["panel_1"],
-            "bus_2": ["panel_1", "panel_2"],
-            "bus_3": ["panel_2"],
-            "panel_1": ["bus_1", "bus_2"],
-            "panel_2": ["bus_2", "bus_3"],
-        },
-        "body_type": {
-            "bus_1": "rigid-left",
-            "bus_2": "rigid-central",
-            "bus_3": "rigid-right",
-            "panel_1": "flexible-left",
-            "panel_2": "flexible-right",
-        },
-        "flexible_types": {
-            "panel_1": "cantilever",
-            "panel_2": "cantilever",
-        },
-        "beam_parameters": {
-            "cantilever": {"nb_modes": 1},
-        },
-        "parameters": {
-            "D": 1.0,
-            "L": 3.0,
-            "m_bus_1": 3.0,
-            "m_bus_2": 3.0,
-            "m_bus_3": 3.0,
-            "m_panel_1": 2.0,
-            "m_panel_2": 2.0,
-            "E_mod": 140e9,
-            "I_area": 2.5e-8,
-            "planet_mu": 3.986004418e14,
-            "orbit_semi_major_axis": 6778000.0,
-            "orbit_eccentricity": 0.0,
-        },
-        "enable_gravity_gradient": True,
-    }
-
-
-@pytest.fixture(scope="module")
-def gravity_gradient_dynamics():
-    return MultiAngleFlexibleDynamics(compact_gravity_gradient_config())
-
-
-def eleven_part_config():
-    return {
-        "body_names": [
-            "bus_1",
-            "bus_2",
-            "bus_3",
-            "bus_4",
-            "bus_5",
-            "panel_1",
-            "panel_2",
-            "panel_3",
-            "panel_4",
-            "panel_5",
-            "panel_6",
-        ],
-        "central_body": "bus_3",
-        "adjacency_graph": {
-            "bus_1": ["panel_1", "panel_2"],
-            "bus_2": ["panel_2", "panel_3"],
-            "bus_3": ["panel_3", "panel_4"],
-            "bus_4": ["panel_4", "panel_5"],
-            "bus_5": ["panel_5", "panel_6"],
-            "panel_1": ["bus_1"],
-            "panel_2": ["bus_1", "bus_2"],
-            "panel_3": ["bus_2", "bus_3"],
-            "panel_4": ["bus_3", "bus_4"],
-            "panel_5": ["bus_4", "bus_5"],
-            "panel_6": ["bus_5"],
-        },
-        "body_type": {
-            "bus_1": "rigid-left",
-            "bus_2": "rigid-left",
-            "bus_3": "rigid-central",
-            "bus_4": "rigid-right",
-            "bus_5": "rigid-right",
-            "panel_1": "flexible-left",
-            "panel_2": "flexible-left",
-            "panel_3": "flexible-left",
-            "panel_4": "flexible-right",
-            "panel_5": "flexible-right",
-            "panel_6": "flexible-right",
-        },
-        "flexible_types": {
-            "panel_1": "cantilever",
-            "panel_2": "cantilever",
-            "panel_3": "cantilever",
-            "panel_4": "cantilever",
-            "panel_5": "cantilever",
-            "panel_6": "cantilever",
-        },
-        "beam_parameters": {
-            "cantilever": {"nb_modes": 1},
-        },
-        "parameters": {
-            "D": 1.0,
-            "L": 3.0,
-            "m_bus_1": 3.0,
-            "m_bus_2": 3.0,
-            "m_bus_3": 3.0,
-            "m_bus_4": 3.0,
-            "m_bus_5": 3.0,
-            "m_panel_1": 2.0,
-            "m_panel_2": 2.0,
-            "m_panel_3": 2.0,
-            "m_panel_4": 2.0,
-            "m_panel_5": 2.0,
-            "m_panel_6": 2.0,
-            "E_mod": 140e9,
-            "I_area": 2.5e-8,
-            "planet_mu": 3.986004418e14,
-            "orbit_semi_major_axis": 6778000.0,
-            "orbit_eccentricity": 0.0,
-        },
-    }
-
-
 def assert_symbolic_equal(lhs, rhs):
     assert sm.simplify(lhs - rhs) == 0
 
@@ -220,8 +31,8 @@ def assert_vectors_do_not_contain_coordinate_derivatives(vectors, dynamics):
             assert not (component.atoms(sm.Derivative) & forbidden)
 
 
-def test_multiangle_bus_orientation_convention_for_seven_part_chain():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_bus_orientation_convention_for_seven_part_chain(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     q31 = dynamics.bus_angle_coordinates["bus_1"]
     q32 = dynamics.bus_angle_coordinates["bus_2"]
@@ -236,8 +47,8 @@ def test_multiangle_bus_orientation_convention_for_seven_part_chain():
     assert_symbolic_equal(dynamics.orientation_angle("bus_3"), q32 + q33)
 
 
-def test_multiangle_panel_orientation_uses_endpoint_bus_average_when_available():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_panel_orientation_uses_endpoint_bus_average_when_available(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     q31 = dynamics.bus_angle_coordinates["bus_1"]
     q32 = dynamics.bus_angle_coordinates["bus_2"]
@@ -255,8 +66,8 @@ def test_multiangle_panel_orientation_uses_endpoint_bus_average_when_available()
     assert_symbolic_equal(dynamics.orientation_angle("panel_4"), q32 + q33)
 
 
-def test_multiangle_convention_scales_to_more_buses():
-    dynamics = MultiAngleFlexibleDynamics(eleven_part_config())
+def test_multiangle_convention_scales_to_more_buses(eleven_part_dynamics):
+    dynamics = eleven_part_dynamics
 
     q31 = dynamics.bus_angle_coordinates["bus_1"]
     q32 = dynamics.bus_angle_coordinates["bus_2"]
@@ -290,8 +101,8 @@ def test_multiangle_convention_scales_to_more_buses():
     assert_symbolic_equal(dynamics.orientation_angle("panel_6"), q33 + q35)
 
 
-def test_multiangle_symbol_names_reject_non_bus_names():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_symbol_names_reject_non_bus_names(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     with pytest.raises(ValueError, match="bus_<number>"):
         dynamics._angle_symbol_name("wer")
@@ -300,8 +111,8 @@ def test_multiangle_symbol_names_reject_non_bus_names():
         dynamics._speed_symbol_name("wer")
 
 
-def test_multiangle_defines_flexible_modal_symbols_and_state_vectors():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_defines_flexible_modal_symbols_and_state_vectors(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     q_names = [str(symbol.func) for symbol in dynamics.q]
     u_names = [str(symbol.func) for symbol in dynamics.u]
@@ -353,8 +164,8 @@ def test_multiangle_defines_flexible_modal_symbols_and_state_vectors():
     assert dynamics.flex_zeta_index[("panel_4", 0)] == 5
 
 
-def test_multiangle_defines_static_parameter_symbols_from_parameters():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_defines_static_parameter_symbols_from_parameters(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     assert dynamics.parameter_symbols["D"] == sm.symbols("D")
     assert dynamics.parameter_symbols["L"] == sm.symbols("L")
@@ -387,8 +198,8 @@ def test_multiangle_defines_static_parameter_symbols_from_parameters():
     ]
 
 
-def test_multiangle_parameter_symbols_scale_with_body_count():
-    dynamics = MultiAngleFlexibleDynamics(eleven_part_config())
+def test_multiangle_parameter_symbols_scale_with_body_count(eleven_part_dynamics):
+    dynamics = eleven_part_dynamics
 
     assert dynamics.mass_symbols["bus_5"] == sm.symbols("m_bus_5")
     assert dynamics.mass_symbols["panel_6"] == sm.symbols("m_panel_6")
@@ -396,16 +207,16 @@ def test_multiangle_parameter_symbols_scale_with_body_count():
     assert len(dynamics.p) == 18
 
 
-def test_multiangle_requires_mass_parameter_for_each_body():
-    config = seven_part_config()
+def test_multiangle_requires_mass_parameter_for_each_body(seven_part_config):
+    config = seven_part_config
     del config["parameters"]["m_panel_4"]
 
     with pytest.raises(KeyError, match="m_panel_4"):
         MultiAngleFlexibleDynamics(config)
 
 
-def test_multiangle_defines_bus_torque_symbols_for_seven_part_chain():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_defines_bus_torque_symbols_for_seven_part_chain(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     assert dynamics.bus_torque_symbols == {
         "bus_1": sm.symbols("tau_1"),
@@ -419,8 +230,8 @@ def test_multiangle_defines_bus_torque_symbols_for_seven_part_chain():
     ]
 
 
-def test_multiangle_torque_symbols_scale_with_body_count():
-    dynamics = MultiAngleFlexibleDynamics(eleven_part_config())
+def test_multiangle_torque_symbols_scale_with_body_count(eleven_part_dynamics):
+    dynamics = eleven_part_dynamics
 
     assert dynamics.bus_torque_symbols["bus_5"] == sm.symbols("tau_5")
     assert list(dynamics.tau) == [
@@ -432,8 +243,8 @@ def test_multiangle_torque_symbols_scale_with_body_count():
     ]
 
 
-def test_multiangle_defines_mode_shapes_for_flexible_bodies():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_defines_mode_shapes_for_flexible_bodies(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     panel_1 = dynamics.flexible_bodies["panel_1"]
     panel_2 = dynamics.flexible_bodies["panel_2"]
@@ -461,8 +272,10 @@ def test_multiangle_defines_mode_shapes_for_flexible_bodies():
     assert all(value > 0 for value in panel_2["k_modal_list"])
 
 
-def test_multiangle_rejects_unrecognised_beam_type_when_defining_mode_shapes():
-    config = seven_part_config()
+def test_multiangle_rejects_unrecognised_beam_type_when_defining_mode_shapes(
+    seven_part_config,
+):
+    config = seven_part_config
     config["flexible_types"]["panel_1"] = "mystery-beam"
     config["beam_parameters"]["mystery-beam"] = {"nb_modes": 1}
 
@@ -470,8 +283,8 @@ def test_multiangle_rejects_unrecognised_beam_type_when_defining_mode_shapes():
         MultiAngleFlexibleDynamics(config)
 
 
-def test_multiangle_defines_rigid_bus_inertia_matrices():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_defines_rigid_bus_inertia_matrices(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     m_bus_2 = dynamics.mass_symbols["bus_2"]
     expected = sm.Matrix(
@@ -486,8 +299,8 @@ def test_multiangle_defines_rigid_bus_inertia_matrices():
     assert set(dynamics.inertia_matrices) == set(dynamics.body_names)
 
 
-def test_multiangle_defines_flexible_panel_inertia_matrices():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_defines_flexible_panel_inertia_matrices(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     inertia = dynamics.inertia_matrices["panel_2"]
     m_panel_2 = dynamics.mass_symbols["panel_2"]
@@ -505,8 +318,8 @@ def test_multiangle_defines_flexible_panel_inertia_matrices():
     assert inertia[0, 1].has(eta22)
 
 
-def test_multiangle_offset_from_rigid_bus_to_flexible_panel():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_offset_from_rigid_bus_to_flexible_panel(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     left_offset = dynamics._get_offset_vector("bus_2", "panel_2")
     right_offset = dynamics._get_offset_vector("bus_2", "panel_3")
@@ -515,8 +328,8 @@ def test_multiangle_offset_from_rigid_bus_to_flexible_panel():
     assert right_offset == dynamics.D / 2 * dynamics.frames["bus_2"].x
 
 
-def test_multiangle_offset_from_flexible_panel_to_rigid_bus_uses_tip_deflection():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_offset_from_flexible_panel_to_rigid_bus_uses_tip_deflection(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     offset = dynamics._get_offset_vector("panel_2", "bus_1")
     eta_list = dynamics.flexible_bodies["panel_2"]["eta_list"]
@@ -533,15 +346,15 @@ def test_multiangle_offset_from_flexible_panel_to_rigid_bus_uses_tip_deflection(
     assert offset == expected
 
 
-def test_multiangle_classifies_supported_connection_kinds():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_classifies_supported_connection_kinds(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     assert dynamics._connection_kind("bus_2", "panel_2") == "rigid_to_flexible"
     assert dynamics._connection_kind("panel_2", "bus_1") == "flexible_to_rigid"
 
 
-def test_multiangle_connection_kind_rejects_unsupported_body_type_pairs():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_connection_kind_rejects_unsupported_body_type_pairs(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     with pytest.raises(NotImplementedError, match="two rigid bodies"):
         dynamics._connection_kind("bus_1", "bus_2")
@@ -550,8 +363,8 @@ def test_multiangle_connection_kind_rejects_unsupported_body_type_pairs():
         dynamics._connection_kind("panel_1", "panel_2")
 
 
-def test_multiangle_offset_rejects_unsupported_body_type_pairs():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_offset_rejects_unsupported_body_type_pairs(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     with pytest.raises(NotImplementedError, match="two rigid bodies"):
         dynamics._get_offset_vector("bus_1", "bus_2")
@@ -560,8 +373,8 @@ def test_multiangle_offset_rejects_unsupported_body_type_pairs():
         dynamics._get_offset_vector("panel_1", "panel_2")
 
 
-def test_multiangle_defines_expected_points_for_seven_part_chain():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_defines_expected_points_for_seven_part_chain(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     expected_points = {
         "N",
@@ -588,8 +401,8 @@ def test_multiangle_defines_expected_points_for_seven_part_chain():
     assert all(dynamics.inertial_position[body] is not None for body in dynamics.body_names)
 
 
-def test_multiangle_places_central_bus_at_reference_translation():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_places_central_bus_at_reference_translation(seven_part_dynamics):
+    dynamics = seven_part_dynamics
     N = dynamics.frames["inertial"]
 
     expected = dynamics.q_translation["x"] * N.x + dynamics.q_translation["y"] * N.y
@@ -597,8 +410,8 @@ def test_multiangle_places_central_bus_at_reference_translation():
     assert dynamics.inertial_position["bus_2"] == expected
 
 
-def test_multiangle_places_flexible_panel_mass_center_from_panel_joint():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_places_flexible_panel_mass_center_from_panel_joint(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     panel = "panel_3"
     joint = dynamics.points["joint_panel_3_bus_2"]
@@ -617,8 +430,8 @@ def test_multiangle_places_flexible_panel_mass_center_from_panel_joint():
     assert panel_cm.pos_from(joint) == expected
 
 
-def test_multiangle_places_rigid_bus_mass_center_from_bus_joint():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_places_rigid_bus_mass_center_from_bus_joint(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     bus = "bus_3"
     joint = dynamics.points["joint_bus_3_panel_3"]
@@ -628,8 +441,8 @@ def test_multiangle_places_rigid_bus_mass_center_from_bus_joint():
     assert bus_cm.pos_from(joint) == expected
 
 
-def test_multiangle_defines_system_center_of_mass_from_body_mass_centers():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_defines_system_center_of_mass_from_body_mass_centers(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     expected_total_mass = sum(
         dynamics.mass_symbols[body]
@@ -645,24 +458,24 @@ def test_multiangle_defines_system_center_of_mass_from_body_mass_centers():
     assert dynamics.G.pos_from(dynamics.O) == expected_position
 
 
-def test_multiangle_defines_central_bus_position_relative_to_system_center_of_mass():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_defines_central_bus_position_relative_to_system_center_of_mass(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     expected = dynamics.points[dynamics.central_body].pos_from(dynamics.G)
 
     assert dynamics.r_GB == expected
 
 
-def test_multiangle_defines_kinematic_differential_equations():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_defines_kinematic_differential_equations(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     assert dynamics.fk == dynamics.qd - dynamics.u
     assert dynamics.Mk == sm.eye(len(dynamics.q))
     assert dynamics.gk == -dynamics.u
 
 
-def test_multiangle_defines_coordinate_derivative_replacements():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_defines_coordinate_derivative_replacements(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     assert dynamics.qd_repl == dict(zip(dynamics.qd, dynamics.u))
     assert dynamics.qdd_repl == {
@@ -671,8 +484,8 @@ def test_multiangle_defines_coordinate_derivative_replacements():
     }
 
 
-def test_multiangle_defines_bus_angular_velocities():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_defines_bus_angular_velocities(seven_part_dynamics):
+    dynamics = seven_part_dynamics
     N = dynamics.frames["inertial"]
 
     u31 = dynamics.bus_speed_coordinates["bus_1"]
@@ -684,8 +497,8 @@ def test_multiangle_defines_bus_angular_velocities():
     assert_vector_equal(dynamics.angular_velocities["bus_3"], (u32 + u33) * N.z, N)
 
 
-def test_multiangle_defines_panel_angular_velocities_from_orientation_convention():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_defines_panel_angular_velocities_from_orientation_convention(seven_part_dynamics):
+    dynamics = seven_part_dynamics
     N = dynamics.frames["inertial"]
 
     u31 = dynamics.bus_speed_coordinates["bus_1"]
@@ -706,8 +519,8 @@ def test_multiangle_defines_panel_angular_velocities_from_orientation_convention
     assert_vector_equal(dynamics.angular_velocities["panel_4"], (u32 + u33) * N.z, N)
 
 
-def test_multiangle_defines_central_bus_linear_velocity():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_defines_central_bus_linear_velocity(seven_part_dynamics):
+    dynamics = seven_part_dynamics
     N = dynamics.frames["inertial"]
 
     expected = (
@@ -719,8 +532,8 @@ def test_multiangle_defines_central_bus_linear_velocity():
     assert_vector_equal(dynamics.linear_velocities[dynamics.central_body], expected, N)
 
 
-def test_multiangle_defines_rigid_parent_joint_velocity_with_two_point_theory():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_defines_rigid_parent_joint_velocity_with_two_point_theory(seven_part_dynamics):
+    dynamics = seven_part_dynamics
     N = dynamics.frames["inertial"]
 
     joint = dynamics.points["joint_panel_2_bus_2"]
@@ -737,8 +550,8 @@ def test_multiangle_defines_rigid_parent_joint_velocity_with_two_point_theory():
     assert_vector_equal(dynamics.joint_velocities["joint_panel_2_bus_2"], expected, N)
 
 
-def test_multiangle_defines_flexible_parent_distal_joint_tip_velocity():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_defines_flexible_parent_distal_joint_tip_velocity(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     panel = "panel_2"
     frame = dynamics.frames[panel]
@@ -748,8 +561,8 @@ def test_multiangle_defines_flexible_parent_distal_joint_tip_velocity():
     assert_vector_equal(joint.vel(frame), expected_relative_velocity, frame)
 
 
-def test_multiangle_defines_flexible_parent_distal_joint_inertial_velocity():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_defines_flexible_parent_distal_joint_inertial_velocity(seven_part_dynamics):
+    dynamics = seven_part_dynamics
     N = dynamics.frames["inertial"]
 
     panel = "panel_2"
@@ -767,8 +580,8 @@ def test_multiangle_defines_flexible_parent_distal_joint_inertial_velocity():
     assert_vector_equal(dynamics.joint_velocities["joint_bus_1_panel_2"], expected, N)
 
 
-def test_multiangle_defines_rigid_child_bus_velocity_from_distal_joint():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_defines_rigid_child_bus_velocity_from_distal_joint(seven_part_dynamics):
+    dynamics = seven_part_dynamics
     N = dynamics.frames["inertial"]
 
     bus = "bus_1"
@@ -783,8 +596,8 @@ def test_multiangle_defines_rigid_child_bus_velocity_from_distal_joint():
     assert_vector_equal(dynamics.linear_velocities[bus], expected, N)
 
 
-def test_multiangle_defines_flexible_body_distributed_and_center_of_mass_velocities():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_defines_flexible_body_distributed_and_center_of_mass_velocities(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     panel = "panel_3"
     frame = dynamics.frames[panel]
@@ -804,8 +617,8 @@ def test_multiangle_defines_flexible_body_distributed_and_center_of_mass_velocit
     assert panel in dynamics.flexible_center_of_mass_velocities
 
 
-def test_multiangle_defines_bus_angular_accelerations():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_defines_bus_angular_accelerations(seven_part_dynamics):
+    dynamics = seven_part_dynamics
     N = dynamics.frames["inertial"]
     t = dynamics.t
 
@@ -830,8 +643,8 @@ def test_multiangle_defines_bus_angular_accelerations():
     )
 
 
-def test_multiangle_defines_central_bus_linear_acceleration():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_defines_central_bus_linear_acceleration(seven_part_dynamics):
+    dynamics = seven_part_dynamics
     N = dynamics.frames["inertial"]
     t = dynamics.t
 
@@ -852,8 +665,8 @@ def test_multiangle_defines_central_bus_linear_acceleration():
     )
 
 
-def test_multiangle_defines_rigid_parent_joint_acceleration_with_two_point_theory():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_defines_rigid_parent_joint_acceleration_with_two_point_theory(seven_part_dynamics):
+    dynamics = seven_part_dynamics
     N = dynamics.frames["inertial"]
 
     joint = dynamics.points["joint_panel_2_bus_2"]
@@ -878,8 +691,8 @@ def test_multiangle_defines_rigid_parent_joint_acceleration_with_two_point_theor
     )
 
 
-def test_multiangle_defines_flexible_parent_distal_joint_acceleration():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_defines_flexible_parent_distal_joint_acceleration(seven_part_dynamics):
+    dynamics = seven_part_dynamics
     N = dynamics.frames["inertial"]
 
     panel = "panel_2"
@@ -908,8 +721,8 @@ def test_multiangle_defines_flexible_parent_distal_joint_acceleration():
     )
 
 
-def test_multiangle_accelerations_are_stored_in_speed_variables():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_accelerations_are_stored_in_speed_variables(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     assert_vectors_do_not_contain_coordinate_derivatives(
         dynamics.angular_accelerations,
@@ -929,8 +742,8 @@ def test_multiangle_accelerations_are_stored_in_speed_variables():
     )
 
 
-def test_multiangle_external_forces_are_zero_for_all_bodies():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_external_forces_are_zero_for_all_bodies(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     assert set(dynamics.external_forces) == set(dynamics.body_names)
     for body in dynamics.body_names:
@@ -941,8 +754,8 @@ def test_multiangle_external_forces_are_zero_for_all_bodies():
         )
 
 
-def test_multiangle_external_torques_are_symbolic_on_rigid_buses_only():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_external_torques_are_symbolic_on_rigid_buses_only(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     assert set(dynamics.external_torques) == set(dynamics.body_names)
 
@@ -962,8 +775,8 @@ def test_multiangle_external_torques_are_symbolic_on_rigid_buses_only():
         )
 
 
-def test_multiangle_defines_partial_velocity_vectors_for_all_bodies():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_defines_partial_velocity_vectors_for_all_bodies(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     assert set(dynamics.partial_angular_velocities) == set(dynamics.body_names)
     assert set(dynamics.partial_linear_velocities) == set(dynamics.body_names)
@@ -973,8 +786,8 @@ def test_multiangle_defines_partial_velocity_vectors_for_all_bodies():
         assert len(dynamics.partial_linear_velocities[body]) == len(dynamics.u)
 
 
-def test_multiangle_partial_linear_velocities_reconstruct_body_velocities():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_partial_linear_velocities_reconstruct_body_velocities(seven_part_dynamics):
+    dynamics = seven_part_dynamics
     N = dynamics.frames["inertial"]
 
     for body, velocity in dynamics.linear_velocities.items():
@@ -989,8 +802,8 @@ def test_multiangle_partial_linear_velocities_reconstruct_body_velocities():
         assert_vector_equal(reconstructed, velocity, N)
 
 
-def test_multiangle_central_bus_linear_partials_are_translation_basis_vectors():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_central_bus_linear_partials_are_translation_basis_vectors(seven_part_dynamics):
+    dynamics = seven_part_dynamics
     N = dynamics.frames["inertial"]
 
     u1 = dynamics.u_translation["x"]
@@ -1007,8 +820,8 @@ def test_multiangle_central_bus_linear_partials_are_translation_basis_vectors():
             assert_vector_equal(partials[index], 0 * N.x, N)
 
 
-def test_multiangle_rigid_parent_panel_linear_partials_include_root_translation():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_rigid_parent_panel_linear_partials_include_root_translation(seven_part_dynamics):
+    dynamics = seven_part_dynamics
     N = dynamics.frames["inertial"]
 
     panel = "panel_3"
@@ -1022,8 +835,8 @@ def test_multiangle_rigid_parent_panel_linear_partials_include_root_translation(
     assert_vector_equal(partials[i_u2], N.y, N)
 
 
-def test_multiangle_rigid_parent_panel_linear_partials_include_modal_speeds():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_rigid_parent_panel_linear_partials_include_modal_speeds(seven_part_dynamics):
+    dynamics = seven_part_dynamics
     N = dynamics.frames["inertial"]
 
     panel = "panel_3"
@@ -1037,8 +850,8 @@ def test_multiangle_rigid_parent_panel_linear_partials_include_modal_speeds():
         assert_vector_equal(partials[index], phi_k * frame.y, N)
 
 
-def test_multiangle_bus_angular_partials_distinguish_bus_torque_locations():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_bus_angular_partials_distinguish_bus_torque_locations(seven_part_dynamics):
+    dynamics = seven_part_dynamics
     N = dynamics.frames["inertial"]
 
     u31 = dynamics.bus_speed_coordinates["bus_1"]
@@ -1063,8 +876,8 @@ def test_multiangle_bus_angular_partials_distinguish_bus_torque_locations():
     assert_vector_equal(partials["bus_3"][i33], N.z, N)
 
 
-def test_multiangle_panel_angular_partials_follow_level_1_5_orientation_model():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_panel_angular_partials_follow_level_1_5_orientation_model(seven_part_dynamics):
+    dynamics = seven_part_dynamics
     N = dynamics.frames["inertial"]
 
     u31 = dynamics.bus_speed_coordinates["bus_1"]
@@ -1085,15 +898,15 @@ def test_multiangle_panel_angular_partials_follow_level_1_5_orientation_model():
     assert_vector_equal(partials["panel_3"][i33], sm.Rational(1, 2) * N.z, N)
 
 
-def test_multiangle_initialises_generalised_active_force_vector():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_initialises_generalised_active_force_vector(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     assert dynamics.state_dimension == len(dynamics.u)
     assert dynamics.generalised_active_forces.shape == (len(dynamics.u), 1)
 
 
-def test_multiangle_external_bus_torques_create_distinct_generalised_forces():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_external_bus_torques_create_distinct_generalised_forces(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     tau1 = dynamics.bus_torque_symbols["bus_1"]
     tau2 = dynamics.bus_torque_symbols["bus_2"]
@@ -1128,8 +941,8 @@ def test_multiangle_external_bus_torques_create_distinct_generalised_forces():
         assert_symbolic_equal(actual_without_gravity, expected[i])
 
 
-def test_multiangle_generalised_active_forces_match_implemented_force_blocks():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_generalised_active_forces_match_implemented_force_blocks(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     expected = sm.zeros(len(dynamics.u), 1)
 
@@ -1160,8 +973,8 @@ def test_multiangle_generalised_active_forces_match_implemented_force_blocks():
         assert_symbolic_equal(actual_without_gravity, expected[i])
 
 
-def test_multiangle_defaults_flexible_inertia_integration_to_quadrature():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_defaults_flexible_inertia_integration_to_quadrature(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     assert dynamics.flexible_inertia_integration == {
         "method": "gauss-legendre",
@@ -1192,8 +1005,8 @@ def test_multiangle_rejects_non_canonical_flexible_inertia_integration_method():
         )
 
 
-def test_multiangle_initialises_generalised_inertia_force_vector():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_initialises_generalised_inertia_force_vector(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     assert dynamics.state_dimension == len(dynamics.u)
     assert dynamics.generalised_inertia_forces.shape == (len(dynamics.u), 1)
@@ -1207,8 +1020,8 @@ def test_multiangle_initialises_generalised_inertia_force_vector():
     )
 
 
-def test_multiangle_central_bus_rigid_body_inertia_loads_have_newton_euler_form():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_central_bus_rigid_body_inertia_loads_have_newton_euler_form(seven_part_dynamics):
+    dynamics = seven_part_dynamics
     N = dynamics.frames["inertial"]
     body = dynamics.central_body
 
@@ -1225,8 +1038,8 @@ def test_multiangle_central_bus_rigid_body_inertia_loads_have_newton_euler_form(
     assert_vector_equal(dynamics.rigid_body_inertia_torques[body], expected_torque, N)
 
 
-def test_multiangle_flexible_body_inertia_density_has_expected_form():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_flexible_body_inertia_density_has_expected_form(seven_part_dynamics):
+    dynamics = seven_part_dynamics
     N = dynamics.frames["inertial"]
     body = "panel_1"
 
@@ -1243,16 +1056,18 @@ def test_multiangle_flexible_body_inertia_density_has_expected_form():
     )
 
 
-def test_multiangle_flexible_body_inertia_quadrature_integrates_polynomial():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_flexible_body_inertia_quadrature_integrates_polynomial(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     result = dynamics._integrate_flexible_body_expression("panel_1", dynamics.s**2)
 
     assert abs(float(result) - 9.0) < 1e-12
 
 
-def test_multiangle_flexible_body_inertia_symbolic_integration_uses_sympy():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_flexible_body_inertia_symbolic_integration_uses_sympy(
+    seven_part_config,
+):
+    dynamics = MultiAngleFlexibleDynamics(seven_part_config)
     dynamics.flexible_inertia_integration["method"] = "symbolic"
 
     result = dynamics._integrate_flexible_body_expression("panel_1", dynamics.s**2)
@@ -1260,8 +1075,8 @@ def test_multiangle_flexible_body_inertia_symbolic_integration_uses_sympy():
     assert_symbolic_equal(result, dynamics.L**3 / 3)
 
 
-def test_multiangle_flexible_body_inertia_is_integrated_density_projection():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_flexible_body_inertia_is_integrated_density_projection(seven_part_dynamics):
+    dynamics = seven_part_dynamics
     body = "panel_1"
     row = len(dynamics.u_reference) + dynamics.flex_zeta_index[(body, 0)]
 
@@ -1279,8 +1094,8 @@ def test_multiangle_flexible_body_inertia_is_integrated_density_projection():
     )
 
 
-def test_multiangle_generalised_inertia_forces_match_body_projections():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_generalised_inertia_forces_match_body_projections(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     expected = sm.zeros(len(dynamics.u), 1)
     for i in range(len(dynamics.u)):
@@ -1301,8 +1116,8 @@ def test_multiangle_generalised_inertia_forces_match_body_projections():
         assert_symbolic_equal(dynamics.generalised_inertia_forces[i], expected[i])
 
 
-def test_multiangle_derives_equations_of_motion_from_kane_forces():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_derives_equations_of_motion_from_kane_forces(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     assert dynamics.kane_eq == (
         dynamics.generalised_active_forces + dynamics.generalised_inertia_forces
@@ -1315,8 +1130,8 @@ def test_multiangle_derives_equations_of_motion_from_kane_forces():
     assert dynamics.forcing.shape == (len(dynamics.u), 1)
 
 
-def test_multiangle_creates_lambdified_equation_evaluators_at_initialisation():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_creates_lambdified_equation_evaluators_at_initialisation(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     q_values = np.zeros(len(dynamics.q))
     u_values = np.zeros(len(dynamics.u))
@@ -1346,8 +1161,8 @@ def test_multiangle_creates_lambdified_equation_evaluators_at_initialisation():
     assert np.asarray(v_G).shape == (3, 1)
 
 
-def test_multiangle_initial_conditions_make_centre_of_mass_keplerian():
-    config = seven_part_config()
+def test_multiangle_initial_conditions_make_centre_of_mass_keplerian(seven_part_config):
+    config = seven_part_config
     config["q_initial"] = {
         "q3_1": np.deg2rad(-1.5),
         "q3_2": np.deg2rad(2.0),
@@ -1399,8 +1214,10 @@ def test_multiangle_initial_conditions_make_centre_of_mass_keplerian():
     np.testing.assert_allclose(v_G, v_G_expected, rtol=1e-12, atol=1e-9)
 
 
-def test_multiangle_initial_conditions_match_explicit_centre_offset_formula():
-    config = seven_part_config()
+def test_multiangle_initial_conditions_match_explicit_centre_offset_formula(
+    seven_part_config,
+):
+    config = seven_part_config
     theta0 = np.deg2rad(12.0)
     central_speed = 2.5e-4
     config["q_initial"] = {
@@ -1491,8 +1308,8 @@ def test_multiangle_initial_conditions_match_explicit_centre_offset_formula():
     np.testing.assert_allclose(u0[:2], expected_u_translation, rtol=1e-12, atol=1e-9)
 
 
-def test_multiangle_numeric_value_helpers_follow_symbol_order():
-    config = seven_part_config()
+def test_multiangle_numeric_value_helpers_follow_symbol_order(seven_part_config):
+    config = seven_part_config
     config["torques"] = {
         "bus_1": 1.2,
         "bus_3": -0.4,
@@ -1506,15 +1323,15 @@ def test_multiangle_numeric_value_helpers_follow_symbol_order():
     assert dynamics.get_torque_values() == [1.2, 0.0, -0.4]
 
 
-def test_multiangle_equation_forcing_has_no_speed_derivatives():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_equation_forcing_has_no_speed_derivatives(seven_part_dynamics):
+    dynamics = seven_part_dynamics
     forcing_derivatives = dynamics.forcing.atoms(sm.Derivative)
 
     assert not set(dynamics.ud) & forcing_derivatives
 
 
-def test_multiangle_translation_mass_matrix_contains_total_mass():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_translation_mass_matrix_contains_total_mass(seven_part_dynamics):
+    dynamics = seven_part_dynamics
     length_subs = {dynamics.L: dynamics.parameter_values["L"]}
 
     assert_symbolic_equal(
@@ -1527,8 +1344,8 @@ def test_multiangle_translation_mass_matrix_contains_total_mass():
     )
 
 
-def test_multiangle_kepler_gravity_quantities_are_stored():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_kepler_gravity_quantities_are_stored(seven_part_dynamics):
+    dynamics = seven_part_dynamics
     N = dynamics.frames["inertial"]
 
     expected_r_G = dynamics.points["center_of_mass"].pos_from(dynamics.O).express(N)
@@ -1549,8 +1366,8 @@ def test_multiangle_kepler_gravity_quantities_are_stored():
     assert len(dynamics.partial_v_G) == len(dynamics.u)
 
 
-def test_multiangle_gravity_gradient_is_disabled_by_default():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_gravity_gradient_is_disabled_by_default(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     assert dynamics.enable_gravity_gradient is False
     assert dynamics.V_gg == 0
@@ -1697,8 +1514,8 @@ def test_multiangle_gravity_gradient_adds_modal_row_forces_when_enabled(
             assert actual_gravity_gradient == expected_gravity_gradient
 
 
-def test_multiangle_kepler_gravity_force_is_com_partial_velocity_projection():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_kepler_gravity_force_is_com_partial_velocity_projection(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     for i in range(len(dynamics.u)):
         external_and_strain = sm.S.Zero
@@ -1727,8 +1544,8 @@ def test_multiangle_kepler_gravity_force_is_com_partial_velocity_projection():
         assert_symbolic_equal(actual_gravity, expected_gravity)
 
 
-def test_multiangle_flexible_strain_potential_energy_is_stored():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_flexible_strain_potential_energy_is_stored(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     expected = sm.S.Zero
     for values in dynamics.flexible_bodies.values():
@@ -1738,8 +1555,8 @@ def test_multiangle_flexible_strain_potential_energy_is_stored():
     assert_symbolic_equal(dynamics.V_strain, expected)
 
 
-def test_multiangle_flexible_strain_forces_are_added_to_modal_rows():
-    dynamics = MultiAngleFlexibleDynamics(seven_part_config())
+def test_multiangle_flexible_strain_forces_are_added_to_modal_rows(seven_part_dynamics):
+    dynamics = seven_part_dynamics
 
     modal_offset = len(dynamics.u_reference)
     for body, values in dynamics.flexible_bodies.items():
