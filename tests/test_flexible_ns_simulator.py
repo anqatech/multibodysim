@@ -31,12 +31,12 @@ def test_default_solver_absolute_tolerances_match_existing_values(gg_off_short_c
             [
                 1e-2,  # q1
                 1e-2,  # q2
-                1e-8,  # q3
+                1e-8,  # q_central_angle
                 1e-6,  # eta1_1
                 1e-6,  # eta2_1
                 1e-3,  # u1
                 1e-3,  # u2
-                1e-9,  # u3
+                1e-9,  # u_central_angle
                 1e-6,  # zeta1_1
                 1e-6,  # zeta2_1
             ]
@@ -66,12 +66,12 @@ def test_solver_absolute_tolerances_are_configurable(gg_off_short_config: dict):
             [
                 1e-2,  # q1
                 1e-2,  # q2
-                1e-7,  # q3
+                1e-7,  # q_central_angle
                 1e-5,  # eta1_1 from eta family override
                 2e-5,  # eta2_1 from exact-state override
                 1e-3,  # u1
                 1e-3,  # u2
-                1e-8,  # u3
+                1e-8,  # u_central_angle
                 1e-4,  # zeta1_1
                 1e-4,  # zeta2_1
             ]
@@ -103,7 +103,15 @@ def test_short_simulation_runs_for_example_configs(
     assert results["states"].shape == (expected_timesteps, 10)
     assert results["time"].shape == (expected_timesteps,)
 
-    for key in ("q3", "u3", "eta1_1", "eta2_1", "J_eff", "rG_x", "rG_y"):
+    for key in (
+        "q_central_angle",
+        "u_central_angle",
+        "eta1_1",
+        "eta2_1",
+        "J_eff",
+        "rG_x",
+        "rG_y",
+    ):
         assert key in results
         assert np.all(np.isfinite(results[key]))
 

@@ -66,14 +66,14 @@ class FlexibleNonSymmetricDynamics:
            
     def _define_symbols(self):
         # ---------- Base generalized coordinates and speeds ----------
-        self.q_angle = me.dynamicsymbols('q3')
+        self.q_angle = me.dynamicsymbols("q_central_angle")
         self.q_reference = {
             "x": me.dynamicsymbols('q1'),
             "y": me.dynamicsymbols('q2'),
             "theta": self.q_angle
         }
         
-        self.u_angle = me.dynamicsymbols('u3')
+        self.u_angle = me.dynamicsymbols("u_central_angle")
         self.u_reference = {
             "x": me.dynamicsymbols('u1'),
             "y": me.dynamicsymbols('u2'),
@@ -748,6 +748,9 @@ class FlexibleNonSymmetricDynamics:
         return torque_weights
 
     def get_initial_conditions(self, verbose=True):
+        angle_name = self.q_angle.name
+        speed_name = self.u_angle.name
+
         # ---------- Setup ---------- 
         x0 = np.zeros(2 * self.state_dimension)
         
@@ -812,9 +815,10 @@ class FlexibleNonSymmetricDynamics:
         ])
 
         # ---------- Rotation matrix R_theta ---------- 
+        theta0 = initial_states[angle_name]
         R_theta = np.array([
-            [np.cos(initial_states["q3"]), -np.sin(initial_states["q3"])],
-            [np.sin(initial_states["q3"]),  np.cos(initial_states["q3"])]
+            [np.cos(theta0), -np.sin(theta0)],
+            [np.sin(theta0),  np.cos(theta0)]
         ])
 
         # ---------- Keplerian COM initial position/velocity ----------
@@ -864,7 +868,10 @@ class FlexibleNonSymmetricDynamics:
         
         self.rho_derivative = self.rho_derivative / M
         
-        self.initial_generalised_speeds_constraints = initial_speeds["u3"] * S @ R_theta @ self.rho_vector + R_theta @ self.rho_derivative
+        self.initial_generalised_speeds_constraints = (
+            initial_speeds[speed_name] * S @ R_theta @ self.rho_vector
+            + R_theta @ self.rho_derivative
+        )
 
         state_symbols = [state for state in self.q]
         speed_symbols = [self.u_angle] + [z for fb in self.flexible_bodies.values() for z in fb["zeta_list"]]
@@ -884,13 +891,13 @@ class FlexibleNonSymmetricDynamics:
             name = str(q_symbol).replace("(t)", "")
             state_args.append(initial_states[name])
         
-        # 2) speeds in the order of speed_symbols = [u3] + all zeta_list
+        # 2) speeds in the order of speed_symbols = [u_central_angle] + all zeta_list
         speed_args = []
-        speed_args.append(self.config["initial_speeds"]["u3"])
+        speed_args.append(initial_speeds[speed_name])
         for fb in self.flexible_bodies.values():
             for z_symbol in fb["zeta_list"]:
                 z_name = str(z_symbol).replace("(t)", "")
-                speed_args.append(self.config["initial_speeds"][z_name])
+                speed_args.append(initial_speeds[z_name])
         
         # 3) parameters in the SAME order used to build param_symbols
         param_args = []
@@ -916,7 +923,7 @@ class FlexibleNonSymmetricDynamics:
             pos_parts = [
                 f"q1={initial_states["q1"]:.3f}",
                 f"q2={initial_states["q2"]:.3f}",
-                f"q3={np.degrees(initial_states["q3"]):.3f}°",
+                f"{angle_name}={np.degrees(initial_states[angle_name]):.3f}°",
             ]
             for body, fb in self.flexible_bodies.items():
                 for eta_sym in fb["eta_list"]:
@@ -929,7 +936,7 @@ class FlexibleNonSymmetricDynamics:
             vel_parts = [
                 f"u1={u1_consistent:.6f}",
                 f"u2={u2_consistent:.6f}",
-                f"u3={initial_speeds["u3"]:.3f}",
+                f"{speed_name}={initial_speeds[speed_name]:.3f}",
             ]
             for body, fb in self.flexible_bodies.items():
                 for zeta_sym in fb["zeta_list"]:

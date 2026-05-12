@@ -90,6 +90,12 @@ class FlexibleNonSymmetricSimulator:
         if name in tolerance_map:
             return tolerance_map[name]
 
+        if name == "q_central_angle":
+            return tolerance_map["q3"]
+
+        if name == "u_central_angle":
+            return tolerance_map["u3"]
+
         if name.startswith("eta"):
             return tolerance_map["eta"]
 

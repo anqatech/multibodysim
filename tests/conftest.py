@@ -36,16 +36,16 @@ def _as_multiangle_config(config: dict) -> dict:
     central_body = multiangle_config["central_body"]
 
     q_initial = multiangle_config.setdefault("q_initial", {})
-    old_q3 = q_initial.pop("q3", 0.0)
+    central_angle = q_initial.get("q_central_angle", 0.0)
     for body in rigid_bodies:
         q_initial.setdefault(_multiangle_angle_key(body, central_body), 0.0)
-    q_initial["q_central_angle"] = old_q3
+    q_initial["q_central_angle"] = central_angle
 
     initial_speeds = multiangle_config.setdefault("initial_speeds", {})
-    old_u3 = initial_speeds.pop("u3", 0.0)
+    central_speed = initial_speeds.get("u_central_angle", 0.0)
     for body in rigid_bodies:
         initial_speeds.setdefault(_multiangle_speed_key(body, central_body), 0.0)
-    initial_speeds["u_central_angle"] = old_u3
+    initial_speeds["u_central_angle"] = central_speed
 
     return multiangle_config
 
@@ -94,12 +94,12 @@ def _three_part_single_angle_config(*, enable_gravity_gradient: bool) -> dict:
             "orbit_eccentricity": 0.0,
         },
         "q_initial": {
-            "q3": 0.0349066,
+            "q_central_angle": 0.0349066,
             "eta1_1": 0.0,
             "eta2_1": 0.0,
         },
         "initial_speeds": {
-            "u3": 0.001131 if enable_gravity_gradient else 0.0,
+            "u_central_angle": 0.001131 if enable_gravity_gradient else 0.0,
             "zeta1_1": 0.0,
             "zeta2_1": 0.0,
         },
@@ -265,14 +265,14 @@ def _distributed_7part_single_angle_config(
             "orbit_eccentricity": 0.0,
         },
         "q_initial": {
-            "q3": 0.0349066,
+            "q_central_angle": 0.0349066,
             "eta1_1": eta1_initial,
             "eta2_1": 0.0,
             "eta3_1": 0.0,
             "eta4_1": 0.0,
         },
         "initial_speeds": {
-            "u3": 0.0,
+            "u_central_angle": 0.0,
             "zeta1_1": 0.0,
             "zeta2_1": 0.0,
             "zeta3_1": 0.0,

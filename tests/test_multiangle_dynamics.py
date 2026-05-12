@@ -253,21 +253,21 @@ def test_distributed_7part_multiangle_fixtures_adapt_single_angle_initial_states
     assert multiangle_config["central_body"] == "bus_2"
     assert multiangle_config["enable_gravity_gradient"] is expected_gravity_gradient
 
-    assert "q3" in single_angle_config["q_initial"]
-    assert "u3" in single_angle_config["initial_speeds"]
+    assert "q_central_angle" in single_angle_config["q_initial"]
+    assert "u_central_angle" in single_angle_config["initial_speeds"]
     assert "q3" not in multiangle_config["q_initial"]
     assert "u3" not in multiangle_config["initial_speeds"]
 
     assert multiangle_config["q_initial"]["q_relative_angle_bus_1"] == 0.0
     assert (
         multiangle_config["q_initial"]["q_central_angle"]
-        == single_angle_config["q_initial"]["q3"]
+        == single_angle_config["q_initial"]["q_central_angle"]
     )
     assert multiangle_config["q_initial"]["q_relative_angle_bus_3"] == 0.0
     assert multiangle_config["initial_speeds"]["u_relative_angle_bus_1"] == 0.0
     assert (
         multiangle_config["initial_speeds"]["u_central_angle"]
-        == single_angle_config["initial_speeds"]["u3"]
+        == single_angle_config["initial_speeds"]["u_central_angle"]
     )
     assert multiangle_config["initial_speeds"]["u_relative_angle_bus_3"] == 0.0
 
