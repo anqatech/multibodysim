@@ -7,20 +7,28 @@ import numpy as np
 
 def simulation_diagnostics(results: dict[str, Any]) -> dict[str, Any]:
     """Compute scalar diagnostics for a completed simulation run."""
-    q3_deg = np.rad2deg(np.asarray(results["q3"], dtype=float))
-    u3_deg_s = np.rad2deg(np.asarray(results["u3"], dtype=float))
+    central_angle_deg = np.rad2deg(np.asarray(results["q_central_angle"], dtype=float))
+    central_angle_speed_deg_s = np.rad2deg(
+        np.asarray(results["u_central_angle"], dtype=float)
+    )
 
     metrics: dict[str, Any] = {
         "success": bool(results["success"]),
         "nfev": results["nfev"],
         "njev": results.get("njev"),
         "nlu": results.get("nlu"),
-        "q3_final_deg": float(q3_deg[-1]),
-        "q3_drift_deg": float(q3_deg[-1] - q3_deg[0]),
-        "q3_peak_to_peak_deg": float(np.ptp(q3_deg)),
-        "q3_rms_about_mean_deg": float(np.sqrt(np.mean((q3_deg - np.mean(q3_deg)) ** 2))),
-        "u3_peak_abs_deg_s": float(np.max(np.abs(u3_deg_s))),
-        "u3_rms_deg_s": float(np.sqrt(np.mean(u3_deg_s**2))),
+        "central_angle_final_deg": float(central_angle_deg[-1]),
+        "central_angle_drift_deg": float(central_angle_deg[-1] - central_angle_deg[0]),
+        "central_angle_peak_to_peak_deg": float(np.ptp(central_angle_deg)),
+        "central_angle_rms_about_mean_deg": float(
+            np.sqrt(np.mean((central_angle_deg - np.mean(central_angle_deg)) ** 2))
+        ),
+        "central_angle_speed_peak_abs_deg_s": float(
+            np.max(np.abs(central_angle_speed_deg_s))
+        ),
+        "central_angle_speed_rms_deg_s": float(
+            np.sqrt(np.mean(central_angle_speed_deg_s**2))
+        ),
     }
 
     for key in sorted(results):
@@ -42,12 +50,12 @@ def simulation_diagnostics_table(
         "nfev": ("Function evaluations", "-"),
         "njev": ("Jacobian evaluations", "-"),
         "nlu": ("LU decompositions", "-"),
-        "q3_final_deg": ("Final attitude", "deg"),
-        "q3_drift_deg": ("Attitude drift", "deg"),
-        "q3_peak_to_peak_deg": ("Attitude peak-to-peak", "deg"),
-        "q3_rms_about_mean_deg": ("Attitude RMS about mean", "deg"),
-        "u3_peak_abs_deg_s": ("Peak angular velocity", "deg/s"),
-        "u3_rms_deg_s": ("RMS angular velocity", "deg/s"),
+        "central_angle_final_deg": ("Final attitude", "deg"),
+        "central_angle_drift_deg": ("Attitude drift", "deg"),
+        "central_angle_peak_to_peak_deg": ("Attitude peak-to-peak", "deg"),
+        "central_angle_rms_about_mean_deg": ("Attitude RMS about mean", "deg"),
+        "central_angle_speed_peak_abs_deg_s": ("Peak angular velocity", "deg/s"),
+        "central_angle_speed_rms_deg_s": ("RMS angular velocity", "deg/s"),
     }
 
     rows = []

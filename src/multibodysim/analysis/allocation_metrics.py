@@ -24,7 +24,7 @@ def _nadir_angle_error(results: dict[str, Any], axis: str) -> np.ndarray:
     k_hat = -rG / rnorm
     alpha_nadir = np.arctan2(k_hat[:, 1], k_hat[:, 0])
 
-    theta = np.asarray(results["q3"], dtype=float)
+    theta = np.asarray(results["q_central_angle"], dtype=float)
     if axis == "x":
         alpha_body = theta
     elif axis == "y":
@@ -53,8 +53,8 @@ def allocation_metrics(
 ) -> dict[str, Any]:
     """Compute metrics for comparing static torque-allocation choices."""
     time = np.asarray(results["time"], dtype=float)
-    theta = np.asarray(results["q3"], dtype=float)
-    u3 = np.asarray(results["u3"], dtype=float)
+    theta = np.asarray(results["q_central_angle"], dtype=float)
+    central_angle_speed = np.asarray(results["u_central_angle"], dtype=float)
     tau_pd = np.asarray(results.get("tau_PD", np.zeros_like(time)), dtype=float)
     tau_ff = np.asarray(results.get("tau_FF", np.zeros_like(time)), dtype=float)
     tau_cmd = tau_pd + tau_ff
@@ -63,9 +63,11 @@ def allocation_metrics(
         "success": bool(results["success"]) if "success" in results else None,
         "nfev": results.get("nfev"),
         "torque_weight_sum": float(sum(torque_weights.values())),
-        "q3_final_deg": float(np.rad2deg(theta[-1])),
-        "u3_peak_abs_deg_s": float(np.rad2deg(np.max(np.abs(u3)))),
-        "u3_rms_deg_s": float(np.rad2deg(_rms(u3))),
+        "central_angle_final_deg": float(np.rad2deg(theta[-1])),
+        "central_angle_speed_peak_abs_deg_s": float(
+            np.rad2deg(np.max(np.abs(central_angle_speed)))
+        ),
+        "central_angle_speed_rms_deg_s": float(np.rad2deg(_rms(central_angle_speed))),
     }
 
     if theta_target is not None:
@@ -129,9 +131,9 @@ def allocation_metrics_table(
         "success": ("Solver success", "-"),
         "nfev": ("Function evaluations", "-"),
         "torque_weight_sum": ("Torque-weight sum", "-"),
-        "q3_final_deg": ("Final attitude", "deg"),
-        "u3_peak_abs_deg_s": ("Peak angular velocity", "deg/s"),
-        "u3_rms_deg_s": ("RMS angular velocity", "deg/s"),
+        "central_angle_final_deg": ("Final attitude", "deg"),
+        "central_angle_speed_peak_abs_deg_s": ("Peak angular velocity", "deg/s"),
+        "central_angle_speed_rms_deg_s": ("RMS angular velocity", "deg/s"),
         "attitude_error_final_deg": ("Final attitude error", "deg"),
         "attitude_error_rms_deg": ("RMS attitude error", "deg"),
         "attitude_error_peak_abs_deg": ("Peak abs attitude error", "deg"),

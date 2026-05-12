@@ -11,8 +11,8 @@ def allocation_results():
         "success": True,
         "nfev": 12,
         "time": np.array([0.0, 1.0, 2.0]),
-        "q3": np.deg2rad(np.array([90.0, 91.0, 92.0])),
-        "u3": np.deg2rad(np.array([0.0, 1.0, -2.0])),
+        "q_central_angle": np.deg2rad(np.array([90.0, 91.0, 92.0])),
+        "u_central_angle": np.deg2rad(np.array([0.0, 1.0, -2.0])),
         "rG_x": np.array([1.0, 1.0, 1.0]),
         "rG_y": np.array([0.0, 0.0, 0.0]),
         "tau_PD": np.array([0.0, 2.0, -2.0]),
@@ -37,8 +37,8 @@ def test_allocation_metrics_compute_tracking_flex_and_torque_metrics():
     assert metrics["success"] is True
     assert metrics["nfev"] == 12
     assert np.isclose(metrics["torque_weight_sum"], 1.0)
-    assert np.isclose(metrics["q3_final_deg"], 92.0)
-    assert np.isclose(metrics["u3_peak_abs_deg_s"], 2.0)
+    assert np.isclose(metrics["central_angle_final_deg"], 92.0)
+    assert np.isclose(metrics["central_angle_speed_peak_abs_deg_s"], 2.0)
     assert np.isclose(metrics["attitude_error_final_deg"], 1.0)
     assert np.isclose(metrics["attitude_error_peak_abs_deg"], 3.0)
 

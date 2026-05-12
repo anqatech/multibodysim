@@ -12,8 +12,10 @@ def test_attitude_control_metrics_for_simple_slew():
 
     results = {
         "time": t,
-        "q3": np.array([0.0, 0.05, 0.1, 0.3, 0.6, 0.9, 1.05, 1.02, 1.0, 1.0, 1.0]),
-        "u3": np.full_like(t, 0.01),
+        "q_central_angle": np.array(
+            [0.0, 0.05, 0.1, 0.3, 0.6, 0.9, 1.05, 1.02, 1.0, 1.0, 1.0]
+        ),
+        "u_central_angle": np.full_like(t, 0.01),
         "tau_PD": np.full_like(t, 0.02),
         "eta1_1": np.linspace(0.0, 1.0e-6, len(t)),
     }
@@ -29,7 +31,7 @@ def test_attitude_control_metrics_for_simple_slew():
     assert metrics["rise_time_10_90_s"] == 3.0
     assert np.isclose(metrics["overshoot_deg"], np.rad2deg(0.05))
     assert np.isclose(metrics["overshoot_percent"], 5.0)
-    assert np.isclose(metrics["peak_u3_deg_s"], np.rad2deg(0.01))
+    assert np.isclose(metrics["peak_central_angle_speed_deg_s"], np.rad2deg(0.01))
     assert np.isclose(metrics["peak_tau_PD"], 0.02)
     assert np.isclose(metrics["impulse_abs_tau_PD"], 0.2)
     assert np.isclose(metrics["energy_tau_PD_sq"], 0.004)

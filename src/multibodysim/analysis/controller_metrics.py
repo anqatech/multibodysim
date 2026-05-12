@@ -12,8 +12,8 @@ def attitude_control_metrics(
 ) -> dict[str, float]:
     """Compute scalar quality metrics for an attitude slew maneuver."""
     t = np.asarray(results["time"], dtype=float)
-    theta = np.asarray(results["q3"], dtype=float)
-    u3 = np.asarray(results["u3"], dtype=float)
+    theta = np.asarray(results["q_central_angle"], dtype=float)
+    central_angle_speed = np.asarray(results["u_central_angle"], dtype=float)
     tau = np.asarray(results["tau_PD"], dtype=float)
 
     step = float(theta_target - theta_initial)
@@ -52,7 +52,9 @@ def attitude_control_metrics(
         "overshoot_deg": np.rad2deg(overshoot),
         "overshoot_percent": overshoot_percent,
         "steady_state_error_deg": np.rad2deg(float(theta_err[-1])),
-        "peak_u3_deg_s": np.rad2deg(float(np.max(np.abs(u3)))),
+        "peak_central_angle_speed_deg_s": np.rad2deg(
+            float(np.max(np.abs(central_angle_speed)))
+        ),
         "peak_tau_PD": float(np.max(np.abs(tau))),
         "rms_tau_PD": float(np.sqrt(np.mean(tau**2))),
         "impulse_abs_tau_PD": float(np.trapezoid(np.abs(tau), t)),
@@ -80,7 +82,7 @@ def control_metrics_table(metrics: dict[str, float]) -> tuple[list[tuple[str, st
         "overshoot_deg": ("Overshoot", "deg"),
         "overshoot_percent": ("Overshoot", "%"),
         "steady_state_error_deg": ("Steady-state error", "deg"),
-        "peak_u3_deg_s": ("Peak angular velocity", "deg/s"),
+        "peak_central_angle_speed_deg_s": ("Peak angular velocity", "deg/s"),
         "peak_tau_PD": ("Peak PD torque", "N.m"),
         "rms_tau_PD": ("RMS PD torque", "N.m"),
         "impulse_abs_tau_PD": ("PD torque impulse", "N.m.s"),
