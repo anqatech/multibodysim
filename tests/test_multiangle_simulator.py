@@ -30,5 +30,9 @@ def test_multiangle_simulator_builds_from_multiangle_config(
     initial_conditions = simulator.setup_initial_conditions(verbose=False)
     assert initial_conditions.shape == (2 * simulator.dynamics.state_dimension,)
 
+    rhs = simulator.evaluate_rhs(0.0, initial_conditions)
+    assert rhs.shape == initial_conditions.shape
+    assert np.all(np.isfinite(rhs))
+
     with pytest.raises(ValueError, match="Simulation has not been run yet"):
         simulator.get_results()
