@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+
 import numpy as np
 import pytest
 
@@ -36,3 +38,22 @@ def test_multiangle_simulator_builds_from_multiangle_config(
 
     with pytest.raises(ValueError, match="Simulation has not been run yet"):
         simulator.get_results()
+
+
+def test_multiangle_simulator_runs_short_integration(
+    distributed_7part_zf_gg_off_multiangle_config,
+):
+    config = copy.deepcopy(distributed_7part_zf_gg_off_multiangle_config)
+    config["sim_parameters"]["t_end"] = 0.1
+    config["sim_parameters"]["nb_timesteps"] = 3
+    config["sim_parameters"]["method"] = "DOP853"
+
+    simulator = MultiAngleFlexibleSimulator(config)
+    results = simulator.run_simulation(eval_flag=True, verbose=False)
+
+    assert results["success"]
+    assert results["time"].shape == (3,)
+    assert results["states"].shape == (3, 2 * simulator.dynamics.state_dimension)
+    assert "q3_2" in results
+    assert "u3_2" in results
+    assert simulator.get_results() is results

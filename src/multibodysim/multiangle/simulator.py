@@ -1,11 +1,22 @@
 from __future__ import annotations
 
 import numpy as np
+from scipy.integrate import solve_ivp
 
 from .dynamics import MultiAngleFlexibleDynamics
 
 
 class MultiAngleFlexibleSimulator:
+    DEFAULT_ABSOLUTE_TOLERANCES = {
+        "q1": 1e-2,
+        "q2": 1e-2,
+        "eta": 1e-6,
+        "u1": 1e-3,
+        "u2": 1e-3,
+        "zeta": 1e-6,
+        "q_default": 1e-6,
+        "u_default": 1e-6,
+    }
 
     def __init__(self, config: dict):
         self.config = config
@@ -77,6 +88,115 @@ class MultiAngleFlexibleSimulator:
 
     def eval_rhs(self, t: float, state: np.ndarray) -> np.ndarray:
         return self.evaluate_rhs(t, state)
+
+    def _absolute_tolerance_for_name(
+        self,
+        name: str,
+        tolerance_map: dict,
+        default_key: str,
+    ) -> float:
+        if name in tolerance_map:
+            return tolerance_map[name]
+
+        if name.startswith("eta"):
+            return tolerance_map["eta"]
+
+        if name.startswith("zeta"):
+            return tolerance_map["zeta"]
+
+        return tolerance_map[default_key]
+
+    def _build_absolute_tolerances(self, sim_params: dict) -> np.ndarray:
+        tolerance_map = self.DEFAULT_ABSOLUTE_TOLERANCES.copy()
+        tolerance_map.update(sim_params.get("state_atol", {}))
+
+        atol = []
+
+        for q_sym in self.dynamics.q:
+            atol.append(
+                self._absolute_tolerance_for_name(
+                    q_sym.name,
+                    tolerance_map,
+                    "q_default",
+                )
+            )
+
+        for u_sym in self.dynamics.u:
+            atol.append(
+                self._absolute_tolerance_for_name(
+                    u_sym.name,
+                    tolerance_map,
+                    "u_default",
+                )
+            )
+
+        return np.array(atol, dtype=float)
+
+    def run_simulation(
+        self,
+        eval_flag: bool = True,
+        verbose: bool = True,
+    ) -> dict:
+        initial_conditions = self.setup_initial_conditions(verbose=verbose)
+        sim_params = self.config["sim_parameters"]
+
+        t_start = sim_params["t_start"]
+        t_end = sim_params["t_end"]
+        nb_timesteps = sim_params["nb_timesteps"]
+        t_eval = np.linspace(t_start, t_end, nb_timesteps)
+
+        integration_options = {
+            "method": sim_params.get("method", "Radau"),
+            "rtol": sim_params.get("rtol", 1e-5),
+            "atol": self._build_absolute_tolerances(sim_params),
+        }
+
+        if verbose:
+            print(f"Starting simulation from t={t_start} to t={t_end}")
+            print(f"Integration method: {integration_options['method']}")
+            print(
+                "Tolerances: "
+                f"rtol={integration_options['rtol']}, "
+                f"atol={integration_options['atol']}\n"
+            )
+
+        result = solve_ivp(
+            fun=self.eval_rhs,
+            t_span=(t_start, t_end),
+            y0=initial_conditions,
+            t_eval=t_eval if eval_flag else None,
+            dense_output=not eval_flag,
+            **integration_options,
+        )
+
+        states = result.y.T
+        times = result.t
+        state_dimension = self.dynamics.state_dimension
+
+        self.results = {
+            "time": times,
+            "states": states,
+            "success": result.success,
+            "message": result.message,
+            "nfev": result.nfev,
+            "njev": getattr(result, "njev", None),
+            "nlu": getattr(result, "nlu", None),
+            "config": self.config.copy(),
+            "sim_object": result,
+        }
+
+        for index, q_sym in enumerate(self.dynamics.q):
+            self.results[q_sym.name] = states[:, index]
+
+        for index, u_sym in enumerate(self.dynamics.u):
+            self.results[u_sym.name] = states[:, state_dimension + index]
+
+        if verbose:
+            print(f"Simulation completed: {result.success}")
+            print(f"Message: {result.message}")
+            print(f"Number of function evaluations: {result.nfev}\n")
+
+        return self.results
 
     def get_results(self):
         if self.results is None:
