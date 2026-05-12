@@ -32,6 +32,19 @@ def motion_results():
     }
 
 
+def multiangle_motion_results():
+    results = motion_results()
+    results.pop("q3")
+    results.pop("u3")
+    results["q_central_angle"] = np.array([0.0, np.pi / 2.0, 3.0 * np.pi])
+    results["u_central_angle"] = np.array(
+        [0.0, np.pi / 180.0, 2.0 * np.pi / 180.0]
+    )
+    results["q_relative_angle_bus_1"] = np.array([0.1, 0.2, 0.3])
+    results["u_relative_angle_bus_1"] = np.array([0.01, 0.02, 0.03])
+    return results
+
+
 def test_wrap_to_pi_keeps_angles_in_principal_interval():
     wrapped = wrap_to_pi(np.array([-3.0 * np.pi, 0.0, 3.0 * np.pi]))
 
@@ -90,6 +103,28 @@ def test_plot_speeds_accepts_data_slice():
     assert np.allclose(axes[2].lines[0].get_ydata(), np.array([0.0, 1.0]))
 
     plt.close(fig)
+
+
+def test_motion_plots_use_multiangle_central_attitude_keys():
+    fig_states, state_axes = plot_states_q1_q2_q3_motion(
+        multiangle_motion_results(),
+        show=False,
+    )
+    fig_speeds, speed_axes = plot_speeds_u1_u2_u3_motion(
+        multiangle_motion_results(),
+        show=False,
+    )
+
+    assert state_axes[2].get_legend().get_texts()[0].get_text() == "q_central_angle"
+    assert speed_axes[2].get_legend().get_texts()[0].get_text() == "u_central_angle"
+    assert np.allclose(
+        state_axes[2].lines[0].get_ydata(),
+        np.array([0.0, 90.0, -180.0]),
+    )
+    assert np.allclose(speed_axes[2].lines[0].get_ydata(), np.array([0.0, 1.0, 2.0]))
+
+    plt.close(fig_states)
+    plt.close(fig_speeds)
 
 
 def test_plot_flexible_motion_discovers_eta_and_zeta_keys():

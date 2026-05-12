@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections import deque
-import re
 
 import numpy as np
 import sympy as sm
@@ -122,18 +121,30 @@ class MultiAngleFlexibleDynamics:
         }
 
     def _angle_symbol_name(self, body_name: str) -> str:
-        match = re.fullmatch(r"bus_(\d+)", body_name)
-        if match:
-            return f"q3_{match.group(1)}"
+        if not body_name.startswith("bus_"):
+            raise ValueError(
+                f"Expected bus name of form 'bus_<number>', got {body_name!r}."
+            )
 
-        raise ValueError(f"Expected bus name of form 'bus_<number>', got {body_name!r}.")
+        if body_name == self.central_body:
+            return "q_central_angle"
+
+        return f"q_relative_angle_{body_name}"
 
     def _speed_symbol_name(self, body_name: str) -> str:
-        match = re.fullmatch(r"bus_(\d+)", body_name)
-        if match:
-            return f"u3_{match.group(1)}"
+        if not body_name.startswith("bus_"):
+            raise ValueError(
+                f"Expected bus name of form 'bus_<number>', got {body_name!r}."
+            )
 
-        raise ValueError(f"Expected bus name of form 'bus_<number>', got {body_name!r}.")
+        if body_name == self.central_body:
+            return "u_central_angle"
+
+        return f"u_relative_angle_{body_name}"
+
+    @staticmethod
+    def _is_angle_state_name(name: str) -> bool:
+        return name == "q_central_angle" or name.startswith("q_relative_angle_")
 
     def _define_symbols(self):
         self.t = me.dynamicsymbols._t
@@ -1207,7 +1218,7 @@ class MultiAngleFlexibleDynamics:
             print("\nInitial conditions set (with momentum conservation):\n")
             position_parts = []
             for state_symbol, value in zip(self.q, q_values):
-                if state_symbol.name.startswith("q3_"):
+                if self._is_angle_state_name(state_symbol.name):
                     position_parts.append(
                         f"{state_symbol.name}={np.degrees(value):.3f}°"
                     )

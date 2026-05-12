@@ -14,6 +14,18 @@ def _make_short_test_config(config: dict) -> dict:
     return short_config
 
 
+def _multiangle_angle_key(body: str, central_body: str) -> str:
+    if body == central_body:
+        return "q_central_angle"
+    return f"q_relative_angle_{body}"
+
+
+def _multiangle_speed_key(body: str, central_body: str) -> str:
+    if body == central_body:
+        return "u_central_angle"
+    return f"u_relative_angle_{body}"
+
+
 def _as_multiangle_config(config: dict) -> dict:
     multiangle_config = copy.deepcopy(config)
     rigid_bodies = [
@@ -22,32 +34,18 @@ def _as_multiangle_config(config: dict) -> dict:
         if multiangle_config["body_type"][body].startswith("rigid-")
     ]
     central_body = multiangle_config["central_body"]
-    central_suffix = central_body.split("_", maxsplit=1)[1]
 
     q_initial = multiangle_config.setdefault("q_initial", {})
     old_q3 = q_initial.pop("q3", 0.0)
     for body in rigid_bodies:
-        suffix = body.split("_", maxsplit=1)[1]
-        q_initial.setdefault(f"q3_{suffix}", 0.0)
-    q_initial[f"q3_{central_suffix}"] = old_q3
+        q_initial.setdefault(_multiangle_angle_key(body, central_body), 0.0)
+    q_initial["q_central_angle"] = old_q3
 
     initial_speeds = multiangle_config.setdefault("initial_speeds", {})
     old_u3 = initial_speeds.pop("u3", 0.0)
     for body in rigid_bodies:
-        suffix = body.split("_", maxsplit=1)[1]
-        initial_speeds.setdefault(f"u3_{suffix}", 0.0)
-    initial_speeds[f"u3_{central_suffix}"] = old_u3
-
-    state_atol = multiangle_config.get("sim_parameters", {}).get("state_atol")
-    if isinstance(state_atol, dict):
-        q3_atol = state_atol.pop("q3", None)
-        u3_atol = state_atol.pop("u3", None)
-        for body in rigid_bodies:
-            suffix = body.split("_", maxsplit=1)[1]
-            if q3_atol is not None:
-                state_atol.setdefault(f"q3_{suffix}", q3_atol)
-            if u3_atol is not None:
-                state_atol.setdefault(f"u3_{suffix}", u3_atol)
+        initial_speeds.setdefault(_multiangle_speed_key(body, central_body), 0.0)
+    initial_speeds["u_central_angle"] = old_u3
 
     return multiangle_config
 

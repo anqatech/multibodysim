@@ -138,10 +138,10 @@ class MultiAngleFlexibleSimulator:
         if name in tolerance_map:
             return tolerance_map[name]
 
-        if name.startswith("q3_"):
+        if name == "q_central_angle" or name.startswith("q_relative_angle_"):
             return tolerance_map["q3"]
 
-        if name.startswith("u3_"):
+        if name == "u_central_angle" or name.startswith("u_relative_angle_"):
             return tolerance_map["u3"]
 
         if name.startswith("eta"):
@@ -237,12 +237,75 @@ class MultiAngleFlexibleSimulator:
         for index, u_sym in enumerate(self.dynamics.u):
             self.results[u_sym.name] = states[:, state_dimension + index]
 
+        self._add_diagnostics_to_results(times, states)
+
         if verbose:
             print(f"Simulation completed: {result.success}")
             print(f"Message: {result.message}")
             print(f"Number of function evaluations: {result.nfev}\n")
 
         return self.results
+
+    def _add_diagnostics_to_results(
+        self,
+        times: np.ndarray,
+        states: np.ndarray,
+    ) -> None:
+        state_dimension = self.dynamics.state_dimension
+        q = states[:, :state_dimension]
+        u = states[:, state_dimension:]
+
+        theta_index = self.plant_view.i_theta_u
+        J_eff = np.zeros_like(times)
+        tau_ff = np.zeros_like(times)
+        tau_pd = np.zeros_like(times)
+        rG_x = np.zeros_like(times)
+        rG_y = np.zeros_like(times)
+        rG_z = np.zeros_like(times)
+        vG_x = np.zeros_like(times)
+        vG_y = np.zeros_like(times)
+        vG_z = np.zeros_like(times)
+
+        for index, (time, qk, uk) in enumerate(zip(times, q, u)):
+            mass_matrix, _ = self.dynamics.eval_differentials(
+                qk,
+                uk,
+                self.parameter_values,
+                self.initial_torque_values,
+            )
+            mass_matrix = np.asarray(mass_matrix, dtype=float)
+            J_eff[index] = abs(mass_matrix[theta_index, theta_index])
+
+            control_output = self.get_control_output(
+                time,
+                qk,
+                uk,
+                mass_matrix=mass_matrix,
+            )
+            tau_ff[index] = control_output.tau_ff
+            tau_pd[index] = control_output.tau_fb
+
+            rG = np.asarray(
+                self.dynamics.rG_func(qk, uk, self.parameter_values),
+                dtype=float,
+            ).reshape(-1)
+            vG = np.asarray(
+                self.dynamics.vG_func(qk, uk, self.parameter_values),
+                dtype=float,
+            ).reshape(-1)
+
+            rG_x[index], rG_y[index], rG_z[index] = rG[:3]
+            vG_x[index], vG_y[index], vG_z[index] = vG[:3]
+
+        self.results["J_eff"] = J_eff
+        self.results["tau_FF"] = tau_ff
+        self.results["tau_PD"] = tau_pd
+        self.results["rG_x"] = rG_x
+        self.results["rG_y"] = rG_y
+        self.results["rG_z"] = rG_z
+        self.results["vG_x"] = vG_x
+        self.results["vG_y"] = vG_y
+        self.results["vG_z"] = vG_z
 
     def get_results(self):
         if self.results is None:

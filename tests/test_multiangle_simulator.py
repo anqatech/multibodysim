@@ -88,10 +88,18 @@ def test_multiangle_absolute_tolerances_use_grouped_attitude_defaults(
     ]
     tolerance_by_name = dict(zip(names, tolerances))
 
-    for name in ("q3_1", "q3_2", "q3_3"):
+    for name in (
+        "q_relative_angle_bus_1",
+        "q_central_angle",
+        "q_relative_angle_bus_3",
+    ):
         assert np.isclose(tolerance_by_name[name], 1e-7)
 
-    for name in ("u3_1", "u3_2", "u3_3"):
+    for name in (
+        "u_relative_angle_bus_1",
+        "u_central_angle",
+        "u_relative_angle_bus_3",
+    ):
         assert np.isclose(tolerance_by_name[name], 1e-8)
 
 
@@ -109,6 +117,12 @@ def test_multiangle_simulator_runs_short_integration(
     assert results["success"]
     assert results["time"].shape == (3,)
     assert results["states"].shape == (3, 2 * simulator.dynamics.state_dimension)
-    assert "q3_2" in results
-    assert "u3_2" in results
+    assert "q_central_angle" in results
+    assert "u_central_angle" in results
+    assert results["J_eff"].shape == (3,)
+    assert results["tau_FF"].shape == (3,)
+    assert results["tau_PD"].shape == (3,)
+    assert results["rG_x"].shape == (3,)
+    assert results["vG_y"].shape == (3,)
+    assert np.all(np.isfinite(results["J_eff"]))
     assert simulator.get_results() is results

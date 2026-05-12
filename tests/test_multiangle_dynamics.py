@@ -38,9 +38,9 @@ def test_multiangle_bus_orientation_convention_for_seven_part_chain(seven_part_d
     q32 = dynamics.bus_angle_coordinates["bus_2"]
     q33 = dynamics.bus_angle_coordinates["bus_3"]
 
-    assert str(q31.func) == "q3_1"
-    assert str(q32.func) == "q3_2"
-    assert str(q33.func) == "q3_3"
+    assert str(q31.func) == "q_relative_angle_bus_1"
+    assert str(q32.func) == "q_central_angle"
+    assert str(q33.func) == "q_relative_angle_bus_3"
 
     assert_symbolic_equal(dynamics.orientation_angle("bus_1"), q32 + sm.pi + q31)
     assert_symbolic_equal(dynamics.orientation_angle("bus_2"), q32)
@@ -120,9 +120,9 @@ def test_multiangle_defines_flexible_modal_symbols_and_state_vectors(seven_part_
     assert q_names == [
         "q1",
         "q2",
-        "q3_1",
-        "q3_2",
-        "q3_3",
+        "q_relative_angle_bus_1",
+        "q_central_angle",
+        "q_relative_angle_bus_3",
         "eta1_1",
         "eta2_1",
         "eta2_2",
@@ -133,9 +133,9 @@ def test_multiangle_defines_flexible_modal_symbols_and_state_vectors(seven_part_
     assert u_names == [
         "u1",
         "u2",
-        "u3_1",
-        "u3_2",
-        "u3_3",
+        "u_relative_angle_bus_1",
+        "u_central_angle",
+        "u_relative_angle_bus_3",
         "zeta1_1",
         "zeta2_1",
         "zeta2_2",
@@ -258,20 +258,22 @@ def test_distributed_7part_multiangle_fixtures_adapt_single_angle_initial_states
     assert "q3" not in multiangle_config["q_initial"]
     assert "u3" not in multiangle_config["initial_speeds"]
 
-    assert multiangle_config["q_initial"]["q3_1"] == 0.0
-    assert multiangle_config["q_initial"]["q3_2"] == single_angle_config["q_initial"]["q3"]
-    assert multiangle_config["q_initial"]["q3_3"] == 0.0
-    assert multiangle_config["initial_speeds"]["u3_1"] == 0.0
+    assert multiangle_config["q_initial"]["q_relative_angle_bus_1"] == 0.0
     assert (
-        multiangle_config["initial_speeds"]["u3_2"]
+        multiangle_config["q_initial"]["q_central_angle"]
+        == single_angle_config["q_initial"]["q3"]
+    )
+    assert multiangle_config["q_initial"]["q_relative_angle_bus_3"] == 0.0
+    assert multiangle_config["initial_speeds"]["u_relative_angle_bus_1"] == 0.0
+    assert (
+        multiangle_config["initial_speeds"]["u_central_angle"]
         == single_angle_config["initial_speeds"]["u3"]
     )
-    assert multiangle_config["initial_speeds"]["u3_3"] == 0.0
+    assert multiangle_config["initial_speeds"]["u_relative_angle_bus_3"] == 0.0
 
     state_atol = multiangle_config["sim_parameters"]["state_atol"]
-    assert "q3" not in state_atol
-    assert "u3" not in state_atol
-    assert {"q3_1", "q3_2", "q3_3", "u3_1", "u3_2", "u3_3"} <= set(state_atol)
+    assert "q3" in state_atol
+    assert "u3" in state_atol
 
 
 def test_multiangle_defines_bus_torque_symbols_for_seven_part_chain(seven_part_dynamics):
@@ -1228,9 +1230,9 @@ def test_multiangle_creates_lambdified_equation_evaluators_at_initialisation(sev
 def test_multiangle_initial_conditions_make_centre_of_mass_keplerian(seven_part_config):
     config = seven_part_config
     config["q_initial"] = {
-        "q3_1": np.deg2rad(-1.5),
-        "q3_2": np.deg2rad(2.0),
-        "q3_3": np.deg2rad(1.0),
+        "q_relative_angle_bus_1": np.deg2rad(-1.5),
+        "q_central_angle": np.deg2rad(2.0),
+        "q_relative_angle_bus_3": np.deg2rad(1.0),
         "eta1_1": 1.0e-3,
         "eta2_1": -2.0e-4,
         "eta2_2": 3.0e-4,
@@ -1239,9 +1241,9 @@ def test_multiangle_initial_conditions_make_centre_of_mass_keplerian(seven_part_
         "eta4_1": -7.5e-4,
     }
     config["initial_speeds"] = {
-        "u3_1": -1.5e-4,
-        "u3_2": 1.131e-3,
-        "u3_3": 2.0e-4,
+        "u_relative_angle_bus_1": -1.5e-4,
+        "u_central_angle": 1.131e-3,
+        "u_relative_angle_bus_3": 2.0e-4,
         "zeta1_1": 1.0e-5,
         "zeta2_1": -2.0e-5,
         "zeta2_2": 1.5e-5,
@@ -1285,9 +1287,9 @@ def test_multiangle_initial_conditions_match_explicit_centre_offset_formula(
     theta0 = np.deg2rad(12.0)
     central_speed = 2.5e-4
     config["q_initial"] = {
-        "q3_1": 0.0,
-        "q3_2": theta0,
-        "q3_3": 0.0,
+        "q_relative_angle_bus_1": 0.0,
+        "q_central_angle": theta0,
+        "q_relative_angle_bus_3": 0.0,
         "eta1_1": 7.5e-4,
         "eta2_1": -2.0e-4,
         "eta2_2": 3.0e-4,
@@ -1296,9 +1298,9 @@ def test_multiangle_initial_conditions_match_explicit_centre_offset_formula(
         "eta4_1": -6.0e-4,
     }
     config["initial_speeds"] = {
-        "u3_1": 0.0,
-        "u3_2": central_speed,
-        "u3_3": 0.0,
+        "u_relative_angle_bus_1": 0.0,
+        "u_central_angle": central_speed,
+        "u_relative_angle_bus_3": 0.0,
         "zeta1_1": 1.0e-5,
         "zeta2_1": -2.0e-5,
         "zeta2_2": 1.5e-5,
