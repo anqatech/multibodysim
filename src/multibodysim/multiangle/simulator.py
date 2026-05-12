@@ -122,7 +122,7 @@ class MultiAngleFlexibleSimulator:
 
         self.torque_values = torques.copy()
 
-        ud = -np.linalg.solve(
+        ud = np.linalg.solve(
             np.asarray(mass_matrix, dtype=float),
             np.asarray(forcing, dtype=float).squeeze(),
         )
