@@ -1,0 +1,34 @@
+from __future__ import annotations
+
+import numpy as np
+import pytest
+
+from multibodysim.multiangle import MultiAngleFlexibleSimulator
+
+
+def test_multiangle_simulator_builds_from_multiangle_config(
+    distributed_7part_zf_gg_off_multiangle_config,
+):
+    simulator = MultiAngleFlexibleSimulator(
+        distributed_7part_zf_gg_off_multiangle_config,
+    )
+
+    assert simulator.config is distributed_7part_zf_gg_off_multiangle_config
+    assert simulator.dynamics.config is distributed_7part_zf_gg_off_multiangle_config
+    assert simulator.parameter_values.shape == (
+        len(simulator.dynamics.parameter_symbols),
+    )
+    assert simulator.initial_torque_values.shape == (
+        len(simulator.dynamics.rigid_body_names),
+    )
+
+    np.testing.assert_allclose(
+        simulator.get_torque_values(),
+        simulator.initial_torque_values,
+    )
+
+    initial_conditions = simulator.setup_initial_conditions(verbose=False)
+    assert initial_conditions.shape == (2 * simulator.dynamics.state_dimension,)
+
+    with pytest.raises(ValueError, match="Simulation has not been run yet"):
+        simulator.get_results()
