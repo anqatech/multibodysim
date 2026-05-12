@@ -48,8 +48,8 @@ def test_solver_absolute_tolerances_are_configurable(gg_off_short_config: dict):
     gg_off_short_config["sim_parameters"].update(
         {
             "state_atol": {
-                "q3": 1e-7,
-                "u3": 1e-8,
+                "q_central_angle": 1e-7,
+                "u_central_angle": 1e-8,
                 "eta": 1e-5,
                 "zeta": 1e-4,
                 "eta2_1": 2e-5,

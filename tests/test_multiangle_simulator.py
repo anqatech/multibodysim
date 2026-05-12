@@ -72,11 +72,11 @@ def test_multiangle_absolute_tolerances_use_grouped_attitude_defaults(
     config["sim_parameters"]["state_atol"] = {
         "q1": 1e-2,
         "q2": 1e-2,
-        "q3": 1e-7,
+        "q_central_angle": 1e-7,
         "eta": 1e-5,
         "u1": 1e-3,
         "u2": 1e-3,
-        "u3": 1e-8,
+        "u_central_angle": 1e-8,
         "zeta": 1e-6,
     }
 

@@ -9,11 +9,11 @@ class FlexibleNonSymmetricSimulator:
     DEFAULT_ABSOLUTE_TOLERANCES = {
         "q1": 1e-2,
         "q2": 1e-2,
-        "q3": 1e-8,
+        "q_central_angle": 1e-8,
         "eta": 1e-6,
         "u1": 1e-3,
         "u2": 1e-3,
-        "u3": 1e-9,
+        "u_central_angle": 1e-9,
         "zeta": 1e-6,
         "q_default": 1e-6,
         "u_default": 1e-6,
@@ -89,12 +89,6 @@ class FlexibleNonSymmetricSimulator:
     def _absolute_tolerance_for_name(self, name, tolerance_map, default_key):
         if name in tolerance_map:
             return tolerance_map[name]
-
-        if name == "q_central_angle":
-            return tolerance_map["q3"]
-
-        if name == "u_central_angle":
-            return tolerance_map["u3"]
 
         if name.startswith("eta"):
             return tolerance_map["eta"]

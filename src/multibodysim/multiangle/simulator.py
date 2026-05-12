@@ -12,11 +12,11 @@ class MultiAngleFlexibleSimulator:
     DEFAULT_ABSOLUTE_TOLERANCES = {
         "q1": 1e-2,
         "q2": 1e-2,
-        "q3": 1e-7,
+        "q_central_angle": 1e-7,
         "eta": 1e-6,
         "u1": 1e-3,
         "u2": 1e-3,
-        "u3": 1e-8,
+        "u_central_angle": 1e-8,
         "zeta": 1e-6,
         "q_default": 1e-6,
         "u_default": 1e-6,
@@ -138,11 +138,11 @@ class MultiAngleFlexibleSimulator:
         if name in tolerance_map:
             return tolerance_map[name]
 
-        if name == "q_central_angle" or name.startswith("q_relative_angle_"):
-            return tolerance_map["q3"]
+        if name.startswith("q_relative_angle_"):
+            return tolerance_map["q_central_angle"]
 
-        if name == "u_central_angle" or name.startswith("u_relative_angle_"):
-            return tolerance_map["u3"]
+        if name.startswith("u_relative_angle_"):
+            return tolerance_map["u_central_angle"]
 
         if name.startswith("eta"):
             return tolerance_map["eta"]

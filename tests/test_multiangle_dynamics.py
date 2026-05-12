@@ -272,8 +272,8 @@ def test_distributed_7part_multiangle_fixtures_adapt_single_angle_initial_states
     assert multiangle_config["initial_speeds"]["u_relative_angle_bus_3"] == 0.0
 
     state_atol = multiangle_config["sim_parameters"]["state_atol"]
-    assert "q3" in state_atol
-    assert "u3" in state_atol
+    assert "q_central_angle" in state_atol
+    assert "u_central_angle" in state_atol
 
 
 def test_multiangle_defines_bus_torque_symbols_for_seven_part_chain(seven_part_dynamics):

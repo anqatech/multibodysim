@@ -111,8 +111,8 @@ def _three_part_single_angle_config(*, enable_gravity_gradient: bool) -> dict:
             "method": "Radau",
             "rtol": 1e-5,
             "state_atol": {
-                "q3": 1e-7,
-                "u3": 1e-8,
+                "q_central_angle": 1e-7,
+                "u_central_angle": 1e-8,
                 "eta": 1e-5,
                 "zeta": 1e-6,
             },
@@ -286,8 +286,8 @@ def _distributed_7part_single_angle_config(
             "method": "Radau",
             "rtol": 1e-5,
             "state_atol": {
-                "q3": 1e-7,
-                "u3": 1e-8,
+                "q_central_angle": 1e-7,
+                "u_central_angle": 1e-8,
                 "eta": 1e-5,
                 "zeta": 1e-6,
             },
