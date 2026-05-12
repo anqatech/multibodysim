@@ -57,6 +57,12 @@ class FlexibleNonSymmetricDynamics:
                     queue.append(neighbor)
                 
         return parents
+
+    def _get_parameters_from_config(self):
+        try:
+            return self.config["parameters"]
+        except KeyError as error:
+            raise KeyError("Missing config key: 'parameters'") from error
            
     def _define_symbols(self):
         # ---------- Base generalized coordinates and speeds ----------
@@ -128,8 +134,9 @@ class FlexibleNonSymmetricDynamics:
         self.ud_zero = {udi: 0 for udi in self.ud}
         
          # ---------- System parameters ----------
+        self.parameter_values = self._get_parameters_from_config()
         self.p_symbols = {}
-        for key, val in self.config["p_values"].items():
+        for key in self.parameter_values:
             symbol = sm.symbols(key)
             self.p_symbols[key] = symbol
 
@@ -143,23 +150,23 @@ class FlexibleNonSymmetricDynamics:
     def _define_mode_shapes(self):
         # ---------- Setup ----------
         beam_params = self.config["beam_parameters"]
-        p_values = self.config["p_values"]
+        parameters = self.parameter_values
         
         for body, values in self.flexible_bodies.items():
             beam_type = values["beam_type"]
             params = beam_params[beam_type]
             if beam_type == "cantilever":
                 beam = CantileverBeam(
-                    length=p_values["L"],
-                    E=p_values["E_mod"],
-                    I=p_values["I_area"],
+                    length=parameters["L"],
+                    E=parameters["E_mod"],
+                    I=parameters["I_area"],
                     n=params["nb_modes"]
                 )
             elif beam_type == "clamped-clamped":
                 beam = ClampedClampedBeam(
-                    length=p_values["L"],
-                    E=p_values["E_mod"],
-                    I=p_values["I_area"],
+                    length=parameters["L"],
+                    E=parameters["E_mod"],
+                    I=parameters["I_area"],
                     n=params["nb_modes"]
                 )
             else:
@@ -723,7 +730,7 @@ class FlexibleNonSymmetricDynamics:
         )
 
     def get_parameter_values(self):
-        return self.config["p_values"].values()
+        return self.parameter_values.values()
     
     def get_torque_values(self):
         torques = self.config["torques"]
@@ -763,7 +770,7 @@ class FlexibleNonSymmetricDynamics:
             x0[i+self.state_dimension] = value
 
         # ---------- Extract parameters ---------- 
-        parameters = self.config["p_values"]
+        parameters = self.parameter_values
         M = 0.0
         for key, value in parameters.items():
             if key.startswith("m_"):
@@ -794,7 +801,7 @@ class FlexibleNonSymmetricDynamics:
         p_args = []
         for p_symbol in self.p_symbols.values():
             pname = p_symbol.name
-            p_args.append(self.config["p_values"][pname])
+            p_args.append(self.parameter_values[pname])
 
         rho0 = np.array(rho_func(*(q_args + p_args)), dtype=float)
 
@@ -811,9 +818,9 @@ class FlexibleNonSymmetricDynamics:
         ])
 
         # ---------- Keplerian COM initial position/velocity ----------
-        mu_planet = float(self.config["p_values"]["planet_mu"])
-        a = float(self.config["p_values"]["orbit_semi_major_axis"])
-        e = float(self.config["p_values"]["orbit_eccentricity"])
+        mu_planet = float(self.parameter_values["planet_mu"])
+        a = float(self.parameter_values["orbit_semi_major_axis"])
+        e = float(self.parameter_values["orbit_eccentricity"])
 
         # True anomaly at t0 by convention
         initial_true_anomaly = 0.0
@@ -890,7 +897,7 @@ class FlexibleNonSymmetricDynamics:
         for key, symbol in self.p_symbols.items():
             if key == "tau":
                 continue
-            param_args.append(self.config["p_values"][key])
+            param_args.append(self.parameter_values[key])
         
         args = state_args + speed_args + param_args
 

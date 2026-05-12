@@ -83,7 +83,7 @@ def _three_part_single_angle_config(*, enable_gravity_gradient: bool) -> dict:
             "bus_1": 1.0,
         },
         "enable_gravity_gradient": enable_gravity_gradient,
-        "p_values": {
+        "parameters": {
             "D": 1.0,
             "L": 3.0,
             "m_bus_1": 3.0,
@@ -168,7 +168,7 @@ def _single_angle_seven_part_config() -> dict:
         "beam_parameters": {
             "cantilever": {"nb_modes": 1, "nb_points": 50},
         },
-        "p_values": {
+        "parameters": {
             "D": 1.0,
             "L": 3.0,
             "m_bus_1": 3.0,

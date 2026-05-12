@@ -1128,6 +1128,13 @@ class MultiAngleFlexibleDynamics:
             for body in self.rigid_body_names
         ]
 
+    def get_torque_weights(self):
+        configured_weights = self.config.get("torque_weights", {})
+        return [
+            configured_weights.get(body, 0.0)
+            for body in self.rigid_body_names
+        ]
+
     def _kepler_initial_centre_of_mass_state(self):
         mu = float(self.parameter_values["planet_mu"])
         a = float(self.parameter_values["orbit_semi_major_axis"])

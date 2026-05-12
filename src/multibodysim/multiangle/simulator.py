@@ -3,6 +3,8 @@ from __future__ import annotations
 import numpy as np
 from scipy.integrate import solve_ivp
 
+from ..controllers.base import AttitudeController, ControlOutput
+from ..controllers.plant_view import MultiAnglePlantView
 from .dynamics import MultiAngleFlexibleDynamics
 
 
@@ -10,9 +12,11 @@ class MultiAngleFlexibleSimulator:
     DEFAULT_ABSOLUTE_TOLERANCES = {
         "q1": 1e-2,
         "q2": 1e-2,
+        "q3": 1e-7,
         "eta": 1e-6,
         "u1": 1e-3,
         "u2": 1e-3,
+        "u3": 1e-8,
         "zeta": 1e-6,
         "q_default": 1e-6,
         "u_default": 1e-6,
@@ -31,7 +35,13 @@ class MultiAngleFlexibleSimulator:
             dtype=float,
         )
         self.torque_values = self.initial_torque_values.copy()
+        self.torque_weights = np.array(
+            self.dynamics.get_torque_weights(),
+            dtype=float,
+        )
+        self.plant_view = MultiAnglePlantView(self.dynamics, self.parameter_values)
 
+        self.controller = None
         self.results = None
 
     def get_parameter_values(self) -> np.ndarray:
@@ -42,6 +52,21 @@ class MultiAngleFlexibleSimulator:
 
     def reset_torque_values(self):
         self.torque_values = self.initial_torque_values.copy()
+
+    def set_controller(self, controller: AttitudeController | None):
+        self.controller = controller
+
+    def get_control_output(
+        self,
+        t: float,
+        q: np.ndarray,
+        u: np.ndarray,
+        mass_matrix: np.ndarray | None = None,
+    ) -> ControlOutput:
+        if self.controller is None:
+            return ControlOutput()
+
+        return self.controller.compute(t, q, u, Md=mass_matrix)
 
     def setup_initial_conditions(self, verbose: bool = True) -> np.ndarray:
         return self.dynamics.get_initial_conditions(verbose=verbose)
@@ -56,11 +81,9 @@ class MultiAngleFlexibleSimulator:
         state_dimension = self.dynamics.state_dimension
         q = state[:state_dimension]
         u = state[state_dimension:]
-        torques = (
-            self.torque_values
-            if torque_values is None
-            else np.asarray(torque_values, dtype=float)
-        )
+        torques = self.initial_torque_values.copy()
+        if torque_values is not None:
+            torques = np.asarray(torque_values, dtype=float).copy()
 
         Mk, gk = self.dynamics.eval_kinematics(
             q,
@@ -79,15 +102,32 @@ class MultiAngleFlexibleSimulator:
             self.parameter_values,
             torques,
         )
+
+        if torque_values is None and self.controller is not None:
+            control_output = self.get_control_output(
+                t,
+                q,
+                u,
+                mass_matrix=np.asarray(mass_matrix, dtype=float),
+            )
+            tau_control = control_output.tau_total
+            if tau_control != 0.0:
+                torques = torques + tau_control * self.torque_weights
+                mass_matrix, forcing = self.dynamics.eval_differentials(
+                    q,
+                    u,
+                    self.parameter_values,
+                    torques,
+                )
+
+        self.torque_values = torques.copy()
+
         ud = -np.linalg.solve(
             np.asarray(mass_matrix, dtype=float),
             np.asarray(forcing, dtype=float).squeeze(),
         )
 
         return np.hstack((qd, ud))
-
-    def eval_rhs(self, t: float, state: np.ndarray) -> np.ndarray:
-        return self.evaluate_rhs(t, state)
 
     def _absolute_tolerance_for_name(
         self,
@@ -97,6 +137,12 @@ class MultiAngleFlexibleSimulator:
     ) -> float:
         if name in tolerance_map:
             return tolerance_map[name]
+
+        if name.startswith("q3_"):
+            return tolerance_map["q3"]
+
+        if name.startswith("u3_"):
+            return tolerance_map["u3"]
 
         if name.startswith("eta"):
             return tolerance_map["eta"]
@@ -161,7 +207,7 @@ class MultiAngleFlexibleSimulator:
             )
 
         result = solve_ivp(
-            fun=self.eval_rhs,
+            fun=self.evaluate_rhs,
             t_span=(t_start, t_end),
             y0=initial_conditions,
             t_eval=t_eval if eval_flag else None,
