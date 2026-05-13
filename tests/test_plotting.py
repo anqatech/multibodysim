@@ -14,6 +14,7 @@ from multibodysim.plotting import (
     plot_nadir_angle_error,
     plot_planar_speeds,
     plot_planar_states,
+    plot_relative_attitude_states,
 )
 from multibodysim.plotting.simulation_plots import compute_nadir_angle_error, wrap_to_pi
 
@@ -37,7 +38,9 @@ def motion_results():
 def multiangle_motion_results():
     results = motion_results()
     results["q_relative_angle_bus_1"] = np.array([0.1, 0.2, 0.3])
+    results["q_relative_angle_bus_3"] = np.array([-0.1, -0.2, -0.3])
     results["u_relative_angle_bus_1"] = np.array([0.01, 0.02, 0.03])
+    results["u_relative_angle_bus_3"] = np.array([-0.01, -0.02, -0.03])
     return results
 
 
@@ -121,6 +124,48 @@ def test_motion_plots_use_multiangle_central_attitude_keys():
 
     plt.close(fig_states)
     plt.close(fig_speeds)
+
+
+def test_plot_relative_attitude_states_plots_multiangle_only_states():
+    fig, axes = plot_relative_attitude_states(
+        multiangle_motion_results(),
+        show=False,
+    )
+
+    assert len(axes) == 2
+    assert axes[0].get_ylabel() == "Relative angle [deg]"
+    assert axes[1].get_ylabel() == "Relative angular velocity [deg/s]"
+    assert axes[1].get_xlabel() == "Time [s]"
+    assert [
+        text.get_text()
+        for text in axes[0].get_legend().get_texts()
+    ] == [
+        "q_relative_angle_bus_1",
+        "q_relative_angle_bus_3",
+    ]
+    assert np.allclose(axes[0].lines[0].get_ydata(), np.rad2deg([0.1, 0.2, 0.3]))
+    assert np.allclose(axes[1].lines[0].get_ydata(), np.rad2deg([0.01, 0.02, 0.03]))
+
+    plt.close(fig)
+
+
+def test_plot_relative_attitude_states_accepts_data_slice():
+    fig, axes = plot_relative_attitude_states(
+        multiangle_motion_results(),
+        show=False,
+        data_slice=slice(1, None),
+    )
+
+    assert np.allclose(axes[0].lines[0].get_xdata(), np.array([1_000.0, 2_000.0]))
+    assert np.allclose(axes[0].lines[0].get_ydata(), np.rad2deg([0.2, 0.3]))
+    assert np.allclose(axes[1].lines[0].get_ydata(), np.rad2deg([0.02, 0.03]))
+
+    plt.close(fig)
+
+
+def test_plot_relative_attitude_states_requires_relative_states():
+    with pytest.raises(ValueError, match="No relative attitude states"):
+        plot_relative_attitude_states(motion_results(), show=False)
 
 
 def test_plot_flexible_modes_discovers_eta_and_zeta_keys():

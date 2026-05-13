@@ -26,6 +26,21 @@ def _angular_speed_key(results):
 
     raise KeyError("Expected 'u_central_angle' in results.")
 
+def _relative_attitude_keys(results):
+    angle_keys = sorted(
+        key for key in results
+        if key.startswith("q_relative_angle_")
+    )
+    speed_keys = sorted(
+        key for key in results
+        if key.startswith("u_relative_angle_")
+    )
+
+    if not angle_keys and not speed_keys:
+        raise ValueError("No relative attitude states found in results.")
+
+    return angle_keys, speed_keys
+
 def plot_planar_states(results, figsize=(10, 5), show=True, data_slice=None):
     plot_slice = _as_plot_slice(data_slice)
     ts = results["time"][plot_slice]
@@ -52,6 +67,53 @@ def plot_planar_states(results, figsize=(10, 5), show=True, data_slice=None):
     _format_large_number_axes(axes[0])
     _format_large_number_axes(axes[1])
     axes[2].ticklabel_format(axis="y", style="plain", useOffset=False)
+
+    fig.tight_layout()
+
+    if show:
+        plt.show()
+
+    return fig, axes
+
+def plot_relative_attitude_states(
+    results,
+    angle_keys=None,
+    speed_keys=None,
+    figsize=(10, 5),
+    show=True,
+    data_slice=None,
+):
+    plot_slice = _as_plot_slice(data_slice)
+    ts = results["time"][plot_slice]
+
+    discovered_angle_keys, discovered_speed_keys = _relative_attitude_keys(results)
+
+    if angle_keys is None:
+        angle_keys = discovered_angle_keys
+
+    if speed_keys is None:
+        speed_keys = discovered_speed_keys
+
+    if not angle_keys and not speed_keys:
+        raise ValueError("No relative attitude states selected for plotting.")
+
+    fig, axes = plt.subplots(2, 1, sharex=True, figsize=figsize)
+
+    if angle_keys:
+        for key in angle_keys:
+            axes[0].plot(ts, np.rad2deg(results[key][plot_slice]))
+        axes[0].legend(angle_keys)
+    axes[0].set_ylabel("Relative angle [deg]")
+    axes[0].grid(True)
+
+    if speed_keys:
+        for key in speed_keys:
+            axes[1].plot(ts, np.rad2deg(results[key][plot_slice]))
+        axes[1].legend(speed_keys)
+    axes[1].set_ylabel("Relative angular velocity [deg/s]")
+    axes[1].set_xlabel("Time [s]")
+    axes[1].grid(True)
+    axes[1].xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{int(x):,}"))
 
     fig.tight_layout()
 
