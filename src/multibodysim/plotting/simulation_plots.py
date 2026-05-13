@@ -15,30 +15,24 @@ def _as_plot_slice(data_slice):
     return slice(None) if data_slice is None else data_slice
 
 def _attitude_key(results):
-    if "q3" in results:
-        return "q3"
-
     if "q_central_angle" in results:
         return "q_central_angle"
 
-    raise KeyError("Expected 'q3' or 'q_central_angle' in results.")
+    raise KeyError("Expected 'q_central_angle' in results.")
 
 def _angular_speed_key(results):
-    if "u3" in results:
-        return "u3"
-
     if "u_central_angle" in results:
         return "u_central_angle"
 
-    raise KeyError("Expected 'u3' or 'u_central_angle' in results.")
+    raise KeyError("Expected 'u_central_angle' in results.")
 
-def plot_states_q1_q2_q3_motion(results, figsize=(10, 5), show=True, data_slice=None):
+def plot_planar_states(results, figsize=(10, 5), show=True, data_slice=None):
     plot_slice = _as_plot_slice(data_slice)
     ts = results["time"][plot_slice]
     q1_km = results["q1"][plot_slice] / 1e3
     q2_km = results["q2"][plot_slice] / 1e3
-    q3_key = _attitude_key(results)
-    q3_wrapped = wrap_to_pi(results[q3_key][plot_slice])
+    attitude_key = _attitude_key(results)
+    central_angle_wrapped = wrap_to_pi(results[attitude_key][plot_slice])
 
     fig, axes = plt.subplots(3, 1, sharex=True, figsize=figsize)
 
@@ -50,8 +44,8 @@ def plot_states_q1_q2_q3_motion(results, figsize=(10, 5), show=True, data_slice=
     axes[1].legend(["q2"])
     axes[1].set_ylabel("Position [km]")
 
-    axes[2].plot(ts, np.rad2deg(q3_wrapped))
-    axes[2].legend([q3_key])
+    axes[2].plot(ts, np.rad2deg(central_angle_wrapped))
+    axes[2].legend([attitude_key])
     axes[2].set_ylabel("Angle [deg]")
     axes[2].set_xlabel("Time [s]")
 
@@ -66,10 +60,10 @@ def plot_states_q1_q2_q3_motion(results, figsize=(10, 5), show=True, data_slice=
 
     return fig, axes
 
-def plot_speeds_u1_u2_u3_motion(results, figsize=(10, 5), show=True, data_slice=None):
+def plot_planar_speeds(results, figsize=(10, 5), show=True, data_slice=None):
     plot_slice = _as_plot_slice(data_slice)
     ts = results["time"][plot_slice]
-    u3_key = _angular_speed_key(results)
+    angular_speed_key = _angular_speed_key(results)
 
     fig, axes = plt.subplots(3, 1, sharex=True, figsize=figsize)
 
@@ -81,8 +75,8 @@ def plot_speeds_u1_u2_u3_motion(results, figsize=(10, 5), show=True, data_slice=
     axes[1].legend(["u2"])
     axes[1].set_ylabel("Velocity [m/s]")
 
-    axes[2].plot(ts, np.rad2deg(results[u3_key][plot_slice]))
-    axes[2].legend([u3_key])
+    axes[2].plot(ts, np.rad2deg(results[angular_speed_key][plot_slice]))
+    axes[2].legend([angular_speed_key])
     axes[2].set_ylabel("Angular Velocity [deg/s]")
     axes[2].set_xlabel("Time [s]")
 
@@ -96,7 +90,7 @@ def plot_speeds_u1_u2_u3_motion(results, figsize=(10, 5), show=True, data_slice=
 
     return fig, axes
 
-def plot_flexible_motion(
+def plot_flexible_modes(
     results,
     eta_keys=None,
     zeta_keys=None,
@@ -142,7 +136,7 @@ def plot_flexible_motion(
 
     return fig, axes
 
-def nadir_angle_error(results, axis="x"):
+def compute_nadir_angle_error(results, axis="x"):
     rG = np.column_stack((results["rG_x"], results["rG_y"]))
     rnorm = np.linalg.norm(rG, axis=1, keepdims=True)
 
@@ -166,7 +160,7 @@ def nadir_angle_error(results, axis="x"):
 def plot_nadir_angle_error(results, axis="x", figsize=(10, 3), show=True, data_slice=None):
     plot_slice = _as_plot_slice(data_slice)
     ts = results["time"][plot_slice]
-    delta = nadir_angle_error(results, axis=axis)[plot_slice]
+    delta = compute_nadir_angle_error(results, axis=axis)[plot_slice]
 
     fig, ax = plt.subplots(1, 1, figsize=figsize)
 
