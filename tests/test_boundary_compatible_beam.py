@@ -98,7 +98,7 @@ def test_boundary_stiffness_matrix_matches_euler_bernoulli_matrix():
         ]
     )
 
-    actual = beam.boundary_stiffness_matrix_symbolic(s)
+    actual = beam.boundary_stiffness_matrix_symbolic()
     assert_symbolic_matrix_equal(actual, expected)
 
 
@@ -106,8 +106,8 @@ def test_stiffness_blocks_match_full_stiffness_matrix_partition():
     s = sm.Symbol("s")
     beam = BoundaryCompatibleBeam(length=sm.Integer(3), E=sm.Integer(5), I=sm.Integer(7), n=1)
 
-    blocks = beam.stiffness_blocks_symbolic(s)
-    full_matrix = beam.stiffness_matrix_symbolic(s)
+    blocks = beam.stiffness_blocks_symbolic()
+    full_matrix = beam.stiffness_matrix_symbolic()
 
     assert blocks["K_bb"].shape == (4, 4)
     assert blocks["K_b_eta"].shape == (4, 1)
@@ -123,7 +123,7 @@ def test_stiffness_blocks_match_full_stiffness_matrix_partition():
 def test_boundary_stiffness_does_not_penalise_rigid_body_motion():
     s = sm.Symbol("s")
     beam = BoundaryCompatibleBeam(length=sm.Integer(3), E=sm.Integer(5), I=sm.Integer(7), n=0)
-    stiffness = beam.boundary_stiffness_matrix_symbolic(s)
+    stiffness = beam.boundary_stiffness_matrix_symbolic()
 
     translation = sm.Matrix([2, 0, 2, 0])
     rotation = sm.Matrix([0, 2, 2 * beam.L, 2])

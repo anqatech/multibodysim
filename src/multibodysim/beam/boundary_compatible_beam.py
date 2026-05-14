@@ -63,16 +63,16 @@ class BoundaryCompatibleBeam:
             + self.internal_mode_second_derivatives_symbolic(s)
         )
 
-    def boundary_stiffness_matrix_symbolic(self, s=None):
-        s = self._symbol(s)
+    def boundary_stiffness_matrix_symbolic(self):
+        s = sm.Symbol("s")
         boundary_basis = sm.Matrix([self.boundary_shape_second_derivatives_symbolic(s)])
         return self.E * self.I * sm.integrate(
             boundary_basis.T * boundary_basis,
             (s, 0, self.L),
         )
 
-    def boundary_modal_stiffness_matrix_symbolic(self, s=None):
-        s = self._symbol(s)
+    def boundary_modal_stiffness_matrix_symbolic(self):
+        s = sm.Symbol("s")
         boundary_basis = sm.Matrix([self.boundary_shape_second_derivatives_symbolic(s)])
         modal_basis = sm.Matrix([self.internal_mode_second_derivatives_symbolic(s)])
         return self.E * self.I * sm.integrate(
@@ -80,33 +80,28 @@ class BoundaryCompatibleBeam:
             (s, 0, self.L),
         )
 
-    def modal_stiffness_matrix_symbolic(self, s=None):
-        s = self._symbol(s)
+    def modal_stiffness_matrix_symbolic(self):
+        s = sm.Symbol("s")
         modal_basis = sm.Matrix([self.internal_mode_second_derivatives_symbolic(s)])
         return self.E * self.I * sm.integrate(
             modal_basis.T * modal_basis,
             (s, 0, self.L),
         )
 
-    def stiffness_matrix_symbolic(self, s=None):
-        s = self._symbol(s)
+    def stiffness_matrix_symbolic(self):
+        s = sm.Symbol("s")
         curvature_basis = sm.Matrix([self.curvature_basis_symbolic(s)])
         return self.E * self.I * sm.integrate(
             curvature_basis.T * curvature_basis,
             (s, 0, self.L),
         )
 
-    def stiffness_blocks_symbolic(self, s=None):
+    def stiffness_blocks_symbolic(self):
         return {
-            "K_bb": self.boundary_stiffness_matrix_symbolic(s),
-            "K_b_eta": self.boundary_modal_stiffness_matrix_symbolic(s),
-            "K_eta_eta": self.modal_stiffness_matrix_symbolic(s),
+            "K_bb": self.boundary_stiffness_matrix_symbolic(),
+            "K_b_eta": self.boundary_modal_stiffness_matrix_symbolic(),
+            "K_eta_eta": self.modal_stiffness_matrix_symbolic(),
         }
-
-    def _symbol(self, s):
-        if s is not None:
-            return s
-        return sm.Symbol("s")
 
     def _validate_material_coordinate(self, s):
         s = sm.sympify(s)
