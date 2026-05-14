@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import sympy as sm
 
 from multibodysim.beam import BoundaryCompatibleBeam
@@ -40,6 +41,45 @@ def test_boundary_shape_second_derivatives_match_direct_derivatives():
 
     for direct, helper in zip(direct_second_derivatives, helper_second_derivatives):
         assert sm.simplify(direct - helper) == 0
+
+
+def test_boundary_shape_functions_reject_numeric_coordinate_outside_beam():
+    beam = BoundaryCompatibleBeam(length=3.0, E=1, I=1, n=1)
+
+    with pytest.raises(ValueError, match="0 <= s <= L"):
+        beam.boundary_shape_functions_symbolic(3.5)
+
+    with pytest.raises(ValueError, match="0 <= s <= L"):
+        beam.boundary_shape_second_derivatives_symbolic(-0.1)
+
+
+def test_boundary_shape_functions_accept_numeric_coordinate_inside_beam():
+    beam = BoundaryCompatibleBeam(length=3.0, E=1, I=1, n=1)
+
+    shapes = beam.boundary_shape_functions_symbolic(2.5)
+    second_derivatives = beam.boundary_shape_second_derivatives_symbolic(2.5)
+
+    assert len(shapes) == 4
+    assert len(second_derivatives) == 4
+
+
+def test_boundary_shape_functions_reject_numeric_coordinate_with_symbolic_length():
+    length = sm.Symbol("L", positive=True)
+    beam = BoundaryCompatibleBeam(length=length, E=1, I=1, n=1)
+
+    with pytest.raises(ValueError, match="symbolic length"):
+        beam.boundary_shape_functions_symbolic(2.5)
+
+
+def test_boundary_shape_functions_allow_symbolic_coordinate_with_symbolic_length():
+    s = sm.Symbol("s")
+    length = sm.Symbol("L", positive=True)
+    beam = BoundaryCompatibleBeam(length=length, E=1, I=1, n=1)
+
+    shapes = beam.boundary_shape_functions_symbolic(s)
+
+    assert len(shapes) == 4
+    assert all(shape.has(s) for shape in shapes)
 
 
 def test_boundary_stiffness_matrix_matches_euler_bernoulli_matrix():

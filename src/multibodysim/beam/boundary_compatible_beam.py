@@ -23,7 +23,8 @@ class BoundaryCompatibleBeam:
         self.internal_beam = ClampedClampedBeam(length=length, E=E, I=I, n=n)
 
     def boundary_shape_functions_symbolic(self, s):
-        xi = sm.sympify(s) / self.L
+        s = self._validate_material_coordinate(s)
+        xi = s / self.L
         return [
             1 - 3 * xi**2 + 2 * xi**3,
             self.L * (xi - 2 * xi**2 + xi**3),
@@ -32,7 +33,8 @@ class BoundaryCompatibleBeam:
         ]
 
     def boundary_shape_second_derivatives_symbolic(self, s):
-        xi = sm.sympify(s) / self.L
+        s = self._validate_material_coordinate(s)
+        xi = s / self.L
         return [
             (-6 + 12 * xi) / self.L**2,
             (-4 + 6 * xi) / self.L,
@@ -105,3 +107,24 @@ class BoundaryCompatibleBeam:
         if s is not None:
             return s
         return sm.Symbol("s")
+
+    def _validate_material_coordinate(self, s):
+        s = sm.sympify(s)
+        length = sm.sympify(self.L)
+
+        if s.free_symbols:
+            return s
+
+        if length.free_symbols:
+            raise ValueError(
+                "Cannot validate a numeric beam coordinate against symbolic length L. "
+                "Use a symbolic coordinate, or instantiate the beam with a numeric "
+                "length."
+            )
+
+        if not 0 <= float(s) <= float(length):
+            raise ValueError(
+                f"Beam coordinate s must satisfy 0 <= s <= L. Got s={s}, L={length}."
+            )
+
+        return s
