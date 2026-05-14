@@ -1,7 +1,7 @@
 import numpy as np
 import sympy as sm
 
-from multibodysim.beam.boundary_compatible_beam import BoundaryCompatibleBeam
+from multibodysim.beam import BoundaryCompatibleBeam
 
 
 def assert_symbolic_matrix_equal(lhs, rhs):
