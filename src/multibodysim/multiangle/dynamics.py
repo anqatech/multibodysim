@@ -50,6 +50,8 @@ class MultiAngleFlexibleDynamics:
         if self.central_body not in self.rigid_body_names:
             raise ValueError("central_body must be one of the rigid bodies.")
 
+        self._classify_flexible_panels()
+
         self._define_symbols()
 
         self.state_dimension = len(self.u)
@@ -96,6 +98,36 @@ class MultiAngleFlexibleDynamics:
             raise ValueError(f"Disconnected bodies from central body: {missing}")
 
         return parents
+
+    def _classify_flexible_panels(self):
+        self.outer_flexible_panels = []
+        self.inter_bus_flexible_panels = []
+        self.flexible_panel_connections = {}
+
+        for panel in self.flexible_body_names:
+            adjacent_buses = tuple(
+                neighbour
+                for neighbour in self.graph[panel]
+                if neighbour in self.rigid_body_names
+            )
+
+            if len(adjacent_buses) == 1:
+                kind = "outer"
+                self.outer_flexible_panels.append(panel)
+            elif len(adjacent_buses) == 2:
+                kind = "inter-bus"
+                self.inter_bus_flexible_panels.append(panel)
+            else:
+                raise ValueError(
+                    "Flexible panels must be attached to one outer bus or "
+                    f"two inter-bus endpoints. Got {panel!r} attached to "
+                    f"{adjacent_buses!r}."
+                )
+
+            self.flexible_panel_connections[panel] = {
+                "kind": kind,
+                "buses": adjacent_buses,
+            }
 
     @staticmethod
     def _normalise_flexible_inertia_integration_config(settings: dict):

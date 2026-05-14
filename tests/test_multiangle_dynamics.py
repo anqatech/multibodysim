@@ -66,6 +66,19 @@ def test_multiangle_panel_orientation_uses_endpoint_bus_average_when_available(s
     assert_symbolic_equal(dynamics.orientation_angle("panel_4"), q32 + q33)
 
 
+def test_multiangle_classifies_flexible_panels_from_adjacency(seven_part_dynamics):
+    dynamics = seven_part_dynamics
+
+    assert dynamics.outer_flexible_panels == ["panel_1", "panel_4"]
+    assert dynamics.inter_bus_flexible_panels == ["panel_2", "panel_3"]
+    assert dynamics.flexible_panel_connections == {
+        "panel_1": {"kind": "outer", "buses": ("bus_1",)},
+        "panel_2": {"kind": "inter-bus", "buses": ("bus_1", "bus_2")},
+        "panel_3": {"kind": "inter-bus", "buses": ("bus_2", "bus_3")},
+        "panel_4": {"kind": "outer", "buses": ("bus_3",)},
+    }
+
+
 def test_multiangle_convention_scales_to_more_buses(eleven_part_dynamics):
     dynamics = eleven_part_dynamics
 
@@ -99,6 +112,22 @@ def test_multiangle_convention_scales_to_more_buses(eleven_part_dynamics):
         q33 + (q34 + q35) / 2,
     )
     assert_symbolic_equal(dynamics.orientation_angle("panel_6"), q33 + q35)
+
+
+def test_multiangle_panel_classification_scales_to_more_buses(eleven_part_dynamics):
+    dynamics = eleven_part_dynamics
+
+    assert dynamics.outer_flexible_panels == ["panel_1", "panel_6"]
+    assert dynamics.inter_bus_flexible_panels == [
+        "panel_2",
+        "panel_3",
+        "panel_4",
+        "panel_5",
+    ]
+    assert dynamics.flexible_panel_connections["panel_4"] == {
+        "kind": "inter-bus",
+        "buses": ("bus_3", "bus_4"),
+    }
 
 
 def test_multiangle_symbol_names_reject_non_bus_names(seven_part_dynamics):
