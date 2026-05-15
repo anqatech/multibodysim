@@ -47,7 +47,7 @@ def test_multiangle_bus_orientation_convention_for_seven_part_chain(seven_part_d
     assert_symbolic_equal(dynamics.orientation_angle("bus_3"), q32 + q33)
 
 
-def test_multiangle_panel_orientation_uses_endpoint_bus_average_when_available(seven_part_dynamics):
+def test_multiangle_panel_orientation_uses_directed_endpoint_tangent_average(seven_part_dynamics):
     dynamics = seven_part_dynamics
 
     q31 = dynamics.bus_angle_coordinates["bus_1"]
@@ -57,7 +57,7 @@ def test_multiangle_panel_orientation_uses_endpoint_bus_average_when_available(s
     assert_symbolic_equal(dynamics.orientation_angle("panel_1"), q32 + sm.pi + q31)
     assert_symbolic_equal(
         dynamics.orientation_angle("panel_2"),
-        q32 + sm.pi / 2 + q31 / 2,
+        q32 + sm.pi + q31 / 2,
     )
     assert_symbolic_equal(
         dynamics.orientation_angle("panel_3"),
@@ -101,7 +101,7 @@ def test_multiangle_convention_scales_to_more_buses(eleven_part_dynamics):
     )
     assert_symbolic_equal(
         dynamics.orientation_angle("panel_3"),
-        q33 + sm.pi / 2 + q32 / 2,
+        q33 + sm.pi + q32 / 2,
     )
     assert_symbolic_equal(
         dynamics.orientation_angle("panel_4"),
@@ -413,9 +413,13 @@ def test_multiangle_offset_from_rigid_bus_to_flexible_panel(seven_part_dynamics)
 
     left_offset = dynamics._get_offset_vector("bus_2", "panel_2")
     right_offset = dynamics._get_offset_vector("bus_2", "panel_3")
+    outer_left_offset = dynamics._get_offset_vector("bus_1", "panel_1")
+    outer_right_offset = dynamics._get_offset_vector("bus_3", "panel_4")
 
     assert left_offset == -dynamics.D / 2 * dynamics.frames["bus_2"].x
     assert right_offset == dynamics.D / 2 * dynamics.frames["bus_2"].x
+    assert outer_left_offset == dynamics.D / 2 * dynamics.frames["bus_1"].x
+    assert outer_right_offset == dynamics.D / 2 * dynamics.frames["bus_3"].x
 
 
 def test_multiangle_offset_from_flexible_panel_to_rigid_bus_uses_tip_deflection(seven_part_dynamics):
@@ -489,6 +493,72 @@ def test_multiangle_defines_expected_points_for_seven_part_chain(seven_part_dyna
 
     assert expected_points.issubset(dynamics.points)
     assert all(dynamics.inertial_position[body] is not None for body in dynamics.body_names)
+
+
+def test_multiangle_defines_boundary_points_for_inter_bus_panels(seven_part_dynamics):
+    dynamics = seven_part_dynamics
+
+    assert dynamics.boundary_points == {
+        "panel_2": {
+            "root_bus": "bus_2",
+            "tip_bus": "bus_1",
+            "root_joint": "joint_panel_2_bus_2",
+            "tip_joint": "joint_bus_1_panel_2",
+        },
+        "panel_3": {
+            "root_bus": "bus_2",
+            "tip_bus": "bus_3",
+            "root_joint": "joint_panel_3_bus_2",
+            "tip_joint": "joint_bus_3_panel_3",
+        },
+    }
+
+
+def test_multiangle_defines_boundary_coordinates_from_current_panel_geometry(
+    seven_part_dynamics,
+):
+    dynamics = seven_part_dynamics
+
+    for panel, relative_bus in [
+        ("panel_2", "bus_1"),
+        ("panel_3", "bus_3"),
+    ]:
+        eta_list = dynamics.flexible_bodies[panel]["eta_list"]
+        phi_list = dynamics.flexible_bodies[panel]["phi_list"]
+        expected_tip_deflection = sum(
+            phi_k.subs(dynamics.s, dynamics.L) * eta_k
+            for phi_k, eta_k in zip(phi_list, eta_list)
+        )
+        relative_angle = dynamics.bus_angle_coordinates[relative_bus]
+        coordinates = dynamics.boundary_coordinates[panel]
+
+        assert coordinates.shape == (4, 1)
+        assert_symbolic_equal(coordinates[0], 0)
+        assert_symbolic_equal(coordinates[1], -relative_angle / 2)
+        assert_symbolic_equal(coordinates[2], expected_tip_deflection)
+        assert_symbolic_equal(coordinates[3], relative_angle / 2)
+        assert list(dynamics.element_coordinates[panel]) == (
+            list(coordinates) + eta_list
+        )
+
+
+def test_multiangle_places_non_central_bus_centres_outward_from_panel_tip(
+    seven_part_dynamics,
+):
+    dynamics = seven_part_dynamics
+
+    for bus, joint_name in [
+        ("bus_1", "joint_bus_1_panel_2"),
+        ("bus_3", "joint_bus_3_panel_3"),
+    ]:
+        bus_offset = dynamics.points[bus].pos_from(dynamics.points[joint_name])
+        expected = dynamics.D / 2 * dynamics.frames[bus].x
+
+        assert_vector_equal(
+            bus_offset,
+            expected,
+            dynamics.frames["inertial"],
+        )
 
 
 def test_multiangle_places_central_bus_at_reference_translation(seven_part_dynamics):

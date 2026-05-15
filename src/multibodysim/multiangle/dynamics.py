@@ -60,6 +60,8 @@ class MultiAngleFlexibleDynamics:
         self._define_inertia_matrices()
         self._define_frame_orientations()
         self._define_points()
+        self._define_boundary_points()
+        self._define_boundary_coordinates()
         self._define_system_center_of_mass()
         self._define_kinematic_equations()
         self._define_angular_velocities()
@@ -436,6 +438,54 @@ class MultiAngleFlexibleDynamics:
             if neighbor in self.rigid_body_names
         ]
 
+    def _rigid_to_flexible_root_tangent_sign(self, parent: str, child: str) -> int:
+        parent_type = self.body_type[parent]
+        child_type = self.body_type[child]
+        if not parent_type.startswith("rigid-") or not child_type.startswith(
+            "flexible-"
+        ):
+            raise ValueError(
+                "Expected a rigid-to-flexible connection, "
+                f"got parent={parent!r}, child={child!r}."
+            )
+
+        if parent == self.central_body:
+            return -1 if child_type.endswith("-left") else 1
+
+        return 1
+
+    def _rigid_to_flexible_root_tangent_angle(self, parent: str, child: str):
+        angle = self._bus_orientation_angle(parent)
+        sign = self._rigid_to_flexible_root_tangent_sign(parent, child)
+        if sign < 0:
+            return angle + sm.pi
+
+        return angle
+
+    def _inter_bus_panel_endpoint_tangent_angles(self, panel: str):
+        connection = self.flexible_panel_connections.get(panel)
+        if connection is None or connection["kind"] != "inter-bus":
+            raise ValueError(f"Panel {panel!r} is not an inter-bus panel.")
+
+        root_bus = self.parents[panel]
+        if root_bus not in self.rigid_body_names:
+            raise ValueError(
+                f"Expected inter-bus panel {panel!r} to have a rigid parent, "
+                f"got {root_bus!r}."
+            )
+
+        tip_buses = [bus for bus in connection["buses"] if bus != root_bus]
+        if len(tip_buses) != 1:
+            raise ValueError(
+                f"Could not identify a unique tip bus for panel {panel!r}: "
+                f"{connection['buses']}"
+            )
+
+        tip_bus = tip_buses[0]
+        root_angle = self._rigid_to_flexible_root_tangent_angle(root_bus, panel)
+        tip_angle = self._bus_orientation_angle(tip_bus)
+        return root_angle, tip_angle
+
     def _body_orientation_angle(self, body_name: str):
         if body_name in self.rigid_body_names:
             return self._bus_orientation_angle(body_name)
@@ -446,15 +496,16 @@ class MultiAngleFlexibleDynamics:
 
         if len(rigid_neighbors) == 1:
             source_bus = rigid_neighbors[0]
-            if source_bus == self.central_body:
-                return self._bus_orientation_angle(source_bus) + self._orientation_offset(body_name)
-
-            return self._bus_orientation_angle(source_bus)
+            return self._rigid_to_flexible_root_tangent_angle(
+                source_bus,
+                body_name,
+            )
 
         if len(rigid_neighbors) == 2:
-            first_angle = self._bus_orientation_angle(rigid_neighbors[0])
-            second_angle = self._bus_orientation_angle(rigid_neighbors[1])
-            return sm.Rational(1, 2) * (first_angle + second_angle)
+            root_angle, tip_angle = self._inter_bus_panel_endpoint_tangent_angles(
+                body_name
+            )
+            return sm.Rational(1, 2) * (root_angle + tip_angle)
 
         raise ValueError(
             f"Flexible body '{body_name}' is attached to more than two rigid buses: "
@@ -495,10 +546,9 @@ class MultiAngleFlexibleDynamics:
 
     def _get_offset_vector(self, parent: str, child: str):
         connection_kind = self._connection_kind(parent, child)
-        child_type = self.body_type[child]
 
         if connection_kind == "rigid_to_flexible":
-            sign = -1 if child_type.endswith("-left") else 1
+            sign = self._rigid_to_flexible_root_tangent_sign(parent, child)
             return sign * (self.D / 2) * self.frames[parent].x
 
         if connection_kind == "flexible_to_rigid":
@@ -578,11 +628,87 @@ class MultiAngleFlexibleDynamics:
 
             elif child_type.startswith("rigid-"):
                 frame = self.frames[child]
-                sign = -1 if child_type.endswith("-left") else 1
-                cm_offset = sign * self.D / 2 * frame.x
+                cm_offset = self.D / 2 * frame.x
                 cm_point = child_joint.locatenew(f"{child}_cm", cm_offset)
                 self.points[child] = cm_point
                 self.inertial_position[child] = cm_point.pos_from(self.O)
+
+    def _ordered_inter_bus_panel_endpoints(self, panel: str) -> dict[str, str]:
+        connection = self.flexible_panel_connections.get(panel)
+        if connection is None or connection["kind"] != "inter-bus":
+            raise ValueError(f"Expected an inter-bus flexible panel, got {panel!r}.")
+
+        root_bus = self.parents[panel]
+        if root_bus not in self.rigid_body_names:
+            raise ValueError(
+                f"Inter-bus panel {panel!r} must be rooted on a rigid bus; "
+                f"got parent {root_bus!r}."
+            )
+
+        tip_buses = [bus for bus in connection["buses"] if bus != root_bus]
+        if len(tip_buses) != 1:
+            raise ValueError(
+                f"Could not identify a unique tip bus for inter-bus panel {panel!r}."
+            )
+
+        tip_bus = tip_buses[0]
+        endpoints = {
+            "root_bus": root_bus,
+            "tip_bus": tip_bus,
+            "root_joint": f"joint_{panel}_{root_bus}",
+            "tip_joint": f"joint_{tip_bus}_{panel}",
+        }
+
+        missing_points = [
+            point_name
+            for key, point_name in endpoints.items()
+            if key.endswith("_joint") and point_name not in self.points
+        ]
+        if missing_points:
+            raise KeyError(
+                f"Missing boundary point(s) for inter-bus panel {panel!r}: "
+                f"{missing_points}"
+            )
+
+        return endpoints
+
+    def _define_boundary_points(self):
+        self.boundary_points = {
+            panel: self._ordered_inter_bus_panel_endpoints(panel)
+            for panel in self.inter_bus_flexible_panels
+        }
+
+    def _define_boundary_coordinates(self):
+        self.boundary_coordinates = {}
+        self.element_coordinates = {}
+
+        for panel, endpoints in self.boundary_points.items():
+            panel_frame = self.frames[panel]
+            root_joint = self.points[endpoints["root_joint"]]
+            tip_joint = self.points[endpoints["tip_joint"]]
+
+            panel_angle = self.orientation_angle(panel)
+            root_attachment_angle, tip_attachment_angle = (
+                self._inter_bus_panel_endpoint_tangent_angles(panel)
+            )
+
+            tip_position_from_root = tip_joint.pos_from(root_joint)
+            eta_list = self.flexible_bodies[panel]["eta_list"]
+
+            boundary_coordinates = sm.Matrix(
+                [
+                    sm.S.Zero,
+                    sm.simplify(root_attachment_angle - panel_angle),
+                    sm.trigsimp(tip_position_from_root.dot(panel_frame.y)),
+                    sm.simplify(tip_attachment_angle - panel_angle),
+                ]
+            )
+
+            self.boundary_coordinates[panel] = boundary_coordinates
+            self.element_coordinates[panel] = sm.Matrix(
+                list(boundary_coordinates)
+                + list(eta_list)
+            )
 
     def _define_system_center_of_mass(self):
         self.total_mass = sum(
