@@ -50,6 +50,10 @@ htmlcov/
 # docs/_build/
 # site/
 
+# --- Local project memory ---
+PROJECT_OVERVIEW.md
+CURRENT_PLAN.md
+
 # JetBrains (if someone opens in PyCharm)
 .idea/
 
