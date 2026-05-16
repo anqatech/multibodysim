@@ -1085,13 +1085,8 @@ def test_multiangle_external_bus_torques_create_distinct_generalised_forces(seve
     expected[list(dynamics.u).index(u32)] = tau1 + tau2 + tau3
     expected[list(dynamics.u).index(u33)] = tau3
 
-    modal_offset = len(dynamics.u_reference)
-    for body, values in dynamics.flexible_bodies.items():
-        for mode, (eta_k, K_k) in enumerate(
-            zip(values["eta_list"], values["k_modal_list"])
-        ):
-            row = modal_offset + dynamics.flex_eta_index[(body, mode)]
-            expected[row] += -K_k * eta_k
+    for row, coordinate in enumerate(dynamics.q):
+        expected[row] += -sm.diff(dynamics.V_strain, coordinate)
 
     for i in range(len(dynamics.u)):
         actual_without_gravity = (
@@ -1117,13 +1112,8 @@ def test_multiangle_generalised_active_forces_match_implemented_force_blocks(sev
                 )
             )
 
-    modal_offset = len(dynamics.u_reference)
-    for body, values in dynamics.flexible_bodies.items():
-        for mode, (eta_k, K_k) in enumerate(
-            zip(values["eta_list"], values["k_modal_list"])
-        ):
-            row = modal_offset + dynamics.flex_eta_index[(body, mode)]
-            expected[row] += -K_k * eta_k
+    for row, coordinate in enumerate(dynamics.q):
+        expected[row] += -sm.diff(dynamics.V_strain, coordinate)
 
     for i in range(len(dynamics.u)):
         actual_without_gravity = (
@@ -1654,9 +1644,11 @@ def test_multiangle_gravity_gradient_adds_attitude_row_forces_when_enabled(
                 )
             )
 
+        strain_force = -sm.diff(dynamics.V_strain, angle_coordinate)
         actual_gravity_gradient = (
             dynamics.generalised_active_forces[row]
             - external_and_kepler
+            - strain_force
         )
         expected_gravity_gradient = -sm.diff(dynamics.V_gg, angle_coordinate)
 
@@ -1671,14 +1663,13 @@ def test_multiangle_gravity_gradient_adds_modal_row_forces_when_enabled(
 
     modal_offset = len(dynamics.u_reference)
     for body, values in dynamics.flexible_bodies.items():
-        for mode, (eta_k, K_k) in enumerate(
-            zip(values["eta_list"], values["k_modal_list"])
-        ):
+        for mode, eta_k in enumerate(values["eta_list"]):
             row = modal_offset + dynamics.flex_eta_index[(body, mode)]
+            strain_force = -sm.diff(dynamics.V_strain, eta_k)
             actual_gravity_gradient = (
                 dynamics.generalised_active_forces[row]
                 - dynamics.partial_v_G[row].dot(dynamics.F_gravity)
-                + K_k * eta_k
+                - strain_force
             )
             expected_gravity_gradient = -sm.diff(dynamics.V_gg, eta_k)
 
@@ -1701,14 +1692,7 @@ def test_multiangle_kepler_gravity_force_is_com_partial_velocity_projection(seve
                 )
             )
 
-        modal_offset = len(dynamics.u_reference)
-        for body, values in dynamics.flexible_bodies.items():
-            for mode, (eta_k, K_k) in enumerate(
-                zip(values["eta_list"], values["k_modal_list"])
-            ):
-                row = modal_offset + dynamics.flex_eta_index[(body, mode)]
-                if row == i:
-                    external_and_strain += -K_k * eta_k
+        external_and_strain += -sm.diff(dynamics.V_strain, dynamics.q[i])
 
         actual_gravity = dynamics.generalised_active_forces[i] - external_and_strain
         expected_gravity = dynamics.partial_v_G[i].dot(dynamics.F_gravity)
@@ -1719,26 +1703,55 @@ def test_multiangle_flexible_strain_potential_energy_is_stored(seven_part_dynami
     dynamics = seven_part_dynamics
 
     expected = sm.S.Zero
-    for values in dynamics.flexible_bodies.values():
+    for body in dynamics.outer_flexible_panels:
+        values = dynamics.flexible_bodies[body]
         for eta_k, K_k in zip(values["eta_list"], values["k_modal_list"]):
             expected += sm.Rational(1, 2) * K_k * eta_k**2
+
+    for body in dynamics.inter_bus_flexible_panels:
+        element_coordinates = dynamics.element_coordinates[body]
+        stiffness_matrix = dynamics.boundary_compatible_stiffness_matrices[body]
+        expected += sm.Rational(1, 2) * (
+            element_coordinates.T * stiffness_matrix * element_coordinates
+        )[0]
 
     assert_symbolic_equal(dynamics.V_strain, expected)
 
 
-def test_multiangle_flexible_strain_forces_are_added_to_modal_rows(seven_part_dynamics):
+def test_multiangle_flexible_strain_forces_are_added_from_potential(seven_part_dynamics):
     dynamics = seven_part_dynamics
 
-    modal_offset = len(dynamics.u_reference)
-    for body, values in dynamics.flexible_bodies.items():
-        for mode, (eta_k, K_k) in enumerate(
-            zip(values["eta_list"], values["k_modal_list"])
-        ):
-            row = modal_offset + dynamics.flex_eta_index[(body, mode)]
-            expected = -K_k * eta_k
-            actual = (
-                dynamics.generalised_active_forces[row]
-                - dynamics.partial_v_G[row].dot(dynamics.F_gravity)
+    for row, coordinate in enumerate(dynamics.q):
+        non_strain = dynamics.partial_v_G[row].dot(dynamics.F_gravity)
+
+        for body in dynamics.body_names:
+            non_strain += (
+                dynamics.partial_linear_velocities[body][row].dot(
+                    dynamics.external_forces[body]
+                )
+                + dynamics.partial_angular_velocities[body][row].dot(
+                    dynamics.external_torques[body]
+                )
             )
 
-            assert_symbolic_equal(actual.coeff(eta_k), expected.coeff(eta_k))
+        actual = dynamics.generalised_active_forces[row] - non_strain
+        expected = -sm.diff(dynamics.V_strain, coordinate)
+
+        assert_symbolic_equal(actual, expected)
+
+
+def test_multiangle_inter_bus_panels_store_boundary_compatible_stiffness_matrices(
+    seven_part_dynamics,
+):
+    dynamics = seven_part_dynamics
+
+    assert set(dynamics.boundary_compatible_stiffness_matrices) == set(
+        dynamics.inter_bus_flexible_panels
+    )
+
+    for panel in dynamics.inter_bus_flexible_panels:
+        expected_size = 4 + len(dynamics.flexible_bodies[panel]["eta_list"])
+        assert dynamics.boundary_compatible_stiffness_matrices[panel].shape == (
+            expected_size,
+            expected_size,
+        )

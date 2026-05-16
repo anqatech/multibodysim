@@ -7,6 +7,7 @@ import sympy as sm
 import sympy.physics.mechanics as me
 
 from ..beam.cantilever_beam import CantileverBeam
+from ..beam.boundary_compatible_beam import BoundaryCompatibleBeam
 from ..beam.clamped_clamped_beam import ClampedClampedBeam
 
 
@@ -1080,17 +1081,53 @@ class MultiAngleFlexibleDynamics:
 
     def _add_flexible_strain_generalised_forces(self):
         self.V_strain = sm.S.Zero
+        self.V_outer_modal_strain = sm.S.Zero
+        self.V_boundary_compatible_strain = sm.S.Zero
+        self.boundary_compatible_stiffness_matrices = {}
 
-        modal_offset = len(self.u_reference)
-        for body, values in self.flexible_bodies.items():
-            eta_list = values["eta_list"]
-            k_modal_list = values["k_modal_list"]
+        for body in self.outer_flexible_panels:
+            self.V_outer_modal_strain += self._outer_panel_modal_strain_energy(body)
 
-            for mode, (eta_k, K_k) in enumerate(zip(eta_list, k_modal_list)):
-                self.V_strain += sm.Rational(1, 2) * K_k * eta_k**2
+        for body in self.inter_bus_flexible_panels:
+            self.V_boundary_compatible_strain += (
+                self._inter_bus_panel_boundary_compatible_strain_energy(body)
+            )
 
-                modal_row = modal_offset + self.flex_eta_index[(body, mode)]
-                self.generalised_active_forces[modal_row] += -(K_k * eta_k)
+        self.V_strain = (
+            self.V_outer_modal_strain
+            + self.V_boundary_compatible_strain
+        )
+
+        for row, coordinate in enumerate(self.q):
+            self.generalised_active_forces[row] += -sm.diff(
+                self.V_strain,
+                coordinate,
+            )
+
+    def _outer_panel_modal_strain_energy(self, body: str):
+        values = self.flexible_bodies[body]
+        strain_energy = sm.S.Zero
+
+        for eta_k, K_k in zip(values["eta_list"], values["k_modal_list"]):
+            strain_energy += sm.Rational(1, 2) * K_k * eta_k**2
+
+        return strain_energy
+
+    def _inter_bus_panel_boundary_compatible_strain_energy(self, body: str):
+        beam = BoundaryCompatibleBeam(
+            length=self.L,
+            E=self.E_mod,
+            I=self.I_area,
+            n=len(self.flexible_bodies[body]["eta_list"]),
+        )
+        stiffness_matrix = beam.stiffness_matrix_symbolic()
+        element_coordinates = self.element_coordinates[body]
+
+        self.boundary_compatible_stiffness_matrices[body] = stiffness_matrix
+
+        return sm.Rational(1, 2) * (
+            element_coordinates.T * stiffness_matrix * element_coordinates
+        )[0]
 
     def _define_generalised_active_forces(self):
         self._initialise_generalised_active_forces()
