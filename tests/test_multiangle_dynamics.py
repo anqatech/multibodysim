@@ -5,6 +5,7 @@ import sympy as sm
 import pytest
 
 from multibodysim.beam.cantilever_beam import CantileverBeam
+from multibodysim.beam.boundary_compatible_beam import BoundaryCompatibleBeam
 from multibodysim.beam.clamped_clamped_beam import ClampedClampedBeam
 from multibodysim.multiangle import MultiAngleFlexibleDynamics
 
@@ -570,6 +571,94 @@ def test_multiangle_places_central_bus_at_reference_translation(seven_part_dynam
     assert dynamics.inertial_position["bus_2"] == expected
 
 
+def test_multiangle_outer_panel_material_point_uses_modal_displacement(
+    seven_part_dynamics,
+):
+    dynamics = seven_part_dynamics
+
+    panel = "panel_1"
+    joint = dynamics.points["joint_panel_1_bus_1"]
+    dm_point = dynamics.points[f"dm_{panel}"]
+    eta_list = dynamics.flexible_bodies[panel]["eta_list"]
+    phi_list = dynamics.flexible_bodies[panel]["phi_list"]
+    expected_displacement = sum(
+        phi_k * eta_k
+        for phi_k, eta_k in zip(phi_list, eta_list)
+    )
+    expected = (
+        dynamics.s * dynamics.frames[panel].x
+        + expected_displacement * dynamics.frames[panel].y
+    )
+
+    assert_vector_equal(dm_point.pos_from(joint), expected, dynamics.frames[panel])
+
+
+def test_multiangle_inter_bus_material_point_uses_boundary_compatible_displacement(
+    seven_part_dynamics,
+):
+    dynamics = seven_part_dynamics
+
+    for panel in ("panel_2", "panel_3"):
+        joint = dynamics.points[dynamics.boundary_points[panel]["root_joint"]]
+        dm_point = dynamics.points[f"dm_{panel}"]
+        eta_list = dynamics.flexible_bodies[panel]["eta_list"]
+        beam = BoundaryCompatibleBeam(
+            length=dynamics.parameter_values["L"],
+            E=dynamics.parameter_values["E_mod"],
+            I=dynamics.parameter_values["I_area"],
+            n=len(eta_list),
+        )
+        boundary_shapes = beam.boundary_shape_functions_symbolic(dynamics.s)
+        internal_shapes = beam.internal_mode_shapes_symbolic(dynamics.s)
+        expected_displacement = sum(
+            shape * coordinate
+            for shape, coordinate in zip(
+                boundary_shapes,
+                dynamics.boundary_coordinates[panel],
+            )
+        ) + sum(
+            shape * eta_k
+            for shape, eta_k in zip(internal_shapes, eta_list)
+        )
+        expected = (
+            dynamics.s * dynamics.frames[panel].x
+            + expected_displacement * dynamics.frames[panel].y
+        )
+
+        assert_vector_equal(dm_point.pos_from(joint), expected, dynamics.frames[panel])
+
+
+def test_multiangle_inter_bus_boundary_compatible_displacement_reduces_to_internal_modes(
+    seven_part_dynamics,
+):
+    dynamics = seven_part_dynamics
+
+    panel = "panel_2"
+    eta_list = dynamics.flexible_bodies[panel]["eta_list"]
+    beam = BoundaryCompatibleBeam(
+        length=dynamics.parameter_values["L"],
+        E=dynamics.parameter_values["E_mod"],
+        I=dynamics.parameter_values["I_area"],
+        n=len(eta_list),
+    )
+    expected = sum(
+        shape * eta_k
+        for shape, eta_k in zip(
+            beam.internal_mode_shapes_symbolic(dynamics.s),
+            eta_list,
+        )
+    )
+    zero_boundary_coordinates = {
+        coordinate: sm.S.Zero
+        for coordinate in dynamics.boundary_coordinates[panel]
+    }
+    actual = dynamics._inter_bus_panel_boundary_compatible_displacement(panel).subs(
+        zero_boundary_coordinates
+    )
+
+    assert_symbolic_equal(actual, expected)
+
+
 def test_multiangle_places_flexible_panel_mass_center_from_panel_joint(seven_part_dynamics):
     dynamics = seven_part_dynamics
 
@@ -775,6 +864,26 @@ def test_multiangle_defines_flexible_body_distributed_and_center_of_mass_velocit
     assert_vector_equal(cm_point.vel(frame), expected_cm_relative_velocity, frame)
     assert panel in dynamics.linear_velocities
     assert panel in dynamics.flexible_center_of_mass_velocities
+
+
+def test_multiangle_distributed_velocity_remains_modal_only_until_inertia_update(
+    seven_part_dynamics,
+):
+    dynamics = seven_part_dynamics
+
+    for panel in ("panel_1", "panel_3"):
+        expected = sum(
+            phi_k * zeta_k
+            for phi_k, zeta_k in zip(
+                dynamics.flexible_bodies[panel]["phi_list"],
+                dynamics.flexible_bodies[panel]["zeta_list"],
+            )
+        )
+
+        assert_symbolic_equal(
+            dynamics._flexible_distributed_velocity_sum(panel),
+            expected,
+        )
 
 
 def test_multiangle_defines_bus_angular_accelerations(seven_part_dynamics):
@@ -999,7 +1108,7 @@ def test_multiangle_rigid_parent_panel_linear_partials_include_modal_speeds(seve
     dynamics = seven_part_dynamics
     N = dynamics.frames["inertial"]
 
-    panel = "panel_3"
+    panel = "panel_1"
     frame = dynamics.frames[panel]
     zeta_list = dynamics.flexible_bodies[panel]["zeta_list"]
     phi_list = dynamics.flexible_bodies[panel]["phi_list"]

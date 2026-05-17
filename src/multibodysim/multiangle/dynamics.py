@@ -554,16 +554,79 @@ class MultiAngleFlexibleDynamics:
 
         if connection_kind == "flexible_to_rigid":
             frame = self.frames[parent]
-            eta_list = self.flexible_bodies[parent]["eta_list"]
-            phi_list = self.flexible_bodies[parent]["phi_list"]
-
-            phi_tip = sm.S.Zero
-            for phi_k, eta_k in zip(phi_list, eta_list):
-                phi_tip += phi_k.subs(self.s, self.L) * eta_k
-
+            phi_tip = self._flexible_modal_tip_displacement_sum(parent)
             return self.L * frame.x + phi_tip * frame.y
 
         raise NotImplementedError(f"Unsupported connection kind: {connection_kind!r}.")
+
+    def _flexible_modal_distributed_displacement_sum(self, body: str):
+        eta_list = self.flexible_bodies[body]["eta_list"]
+        phi_list = self.flexible_bodies[body]["phi_list"]
+
+        return sum(
+            phi_k * eta_k
+            for phi_k, eta_k in zip(phi_list, eta_list)
+        )
+
+    def _flexible_modal_tip_displacement_sum(self, body: str):
+        eta_list = self.flexible_bodies[body]["eta_list"]
+        phi_list = self.flexible_bodies[body]["phi_list"]
+
+        return sum(
+            phi_k.subs(self.s, self.L) * eta_k
+            for phi_k, eta_k in zip(phi_list, eta_list)
+        )
+
+    def _inter_bus_panel_boundary_coordinates(
+        self,
+        body: str,
+        tip_transverse_displacement,
+    ):
+        panel_angle = self.orientation_angle(body)
+        root_attachment_angle, tip_attachment_angle = (
+            self._inter_bus_panel_endpoint_tangent_angles(body)
+        )
+
+        return sm.Matrix(
+            [
+                sm.S.Zero,
+                sm.simplify(root_attachment_angle - panel_angle),
+                tip_transverse_displacement,
+                sm.simplify(tip_attachment_angle - panel_angle),
+            ]
+        )
+
+    def _inter_bus_panel_boundary_compatible_displacement(self, body: str):
+        beam = BoundaryCompatibleBeam(
+            length=self.parameter_values["L"],
+            E=self.parameter_values["E_mod"],
+            I=self.parameter_values["I_area"],
+            n=len(self.flexible_bodies[body]["eta_list"]),
+        )
+        boundary_shapes = beam.boundary_shape_functions_symbolic(self.s)
+        internal_shapes = beam.internal_mode_shapes_symbolic(self.s)
+        boundary_coordinates = self._inter_bus_panel_boundary_coordinates(
+            body,
+            self._flexible_modal_tip_displacement_sum(body),
+        )
+        eta_list = self.flexible_bodies[body]["eta_list"]
+
+        boundary_displacement = sum(
+            shape * coordinate
+            for shape, coordinate in zip(boundary_shapes, boundary_coordinates)
+        )
+        internal_displacement = sum(
+            shape * eta_k
+            for shape, eta_k in zip(internal_shapes, eta_list)
+        )
+
+        return boundary_displacement + internal_displacement
+
+    def _flexible_distributed_displacement_sum(self, body: str):
+        if body in self.inter_bus_flexible_panels:
+            return self._inter_bus_panel_boundary_compatible_displacement(body)
+
+        return self._flexible_modal_distributed_displacement_sum(body)
 
     def _define_points(self):
         inertial_frame = self.frames["inertial"]
@@ -603,18 +666,16 @@ class MultiAngleFlexibleDynamics:
 
             if child_type.startswith("flexible-"):
                 frame = self.frames[child]
-                eta_list = self.flexible_bodies[child]["eta_list"]
-                phi_list = self.flexible_bodies[child]["phi_list"]
-                phi_sum = sum(
-                    phi_k * eta_k
-                    for phi_k, eta_k in zip(phi_list, eta_list)
+                flexible_displacement = self._flexible_distributed_displacement_sum(
+                    child
                 )
 
-                dm_offset = self.s * frame.x + phi_sum * frame.y
+                dm_offset = self.s * frame.x + flexible_displacement * frame.y
                 dm_point = child_joint.locatenew(f"dm_{child}", dm_offset)
                 self.points[f"dm_{child}"] = dm_point
 
                 phi_mean_list = self.flexible_bodies[child]["phi_mean_list"]
+                eta_list = self.flexible_bodies[child]["eta_list"]
                 phi_mean_sum = sum(
                     sm.Float(phi_mean_k) * eta_k
                     for phi_mean_k, eta_k in zip(phi_mean_list, eta_list)
@@ -687,22 +748,12 @@ class MultiAngleFlexibleDynamics:
             panel_frame = self.frames[panel]
             root_joint = self.points[endpoints["root_joint"]]
             tip_joint = self.points[endpoints["tip_joint"]]
-
-            panel_angle = self.orientation_angle(panel)
-            root_attachment_angle, tip_attachment_angle = (
-                self._inter_bus_panel_endpoint_tangent_angles(panel)
-            )
-
             tip_position_from_root = tip_joint.pos_from(root_joint)
             eta_list = self.flexible_bodies[panel]["eta_list"]
 
-            boundary_coordinates = sm.Matrix(
-                [
-                    sm.S.Zero,
-                    sm.simplify(root_attachment_angle - panel_angle),
-                    sm.trigsimp(tip_position_from_root.dot(panel_frame.y)),
-                    sm.simplify(tip_attachment_angle - panel_angle),
-                ]
+            boundary_coordinates = self._inter_bus_panel_boundary_coordinates(
+                panel,
+                sm.trigsimp(tip_position_from_root.dot(panel_frame.y)),
             )
 
             self.boundary_coordinates[panel] = boundary_coordinates
