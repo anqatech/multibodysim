@@ -390,23 +390,57 @@ def test_multiangle_defines_rigid_bus_inertia_matrices(seven_part_dynamics):
     assert set(dynamics.inertia_matrices) == set(dynamics.body_names)
 
 
-def test_multiangle_defines_flexible_panel_inertia_matrices(seven_part_dynamics):
+def test_multiangle_outer_panel_inertia_matrices_use_modal_mass_properties(
+    seven_part_dynamics,
+):
     dynamics = seven_part_dynamics
 
-    inertia = dynamics.inertia_matrices["panel_2"]
-    m_panel_2 = dynamics.mass_symbols["panel_2"]
-    eta21, eta22 = dynamics.flexible_bodies["panel_2"]["eta_list"]
+    inertia = dynamics.inertia_matrices["panel_1"]
+    m_panel_1 = dynamics.mass_symbols["panel_1"]
+    eta11 = dynamics.flexible_bodies["panel_1"]["eta_list"][0]
 
     assert inertia.shape == (3, 3)
-    assert sm.simplify(inertia[1, 1] - m_panel_2 * dynamics.L**2 / 12) == 0
+    assert sm.simplify(inertia[1, 1] - m_panel_1 * dynamics.L**2 / 12) == 0
     assert sm.simplify(inertia[0, 1] - inertia[1, 0]) == 0
     assert inertia[0, 2] == 0
     assert inertia[1, 2] == 0
     assert sm.simplify(inertia[2, 2] - (inertia[0, 0] + inertia[1, 1])) == 0
-    assert inertia[0, 0].has(eta21)
-    assert inertia[0, 0].has(eta22)
-    assert inertia[0, 1].has(eta21)
-    assert inertia[0, 1].has(eta22)
+    assert inertia[0, 0].has(eta11)
+    assert inertia[0, 1].has(eta11)
+
+
+def test_multiangle_inter_bus_panel_inertia_matrices_use_boundary_compatible_mass_properties(
+    seven_part_dynamics,
+):
+    dynamics = seven_part_dynamics
+
+    panel = "panel_2"
+    inertia = dynamics.inertia_matrices[panel]
+    mass = dynamics.mass_symbols[panel]
+    displacement = dynamics._inter_bus_panel_boundary_compatible_displacement(panel)
+    mean_displacement = dynamics._flexible_center_of_mass_displacement_sum(panel)
+    centred_displacement = displacement - mean_displacement
+    relative_angle = dynamics.bus_angle_coordinates["bus_1"]
+
+    expected_I11 = mass / dynamics.L * dynamics._integrate_flexible_body_expression(
+        panel,
+        centred_displacement**2,
+    )
+    expected_I12 = -mass / dynamics.L * dynamics._integrate_flexible_body_expression(
+        panel,
+        (dynamics.s - dynamics.L / 2) * centred_displacement,
+    )
+
+    assert inertia.shape == (3, 3)
+    assert_symbolic_equal(inertia[0, 0], expected_I11)
+    assert_symbolic_equal(inertia[1, 1], mass * dynamics.L**2 / 12)
+    assert_symbolic_equal(inertia[0, 1], expected_I12)
+    assert_symbolic_equal(inertia[1, 0], expected_I12)
+    assert inertia[0, 2] == 0
+    assert inertia[1, 2] == 0
+    assert_symbolic_equal(inertia[2, 2], inertia[0, 0] + inertia[1, 1])
+    assert inertia[0, 0].has(relative_angle)
+    assert inertia[0, 1].has(relative_angle)
 
 
 def test_multiangle_offset_from_rigid_bus_to_flexible_panel(seven_part_dynamics):
@@ -659,12 +693,14 @@ def test_multiangle_inter_bus_boundary_compatible_displacement_reduces_to_intern
     assert_symbolic_equal(actual, expected)
 
 
-def test_multiangle_places_flexible_panel_mass_center_from_panel_joint(seven_part_dynamics):
+def test_multiangle_places_outer_panel_mass_center_from_modal_mean(
+    seven_part_dynamics,
+):
     dynamics = seven_part_dynamics
 
-    panel = "panel_3"
-    joint = dynamics.points["joint_panel_3_bus_2"]
-    panel_cm = dynamics.points["dm_center_of_mass_panel_3"]
+    panel = "panel_1"
+    joint = dynamics.points["joint_panel_1_bus_1"]
+    panel_cm = dynamics.points["dm_center_of_mass_panel_1"]
     eta_list = dynamics.flexible_bodies[panel]["eta_list"]
     phi_mean_list = dynamics.flexible_bodies[panel]["phi_mean_list"]
     phi_mean_sum = sum(
@@ -674,6 +710,23 @@ def test_multiangle_places_flexible_panel_mass_center_from_panel_joint(seven_par
     expected = (
         dynamics.L / 2 * dynamics.frames[panel].x
         + phi_mean_sum * dynamics.frames[panel].y
+    )
+
+    assert panel_cm.pos_from(joint) == expected
+
+
+def test_multiangle_places_inter_bus_panel_mass_center_from_boundary_compatible_mean(
+    seven_part_dynamics,
+):
+    dynamics = seven_part_dynamics
+
+    panel = "panel_3"
+    joint = dynamics.points["joint_panel_3_bus_2"]
+    panel_cm = dynamics.points["dm_center_of_mass_panel_3"]
+    expected = (
+        dynamics.L / 2 * dynamics.frames[panel].x
+        + dynamics._flexible_center_of_mass_displacement_sum(panel)
+        * dynamics.frames[panel].y
     )
 
     assert panel_cm.pos_from(joint) == expected

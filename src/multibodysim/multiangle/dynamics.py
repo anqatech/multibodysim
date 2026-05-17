@@ -58,8 +58,8 @@ class MultiAngleFlexibleDynamics:
         self.state_dimension = len(self.u)
 
         self._define_mode_shapes()
-        self._define_inertia_matrices()
         self._define_frame_orientations()
+        self._define_inertia_matrices()
         self._define_points()
         self._define_boundary_points()
         self._define_boundary_coordinates()
@@ -382,39 +382,74 @@ class MultiAngleFlexibleDynamics:
             )
 
         for body in self.flexible_body_names:
-            fb_dict = self.flexible_bodies[body]
-            eta_list = fb_dict["eta_list"]
-            phi_mean_list = fb_dict["phi_mean_list"]
-            phi_norm_list = fb_dict["phi_norm_list"]
-            phi_m1_list = fb_dict["phi_m1_list"]
+            if body in self.inter_bus_flexible_panels:
+                self.inertia_matrices[body] = (
+                    self._inter_bus_panel_boundary_compatible_inertia_matrix(body)
+                )
+            else:
+                self.inertia_matrices[body] = self._outer_panel_modal_inertia_matrix(
+                    body
+                )
 
-            mass = self.mass_symbols[body]
+    def _outer_panel_modal_inertia_matrix(self, body: str):
+        fb_dict = self.flexible_bodies[body]
+        eta_list = fb_dict["eta_list"]
+        phi_mean_list = fb_dict["phi_mean_list"]
+        phi_norm_list = fb_dict["phi_norm_list"]
+        phi_m1_list = fb_dict["phi_m1_list"]
 
-            I22 = sm.Rational(1, 12) * mass * self.L**2
+        mass = self.mass_symbols[body]
 
-            I12 = sm.S.Zero
-            for eta_k, phi_m1_k in zip(eta_list, phi_m1_list):
-                I12 += -eta_k * sm.Float(phi_m1_k)
-            I12 = mass * I12
+        I22 = sm.Rational(1, 12) * mass * self.L**2
 
-            first_term = sm.S.Zero
-            for eta_k, phi_norm_k in zip(eta_list, phi_norm_list):
-                first_term += eta_k**2 * sm.Float(phi_norm_k)
+        I12 = sm.S.Zero
+        for eta_k, phi_m1_k in zip(eta_list, phi_m1_list):
+            I12 += -eta_k * sm.Float(phi_m1_k)
+        I12 = mass * I12
 
-            second_term = sm.S.Zero
-            for eta_k, phi_mean_k in zip(eta_list, phi_mean_list):
-                second_term += eta_k * sm.Float(phi_mean_k)
+        first_term = sm.S.Zero
+        for eta_k, phi_norm_k in zip(eta_list, phi_norm_list):
+            first_term += eta_k**2 * sm.Float(phi_norm_k)
 
-            I11 = mass * (first_term - second_term**2)
-            I33 = I11 + I22
+        second_term = sm.S.Zero
+        for eta_k, phi_mean_k in zip(eta_list, phi_mean_list):
+            second_term += eta_k * sm.Float(phi_mean_k)
 
-            self.inertia_matrices[body] = sm.Matrix(
-                [
-                    [I11, I12, 0],
-                    [I12, I22, 0],
-                    [0, 0, I33],
-                ]
-            )
+        I11 = mass * (first_term - second_term**2)
+        I33 = I11 + I22
+
+        return sm.Matrix(
+            [
+                [I11, I12, 0],
+                [I12, I22, 0],
+                [0, 0, I33],
+            ]
+        )
+
+    def _inter_bus_panel_boundary_compatible_inertia_matrix(self, body: str):
+        mass = self.mass_symbols[body]
+        displacement = self._inter_bus_panel_boundary_compatible_displacement(body)
+        mean_displacement = self._flexible_center_of_mass_displacement_sum(body)
+        centred_displacement = displacement - mean_displacement
+
+        I11 = mass / self.L * self._integrate_flexible_body_expression(
+            body,
+            centred_displacement**2,
+        )
+        I22 = sm.Rational(1, 12) * mass * self.L**2
+        I12 = -mass / self.L * self._integrate_flexible_body_expression(
+            body,
+            (self.s - self.L / 2) * centred_displacement,
+        )
+        I33 = I11 + I22
+
+        return sm.Matrix(
+            [
+                [I11, I12, 0],
+                [I12, I22, 0],
+                [0, 0, I33],
+            ]
+        )
 
     def _orientation_offset(self, body_name: str):
         body_type = self.body_type[body_name]
@@ -628,6 +663,22 @@ class MultiAngleFlexibleDynamics:
 
         return self._flexible_modal_distributed_displacement_sum(body)
 
+    def _flexible_center_of_mass_displacement_sum(self, body: str):
+        if body in self.inter_bus_flexible_panels:
+            displacement = self._inter_bus_panel_boundary_compatible_displacement(body)
+            return (
+                self._integrate_flexible_body_expression(body, displacement)
+                / self.L
+            )
+
+        phi_mean_list = self.flexible_bodies[body]["phi_mean_list"]
+        eta_list = self.flexible_bodies[body]["eta_list"]
+
+        return sum(
+            sm.Float(phi_mean_k) * eta_k
+            for phi_mean_k, eta_k in zip(phi_mean_list, eta_list)
+        )
+
     def _define_points(self):
         inertial_frame = self.frames["inertial"]
 
@@ -674,13 +725,13 @@ class MultiAngleFlexibleDynamics:
                 dm_point = child_joint.locatenew(f"dm_{child}", dm_offset)
                 self.points[f"dm_{child}"] = dm_point
 
-                phi_mean_list = self.flexible_bodies[child]["phi_mean_list"]
-                eta_list = self.flexible_bodies[child]["eta_list"]
-                phi_mean_sum = sum(
-                    sm.Float(phi_mean_k) * eta_k
-                    for phi_mean_k, eta_k in zip(phi_mean_list, eta_list)
+                center_of_mass_displacement = (
+                    self._flexible_center_of_mass_displacement_sum(child)
                 )
-                cm_offset = self.L / 2 * frame.x + phi_mean_sum * frame.y
+                cm_offset = (
+                    self.L / 2 * frame.x
+                    + center_of_mass_displacement * frame.y
+                )
                 cm_point = child_joint.locatenew(
                     f"dm_center_of_mass_{child}",
                     cm_offset,
@@ -902,13 +953,8 @@ class MultiAngleFlexibleDynamics:
         )
 
     def _flexible_center_of_mass_velocity_sum(self, body: str):
-        phi_mean_list = self.flexible_bodies[body]["phi_mean_list"]
-        zeta_list = self.flexible_bodies[body]["zeta_list"]
-
-        return sum(
-            sm.Float(phi_mean_k) * zeta_k
-            for phi_mean_k, zeta_k in zip(phi_mean_list, zeta_list)
-        )
+        displacement = self._flexible_center_of_mass_displacement_sum(body)
+        return displacement.diff(self.t).xreplace(self.qd_repl)
 
     def _flexible_tip_velocity_sum(self, body: str):
         phi_list = self.flexible_bodies[body]["phi_list"]
