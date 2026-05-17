@@ -919,24 +919,36 @@ def test_multiangle_defines_flexible_body_distributed_and_center_of_mass_velocit
     assert panel in dynamics.flexible_center_of_mass_velocities
 
 
-def test_multiangle_distributed_velocity_remains_modal_only_until_inertia_update(
+def test_multiangle_outer_panel_distributed_velocity_remains_modal_only(
     seven_part_dynamics,
 ):
     dynamics = seven_part_dynamics
 
-    for panel in ("panel_1", "panel_3"):
-        expected = sum(
-            phi_k * zeta_k
-            for phi_k, zeta_k in zip(
-                dynamics.flexible_bodies[panel]["phi_list"],
-                dynamics.flexible_bodies[panel]["zeta_list"],
-            )
+    panel = "panel_1"
+    expected = sum(
+        phi_k * zeta_k
+        for phi_k, zeta_k in zip(
+            dynamics.flexible_bodies[panel]["phi_list"],
+            dynamics.flexible_bodies[panel]["zeta_list"],
         )
+    )
 
-        assert_symbolic_equal(
-            dynamics._flexible_distributed_velocity_sum(panel),
-            expected,
-        )
+    assert_symbolic_equal(dynamics._flexible_distributed_velocity_sum(panel), expected)
+
+
+def test_multiangle_inter_bus_distributed_velocity_differentiates_boundary_compatible_displacement(
+    seven_part_dynamics,
+):
+    dynamics = seven_part_dynamics
+
+    panel = "panel_3"
+    expected = (
+        dynamics._inter_bus_panel_boundary_compatible_displacement(panel)
+        .diff(dynamics.t)
+        .xreplace(dynamics.qd_repl)
+    )
+
+    assert_symbolic_equal(dynamics._flexible_distributed_velocity_sum(panel), expected)
 
 
 def test_multiangle_defines_bus_angular_accelerations(seven_part_dynamics):
@@ -1170,6 +1182,24 @@ def test_multiangle_rigid_parent_panel_linear_partials_include_modal_speeds(seve
     for zeta_k, phi_k in zip(zeta_list, phi_list):
         index = list(dynamics.u).index(zeta_k)
         assert_vector_equal(partials[index], phi_k * frame.y, N)
+
+
+def test_multiangle_inter_bus_panel_linear_partials_include_boundary_compatible_speeds(
+    seven_part_dynamics,
+):
+    dynamics = seven_part_dynamics
+    N = dynamics.frames["inertial"]
+
+    panel = "panel_3"
+    frame = dynamics.frames[panel]
+    zeta_list = dynamics.flexible_bodies[panel]["zeta_list"]
+    velocity_sum = dynamics._flexible_distributed_velocity_sum(panel)
+    partials = dynamics.partial_linear_velocities[panel]
+
+    for zeta_k in zeta_list:
+        index = list(dynamics.u).index(zeta_k)
+        expected = sm.diff(velocity_sum, zeta_k) * frame.y
+        assert_vector_equal(partials[index], expected, N)
 
 
 def test_multiangle_bus_angular_partials_distinguish_bus_torque_locations(seven_part_dynamics):

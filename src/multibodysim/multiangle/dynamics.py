@@ -944,13 +944,8 @@ class MultiAngleFlexibleDynamics:
                 raise KeyError(f"Unknown child type for '{child}': {child_type}")
 
     def _flexible_distributed_velocity_sum(self, body: str):
-        phi_list = self.flexible_bodies[body]["phi_list"]
-        zeta_list = self.flexible_bodies[body]["zeta_list"]
-
-        return sum(
-            phi_k * zeta_k
-            for phi_k, zeta_k in zip(phi_list, zeta_list)
-        )
+        displacement = self._flexible_distributed_displacement_sum(body)
+        return displacement.diff(self.t).xreplace(self.qd_repl)
 
     def _flexible_center_of_mass_velocity_sum(self, body: str):
         displacement = self._flexible_center_of_mass_displacement_sum(body)
