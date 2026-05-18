@@ -263,3 +263,44 @@ def plot_control_torques(results, figsize=(10, 5), show=True, data_slice=None):
         plt.show()
 
     return fig, axes
+
+def plot_energy_diagnostics(
+    energy,
+    figsize=(11, 10),
+    show=True,
+    data_slice=None,
+):
+    plot_slice = _as_plot_slice(data_slice)
+    time = np.asarray(energy["time"])[plot_slice]
+    kinetic = np.asarray(energy["kinetic"])[plot_slice]
+    kepler_potential = np.asarray(energy["kepler_potential"])[plot_slice]
+    strain_potential = np.asarray(energy["strain_potential"])[plot_slice]
+    total_energy_drift = np.asarray(energy["total_energy_drift"])[plot_slice]
+
+    orbital_mechanical = kinetic + kepler_potential
+    orbital_mechanical_drift = orbital_mechanical - orbital_mechanical[0]
+
+    fig, axes = plt.subplots(3, 1, figsize=figsize, sharex=True)
+
+    axes[0].plot(time, strain_potential)
+    axes[0].set_ylabel("Strain energy [J]")
+    axes[0].set_title("Flexible Strain Energy")
+    axes[0].grid(True)
+
+    axes[1].plot(time, orbital_mechanical_drift)
+    axes[1].set_ylabel("(T + V_kepler) drift [J]")
+    axes[1].set_title("Orbital + Multibody Kinetic/Kepler Exchange")
+    axes[1].grid(True)
+
+    axes[2].plot(time, total_energy_drift)
+    axes[2].set_ylabel("Total energy drift [J]")
+    axes[2].set_xlabel("Time [s]")
+    axes[2].set_title("Total Mechanical Energy Drift")
+    axes[2].grid(True)
+
+    fig.tight_layout()
+
+    if show:
+        plt.show()
+
+    return fig, axes

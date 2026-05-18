@@ -10,6 +10,7 @@ import pytest
 
 from multibodysim.plotting import (
     plot_control_torques,
+    plot_energy_diagnostics,
     plot_flexible_modes,
     plot_nadir_angle_error,
     plot_planar_speeds,
@@ -306,5 +307,50 @@ def test_plot_control_torques_accepts_data_slice():
     assert np.allclose(axes[0].lines[0].get_xdata(), np.array([0.0, 1.0]))
     assert np.allclose(axes[0].lines[0].get_ydata(), np.array([0.0, 0.1]))
     assert np.allclose(axes[1].lines[0].get_ydata(), np.array([1.0, 1.1]))
+
+    plt.close(fig)
+
+
+def test_plot_energy_diagnostics_plots_energy_dataframe():
+    energy = {
+        "time": np.array([0.0, 1.0, 2.0]),
+        "kinetic": np.array([10.0, 11.0, 13.0]),
+        "kepler_potential": np.array([-4.0, -4.5, -5.0]),
+        "strain_potential": np.array([0.2, 0.3, 0.1]),
+        "total_energy_drift": np.array([0.0, 0.1, -0.1]),
+    }
+
+    fig, axes = plot_energy_diagnostics(energy, show=False)
+
+    assert len(axes) == 3
+    assert axes[0].get_ylabel() == "Strain energy [J]"
+    assert axes[1].get_ylabel() == "(T + V_kepler) drift [J]"
+    assert axes[2].get_ylabel() == "Total energy drift [J]"
+    assert axes[2].get_xlabel() == "Time [s]"
+    assert np.allclose(axes[0].lines[0].get_ydata(), np.array([0.2, 0.3, 0.1]))
+    assert np.allclose(axes[1].lines[0].get_ydata(), np.array([0.0, 0.5, 2.0]))
+    assert np.allclose(axes[2].lines[0].get_ydata(), np.array([0.0, 0.1, -0.1]))
+
+    plt.close(fig)
+
+
+def test_plot_energy_diagnostics_accepts_data_slice():
+    energy = {
+        "time": np.array([0.0, 1.0, 2.0]),
+        "kinetic": np.array([10.0, 11.0, 13.0]),
+        "kepler_potential": np.array([-4.0, -4.5, -5.0]),
+        "strain_potential": np.array([0.2, 0.3, 0.1]),
+        "total_energy_drift": np.array([0.0, 0.1, -0.1]),
+    }
+
+    fig, axes = plot_energy_diagnostics(
+        energy,
+        show=False,
+        data_slice=slice(1, None),
+    )
+
+    assert np.allclose(axes[0].lines[0].get_xdata(), np.array([1.0, 2.0]))
+    assert np.allclose(axes[0].lines[0].get_ydata(), np.array([0.3, 0.1]))
+    assert np.allclose(axes[1].lines[0].get_ydata(), np.array([0.0, 1.5]))
 
     plt.close(fig)
