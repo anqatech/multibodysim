@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 from multibodysim.plotting import (
+    plot_angular_momentum_diagnostics,
     plot_control_torques,
     plot_energy_diagnostics,
     plot_flexible_modes,
@@ -352,5 +353,47 @@ def test_plot_energy_diagnostics_accepts_data_slice():
     assert np.allclose(axes[0].lines[0].get_xdata(), np.array([1.0, 2.0]))
     assert np.allclose(axes[0].lines[0].get_ydata(), np.array([0.3, 0.1]))
     assert np.allclose(axes[1].lines[0].get_ydata(), np.array([0.0, 1.5]))
+
+    plt.close(fig)
+
+
+def test_plot_angular_momentum_diagnostics_plots_drift_dataframe():
+    angular_momentum = {
+        "time": np.array([0.0, 1.0, 2.0]),
+        "H_origin_z_drift": np.array([0.0, 0.1, 0.2]),
+        "H_cm_z_drift": np.array([0.0, -0.01, -0.02]),
+    }
+
+    fig, axes = plot_angular_momentum_diagnostics(
+        angular_momentum,
+        show=False,
+    )
+
+    assert len(axes) == 2
+    assert axes[0].get_ylabel() == "H about O drift [kg m²/s]"
+    assert axes[1].get_ylabel() == "H about G drift [kg m²/s]"
+    assert axes[1].get_xlabel() == "Time [s]"
+    assert np.allclose(axes[0].lines[0].get_ydata(), np.array([0.0, 0.1, 0.2]))
+    assert np.allclose(axes[1].lines[0].get_ydata(), np.array([0.0, -0.01, -0.02]))
+
+    plt.close(fig)
+
+
+def test_plot_angular_momentum_diagnostics_accepts_data_slice():
+    angular_momentum = {
+        "time": np.array([0.0, 1.0, 2.0]),
+        "H_origin_z_drift": np.array([0.0, 0.1, 0.2]),
+        "H_cm_z_drift": np.array([0.0, -0.01, -0.02]),
+    }
+
+    fig, axes = plot_angular_momentum_diagnostics(
+        angular_momentum,
+        show=False,
+        data_slice=slice(1, None),
+    )
+
+    assert np.allclose(axes[0].lines[0].get_xdata(), np.array([1.0, 2.0]))
+    assert np.allclose(axes[0].lines[0].get_ydata(), np.array([0.1, 0.2]))
+    assert np.allclose(axes[1].lines[0].get_ydata(), np.array([-0.01, -0.02]))
 
     plt.close(fig)

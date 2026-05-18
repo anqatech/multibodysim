@@ -304,3 +304,32 @@ def plot_energy_diagnostics(
         plt.show()
 
     return fig, axes
+
+def plot_angular_momentum_diagnostics(
+    angular_momentum,
+    figsize=(10, 6),
+    show=True,
+    data_slice=None,
+):
+    plot_slice = _as_plot_slice(data_slice)
+    time = np.asarray(angular_momentum["time"])[plot_slice]
+    H_origin_drift = np.asarray(angular_momentum["H_origin_z_drift"])[plot_slice]
+    H_cm_drift = np.asarray(angular_momentum["H_cm_z_drift"])[plot_slice]
+
+    fig, axes = plt.subplots(2, 1, figsize=figsize, sharex=True)
+
+    axes[0].plot(time, H_origin_drift)
+    axes[0].set_ylabel("H about O drift [kg m²/s]")
+    axes[0].grid(True)
+
+    axes[1].plot(time, H_cm_drift)
+    axes[1].set_ylabel("H about G drift [kg m²/s]")
+    axes[1].set_xlabel("Time [s]")
+    axes[1].grid(True)
+
+    fig.tight_layout()
+
+    if show:
+        plt.show()
+
+    return fig, axes
