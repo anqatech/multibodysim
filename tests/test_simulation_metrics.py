@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import numpy as np
 import sympy as sm
+import sympy.physics.mechanics as me
 
 from multibodysim.analysis import (
+    compute_angular_momentum_diagnostics,
     compute_energy_diagnostics,
     simulation_diagnostics,
     simulation_diagnostics_table,
@@ -31,6 +33,84 @@ class FakeSimulator:
         self.dynamics = FakeDynamics()
         self.parameter_values = np.array([10.0])
         self.initial_torque_values = np.array([0.0])
+
+
+class FakeAngularMomentumDynamics:
+    def __init__(self):
+        q1 = sm.Symbol("q1")
+        u1 = sm.Symbol("u1")
+        N = me.ReferenceFrame("N")
+
+        self.q = sm.Matrix([q1])
+        self.u = sm.Matrix([u1])
+        self.state_dimension = 1
+        self.parameter_symbols = {}
+        self.parameter_values = {"L": 1.0}
+        self.frames = {"inertial": N, "bus": N}
+        self.rigid_body_names = ["bus"]
+        self.flexible_body_names = []
+        self.mass_symbols = {"bus": sm.S(2)}
+        self.inertia_matrices = {
+            "bus": sm.diag(sm.S.Zero, sm.S.Zero, sm.S(3)),
+        }
+        self.inertial_position = {"bus": q1 * N.x}
+        self.linear_velocities = {"bus": u1 * N.y}
+        self.angular_velocities = {"bus": u1 * N.z}
+        self.r_G = sm.S.Zero * N.x
+        self.v_G = sm.S.Zero * N.x
+
+
+class FakeAngularMomentumSimulator:
+    def __init__(self):
+        self.dynamics = FakeAngularMomentumDynamics()
+        self.parameter_values = np.array([])
+
+
+def test_compute_angular_momentum_diagnostics_returns_momentum_and_drift():
+    results = {
+        "time": np.array([0.0, 1.0, 2.0]),
+        "states": np.array(
+            [
+                [1.0, 2.0],
+                [2.0, 3.0],
+                [3.0, 4.0],
+            ],
+        ),
+    }
+
+    angular_momentum = compute_angular_momentum_diagnostics(
+        FakeAngularMomentumSimulator(),
+        results,
+        sample_every=2,
+    )
+
+    assert angular_momentum["time"].to_list() == [0.0, 2.0]
+    np.testing.assert_allclose(angular_momentum["H_origin_z"], [10.0, 36.0])
+    np.testing.assert_allclose(angular_momentum["H_cm_z"], [10.0, 36.0])
+    np.testing.assert_allclose(angular_momentum["H_origin_z_drift"], [0.0, 26.0])
+    np.testing.assert_allclose(angular_momentum["H_cm_z_drift"], [0.0, 26.0])
+    np.testing.assert_allclose(
+        angular_momentum["H_origin_z_relative_drift"],
+        [0.0, 2.6],
+    )
+    assert "H_origin_z_drift_ppm" not in angular_momentum
+    assert "H_cm_z_drift_ppm" not in angular_momentum
+
+
+def test_compute_angular_momentum_diagnostics_rejects_invalid_sampling():
+    with np.testing.assert_raises(ValueError):
+        compute_angular_momentum_diagnostics(
+            FakeAngularMomentumSimulator(),
+            {},
+            sample_every=0,
+        )
+
+    with np.testing.assert_raises(ValueError):
+        compute_angular_momentum_diagnostics(
+            FakeAngularMomentumSimulator(),
+            {},
+            quadrature_points=0,
+        )
 
 
 def test_compute_energy_diagnostics_returns_energy_components_and_drift():
