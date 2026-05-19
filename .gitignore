@@ -54,6 +54,7 @@ htmlcov/
 PROJECT_OVERVIEW.md
 CURRENT_PLAN.md
 docs/PERFORMANCE_OPTIMISATION_PLAN.md
+docs/SYMBOLIC_COMPLEXITY_FINDINGS.md
 
 # JetBrains (if someone opens in PyCharm)
 .idea/
