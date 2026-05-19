@@ -1482,23 +1482,20 @@ def test_multiangle_creates_lambdified_equation_evaluators_at_initialisation(sev
 
     q_values = np.zeros(len(dynamics.q))
     u_values = np.zeros(len(dynamics.u))
-    parameter_values = dynamics.get_parameter_values()
     torque_values = dynamics.get_torque_values()
 
     Mk, gk = dynamics.eval_kinematics(
         q_values,
         u_values,
-        parameter_values,
         torque_values,
     )
     mass_matrix, forcing = dynamics.eval_differentials(
         q_values,
         u_values,
-        parameter_values,
         torque_values,
     )
-    r_G = dynamics.rG_func(q_values, u_values, parameter_values)
-    v_G = dynamics.vG_func(q_values, u_values, parameter_values)
+    r_G = dynamics.rG_func(q_values, u_values)
+    v_G = dynamics.vG_func(q_values, u_values)
 
     assert np.asarray(Mk).shape == (len(dynamics.q), len(dynamics.q))
     assert np.asarray(gk).shape == (len(dynamics.q), 1)
@@ -1537,10 +1534,9 @@ def test_multiangle_initial_conditions_make_centre_of_mass_keplerian(seven_part_
     x0 = dynamics.get_initial_conditions(verbose=False)
     q0 = x0[:dynamics.state_dimension]
     u0 = x0[dynamics.state_dimension:]
-    parameter_values = dynamics.get_parameter_values()
 
-    r_G = np.asarray(dynamics.rG_func(q0, u0, parameter_values), dtype=float).reshape(3)
-    v_G = np.asarray(dynamics.vG_func(q0, u0, parameter_values), dtype=float).reshape(3)
+    r_G = np.asarray(dynamics.rG_func(q0, u0), dtype=float).reshape(3)
+    v_G = np.asarray(dynamics.vG_func(q0, u0), dtype=float).reshape(3)
 
     mu = config["parameters"]["planet_mu"]
     a = config["parameters"]["orbit_semi_major_axis"]

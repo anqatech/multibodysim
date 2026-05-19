@@ -39,7 +39,7 @@ class MultiAngleFlexibleSimulator:
             self.dynamics.get_torque_weights(),
             dtype=float,
         )
-        self.plant_view = MultiAnglePlantView(self.dynamics, self.parameter_values)
+        self.plant_view = MultiAnglePlantView(self.dynamics)
 
         self.controller = None
         self.results = None
@@ -88,7 +88,6 @@ class MultiAngleFlexibleSimulator:
         Mk, gk = self.dynamics.eval_kinematics(
             q,
             u,
-            self.parameter_values,
             torques,
         )
         qd = -np.linalg.solve(
@@ -99,7 +98,6 @@ class MultiAngleFlexibleSimulator:
         mass_matrix, forcing = self.dynamics.eval_differentials(
             q,
             u,
-            self.parameter_values,
             torques,
         )
 
@@ -116,7 +114,6 @@ class MultiAngleFlexibleSimulator:
                 mass_matrix, forcing = self.dynamics.eval_differentials(
                     q,
                     u,
-                    self.parameter_values,
                     torques,
                 )
 
@@ -270,7 +267,6 @@ class MultiAngleFlexibleSimulator:
             mass_matrix, _ = self.dynamics.eval_differentials(
                 qk,
                 uk,
-                self.parameter_values,
                 self.initial_torque_values,
             )
             mass_matrix = np.asarray(mass_matrix, dtype=float)
@@ -286,11 +282,11 @@ class MultiAngleFlexibleSimulator:
             tau_pd[index] = control_output.tau_fb
 
             rG = np.asarray(
-                self.dynamics.rG_func(qk, uk, self.parameter_values),
+                self.dynamics.rG_func(qk, uk),
                 dtype=float,
             ).reshape(-1)
             vG = np.asarray(
-                self.dynamics.vG_func(qk, uk, self.parameter_values),
+                self.dynamics.vG_func(qk, uk),
                 dtype=float,
             ).reshape(-1)
 

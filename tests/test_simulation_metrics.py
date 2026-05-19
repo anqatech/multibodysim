@@ -24,7 +24,7 @@ class FakeDynamics:
         self.V_strain = self.q[0] ** 2
         self.V_gg = sm.S.Zero
 
-    def eval_differentials(self, q, u, parameter_values, torques):
+    def eval_differentials(self, q, u, torques):
         return np.array([[4.0]]), np.array([0.0])
 
 

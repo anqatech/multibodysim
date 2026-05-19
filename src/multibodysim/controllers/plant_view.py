@@ -24,9 +24,8 @@ class FlexibleNSPlantView:
 
 
 class MultiAnglePlantView:
-    def __init__(self, dynamics, parameter_values):
+    def __init__(self, dynamics):
         self.dynamics = dynamics
-        self.parameter_values = parameter_values
 
         q_ref = list(dynamics.q_reference.keys())
         u_ref = list(dynamics.u_reference.keys())
@@ -43,8 +42,8 @@ class MultiAnglePlantView:
         return float(Md[self.i_theta_u, self.i_theta_u])
 
     def com_state(self, q, u):
-        rG = self.dynamics.rG_func(q, u, self.parameter_values)
-        vG = self.dynamics.vG_func(q, u, self.parameter_values)
+        rG = self.dynamics.rG_func(q, u)
+        vG = self.dynamics.vG_func(q, u)
 
         return (
             float(rG[0]),

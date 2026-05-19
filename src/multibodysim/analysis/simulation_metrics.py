@@ -243,7 +243,6 @@ def compute_energy_diagnostics(
         mass_matrix, _ = dyn.eval_differentials(
             q,
             u,
-            parameter_values,
             torques,
         )
         mass_matrix = np.asarray(mass_matrix, dtype=float)

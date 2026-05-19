@@ -1365,52 +1365,73 @@ class MultiAngleFlexibleDynamics:
         self.mass_matrix = -self.kane_eq.jacobian(self.ud)
         self.forcing = self.kane_eq.xreplace(self.ud_zero)
 
+    def _parameter_substitution_map(self):
+        return {
+            symbol: sm.Float(self.parameter_values[name])
+            for name, symbol in self.parameter_symbols.items()
+        }
+
+    def _with_specialised_parameters(self, expression):
+        if isinstance(expression, tuple):
+            return tuple(
+                self._with_specialised_parameters(item)
+                for item in expression
+            )
+
+        if isinstance(expression, list):
+            return [
+                self._with_specialised_parameters(item)
+                for item in expression
+            ]
+
+        return expression.xreplace(self._parameter_substitution_map())
+
+    def _lambdify_numpy(self, args, expression):
+        return sm.lambdify(
+            args,
+            expression,
+            "numpy",
+            cse=True,
+            docstring_limit=0,
+        )
+
     def _create_lambdified_functions(self):
-        parameters = list(self.parameter_symbols.values())
         torques = list(self.bus_torque_symbols.values())
         inertial_frame = self.frames["inertial"]
 
-        self.eval_kinematics = sm.lambdify(
+        self.eval_kinematics = self._lambdify_numpy(
             (
                 self.q,
                 self.u,
-                parameters,
                 torques,
             ),
-            (self.Mk, self.gk),
-            "numpy",
-            cse=True,
+            self._with_specialised_parameters((self.Mk, self.gk)),
         )
-        self.eval_differentials = sm.lambdify(
+        self.eval_differentials = self._lambdify_numpy(
             (
                 self.q,
                 self.u,
-                parameters,
                 torques,
             ),
-            (self.mass_matrix, self.forcing),
-            "numpy",
-            cse=True,
+            self._with_specialised_parameters((self.mass_matrix, self.forcing)),
         )
-        self.rG_func = sm.lambdify(
+        self.rG_func = self._lambdify_numpy(
             (
                 self.q,
                 self.u,
-                parameters,
             ),
-            self.r_G.to_matrix(inertial_frame),
-            "numpy",
-            cse=True,
+            self._with_specialised_parameters(
+                self.r_G.to_matrix(inertial_frame),
+            ),
         )
-        self.vG_func = sm.lambdify(
+        self.vG_func = self._lambdify_numpy(
             (
                 self.q,
                 self.u,
-                parameters,
             ),
-            self.v_G.to_matrix(inertial_frame),
-            "numpy",
-            cse=True,
+            self._with_specialised_parameters(
+                self.v_G.to_matrix(inertial_frame),
+            ),
         )
 
     def get_parameter_values(self):
@@ -1480,13 +1501,12 @@ class MultiAngleFlexibleDynamics:
         u1_index = list(self.u).index(self.u_translation["x"])
         u2_index = list(self.u).index(self.u_translation["y"])
 
-        parameter_values = self.get_parameter_values()
         r_G0, v_G0 = self._kepler_initial_centre_of_mass_state()
 
         q_values[q1_index] = 0.0
         q_values[q2_index] = 0.0
         r_G_at_origin = np.asarray(
-            self.rG_func(q_values, u_values, parameter_values),
+            self.rG_func(q_values, u_values),
             dtype=float,
         ).reshape(3)
         q_values[q1_index] = r_G0[0] - r_G_at_origin[0]
@@ -1495,7 +1515,7 @@ class MultiAngleFlexibleDynamics:
         u_values[u1_index] = 0.0
         u_values[u2_index] = 0.0
         v_G_without_translation = np.asarray(
-            self.vG_func(q_values, u_values, parameter_values),
+            self.vG_func(q_values, u_values),
             dtype=float,
         ).reshape(3)
         u_values[u1_index] = v_G0[0] - v_G_without_translation[0]
