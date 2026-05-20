@@ -1121,6 +1121,123 @@ class MultiAngleFlexibleDynamics:
             + 2 * self.mass_symbols[body] * body_offset.dot(body_offset)
         )
 
+    def _body_centre_velocity_for_gravity_gradient(self, body: str):
+        if body in self.flexible_body_names:
+            return self.flexible_center_of_mass_velocities[body]
+
+        return self.linear_velocities[body]
+
+    def _body_centre_partial_velocities_for_gravity_gradient(self):
+        inertial_frame = self.frames["inertial"]
+        body_centre_velocities = {
+            body: self._body_centre_velocity_for_gravity_gradient(body)
+            for body in self.body_names
+        }
+        partial_velocities = me.partial_velocity(
+            list(body_centre_velocities.values()),
+            self.u,
+            inertial_frame,
+        )
+
+        return dict(zip(body_centre_velocities.keys(), partial_velocities))
+
+    def _gravity_gradient_tidal_force(self, body: str):
+        body_offset = self.body_centre_offsets[body]
+        return (
+            -self.planet_mu
+            * self.mass_symbols[body]
+            / self.r_G_norm**3
+            * (
+                body_offset
+                - 3
+                * self.e3_hat_inertial.dot(body_offset)
+                * self.e3_hat_inertial
+            )
+        )
+
+    def _gravity_gradient_local_torque(self, body: str):
+        inertia_times_e3 = self._body_inertia_times_vector(
+            body,
+            self.e3_hat_inertial,
+        )
+        return (
+            3
+            * self.planet_mu
+            / self.r_G_norm**3
+            * self.e3_hat_inertial.cross(inertia_times_e3)
+        )
+
+    def _gravity_gradient_deformation_inertia_derivative(
+        self,
+        body: str,
+        coordinate,
+    ):
+        # Inertia matrices are body-frame quantities; differentiating them
+        # captures shape change only, while rigid rotation is handled by torque.
+        return self.inertia_matrices[body].diff(coordinate)
+
+    def _gravity_gradient_deformation_generalised_force(
+        self,
+        body: str,
+        coordinate,
+    ):
+        frame = self.frames[body]
+        e3_body = self.e3_hat_inertial.express(frame).to_matrix(frame)
+        inertia_derivative = self._gravity_gradient_deformation_inertia_derivative(
+            body,
+            coordinate,
+        )
+
+        if inertia_derivative == sm.zeros(3, 3):
+            return sm.S.Zero
+
+        directional_derivative = (
+            e3_body.T * inertia_derivative * e3_body
+        )[0]
+        trace_derivative = sm.trace(inertia_derivative)
+
+        return (
+            -self.planet_mu
+            / (2 * self.r_G_norm**3)
+            * (3 * directional_derivative - trace_derivative)
+        )
+
+    def _gravity_gradient_active_rows(self):
+        for body, angle_coordinate in self.bus_angle_coordinates.items():
+            row = list(self.u).index(self.bus_speed_coordinates[body])
+            yield row, angle_coordinate
+
+        modal_offset = len(self.u_reference)
+        for body, values in self.flexible_bodies.items():
+            for mode, eta_k in enumerate(values["eta_list"]):
+                row = modal_offset + self.flex_eta_index[(body, mode)]
+                yield row, eta_k
+
+    def _structured_gravity_gradient_generalised_force(self, row: int, coordinate):
+        location_force = sm.S.Zero
+        rotation_force = sm.S.Zero
+        deformation_force = sm.S.Zero
+
+        for body in self.body_names:
+            location_force += (
+                self.gravity_gradient_body_centre_partial_velocities[body][row].dot(
+                    self.gravity_gradient_tidal_forces[body]
+                )
+            )
+            rotation_force += self.partial_angular_velocities[body][row].dot(
+                self.gravity_gradient_local_torques[body]
+            )
+
+        for body in self.flexible_body_names:
+            deformation_force += (
+                self._gravity_gradient_deformation_generalised_force(
+                    body,
+                    coordinate,
+                )
+            )
+
+        return location_force, rotation_force, deformation_force
+
     def _build_gravity_gradient_potential(self):
         self._define_body_centre_offsets()
         self.gravity_gradient_directional_inertia = sm.S.Zero
@@ -1147,29 +1264,63 @@ class MultiAngleFlexibleDynamics:
         self.e3_hat_inertial = -self.r_G / self.r_G_norm
         self.e3_hat_body = {}
         self.body_centre_offsets = {}
+        self.gravity_gradient_body_centre_partial_velocities = {}
+        self.gravity_gradient_tidal_forces = {}
+        self.gravity_gradient_local_torques = {}
         self.gravity_gradient_directional_inertia = sm.S.Zero
         self.gravity_gradient_trace_inertia = sm.S.Zero
         self.V_gg_trace = sm.S.Zero
         self.V_gg_directional = sm.S.Zero
         self.V_gg = sm.S.Zero
+        self.gravity_gradient_generalised_forces = sm.zeros(
+            self.state_dimension,
+            1,
+        )
+        self.gravity_gradient_location_generalised_forces = sm.zeros(
+            self.state_dimension,
+            1,
+        )
+        self.gravity_gradient_rotation_generalised_forces = sm.zeros(
+            self.state_dimension,
+            1,
+        )
+        self.gravity_gradient_deformation_generalised_forces = sm.zeros(
+            self.state_dimension,
+            1,
+        )
 
         if not self.enable_gravity_gradient:
             return
 
         self._build_gravity_gradient_potential()
+        self.gravity_gradient_body_centre_partial_velocities = (
+            self._body_centre_partial_velocities_for_gravity_gradient()
+        )
+        self.gravity_gradient_tidal_forces = {
+            body: self._gravity_gradient_tidal_force(body)
+            for body in self.body_names
+        }
+        self.gravity_gradient_local_torques = {
+            body: self._gravity_gradient_local_torque(body)
+            for body in self.body_names
+        }
 
-        for body, angle_coordinate in self.bus_angle_coordinates.items():
-            row = list(self.u).index(self.bus_speed_coordinates[body])
-            self.generalised_active_forces[row] += -sm.diff(
-                self.V_gg,
-                angle_coordinate,
+        for row, coordinate in self._gravity_gradient_active_rows():
+            location_force, rotation_force, deformation_force = (
+                self._structured_gravity_gradient_generalised_force(
+                    row,
+                    coordinate,
+                )
             )
+            total_force = location_force + rotation_force + deformation_force
 
-        modal_offset = len(self.u_reference)
-        for body, values in self.flexible_bodies.items():
-            for mode, eta_k in enumerate(values["eta_list"]):
-                row = modal_offset + self.flex_eta_index[(body, mode)]
-                self.generalised_active_forces[row] += -sm.diff(self.V_gg, eta_k)
+            self.gravity_gradient_location_generalised_forces[row] = location_force
+            self.gravity_gradient_rotation_generalised_forces[row] = rotation_force
+            self.gravity_gradient_deformation_generalised_forces[row] = (
+                deformation_force
+            )
+            self.gravity_gradient_generalised_forces[row] = total_force
+            self.generalised_active_forces[row] += total_force
 
     def _add_flexible_strain_generalised_forces(self):
         self.V_strain = sm.S.Zero

@@ -32,6 +32,59 @@ def assert_vectors_do_not_contain_coordinate_derivatives(vectors, dynamics):
             assert not (component.atoms(sm.Derivative) & forbidden)
 
 
+def assert_gravity_gradient_matches_direct_derivative(
+    dynamics,
+    row: int,
+    coordinate,
+):
+    actual = dynamics.gravity_gradient_generalised_forces[row]
+    expected = -sm.diff(dynamics.V_gg, coordinate)
+    actual_func = sm.lambdify(
+        (dynamics.q, dynamics.u),
+        dynamics._with_specialised_parameters(actual),
+        "numpy",
+        cse=True,
+        docstring_limit=0,
+    )
+    expected_func = sm.lambdify(
+        (dynamics.q, dynamics.u),
+        dynamics._with_specialised_parameters(expected),
+        "numpy",
+        cse=True,
+        docstring_limit=0,
+    )
+
+    initial_state = dynamics.get_initial_conditions(verbose=False)
+    q0 = initial_state[:dynamics.state_dimension]
+    u0 = initial_state[dynamics.state_dimension:]
+
+    samples = [(q0, u0)]
+    q_perturbed = q0.copy()
+    u_perturbed = u0.copy()
+    q_perturbed += np.linspace(
+        -1e-6,
+        1e-6,
+        dynamics.state_dimension,
+    )
+    u_perturbed += np.linspace(
+        1e-8,
+        -1e-8,
+        dynamics.state_dimension,
+    )
+    samples.append((q_perturbed, u_perturbed))
+
+    for q_values, u_values in samples:
+        actual_value = float(np.asarray(actual_func(q_values, u_values)))
+        expected_value = float(np.asarray(expected_func(q_values, u_values)))
+
+        np.testing.assert_allclose(
+            actual_value,
+            expected_value,
+            rtol=1e-7,
+            atol=1e-10,
+        )
+
+
 def test_multiangle_bus_orientation_convention_for_seven_part_chain(seven_part_dynamics):
     dynamics = seven_part_dynamics
 
@@ -1724,9 +1777,28 @@ def test_multiangle_gravity_gradient_is_disabled_by_default(seven_part_dynamics)
     assert dynamics.V_gg_directional == 0
     assert dynamics.gravity_gradient_trace_inertia == 0
     assert dynamics.gravity_gradient_directional_inertia == 0
+    assert dynamics.gravity_gradient_generalised_forces == sm.zeros(
+        dynamics.state_dimension,
+        1,
+    )
+    assert dynamics.gravity_gradient_location_generalised_forces == sm.zeros(
+        dynamics.state_dimension,
+        1,
+    )
+    assert dynamics.gravity_gradient_rotation_generalised_forces == sm.zeros(
+        dynamics.state_dimension,
+        1,
+    )
+    assert dynamics.gravity_gradient_deformation_generalised_forces == sm.zeros(
+        dynamics.state_dimension,
+        1,
+    )
     assert dynamics.e3_hat_inertial == -dynamics.r_G / dynamics.r_G_norm
     assert dynamics.e3_hat_body == {}
     assert dynamics.body_centre_offsets == {}
+    assert dynamics.gravity_gradient_body_centre_partial_velocities == {}
+    assert dynamics.gravity_gradient_tidal_forces == {}
+    assert dynamics.gravity_gradient_local_torques == {}
 
 
 def test_multiangle_gravity_gradient_potential_energy_is_stored_when_enabled(
@@ -1838,10 +1910,16 @@ def test_multiangle_gravity_gradient_adds_attitude_row_forces_when_enabled(
             - external_and_kepler
             - strain_force
         )
-        expected_gravity_gradient = -sm.diff(dynamics.V_gg, angle_coordinate)
 
-        assert actual_gravity_gradient == expected_gravity_gradient
+        assert actual_gravity_gradient == (
+            dynamics.gravity_gradient_generalised_forces[row]
+        )
         assert actual_gravity_gradient.has(dynamics.planet_mu)
+        assert_gravity_gradient_matches_direct_derivative(
+            dynamics,
+            row,
+            angle_coordinate,
+        )
 
 
 def test_multiangle_gravity_gradient_adds_modal_row_forces_when_enabled(
@@ -1859,9 +1937,15 @@ def test_multiangle_gravity_gradient_adds_modal_row_forces_when_enabled(
                 - dynamics.partial_v_G[row].dot(dynamics.F_gravity)
                 - strain_force
             )
-            expected_gravity_gradient = -sm.diff(dynamics.V_gg, eta_k)
 
-            assert actual_gravity_gradient == expected_gravity_gradient
+            assert actual_gravity_gradient == (
+                dynamics.gravity_gradient_generalised_forces[row]
+            )
+            assert_gravity_gradient_matches_direct_derivative(
+                dynamics,
+                row,
+                eta_k,
+            )
 
 
 def test_multiangle_kepler_gravity_force_is_com_partial_velocity_projection(seven_part_dynamics):
