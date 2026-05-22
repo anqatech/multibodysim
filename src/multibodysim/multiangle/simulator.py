@@ -56,6 +56,9 @@ class MultiAngleFlexibleSimulator:
     def set_controller(self, controller: AttitudeController | None):
         self.controller = controller
 
+    def set_eval_differentials_backend(self, backend: str):
+        self.dynamics.set_eval_differentials_backend(backend)
+
     def get_control_output(
         self,
         t: float,

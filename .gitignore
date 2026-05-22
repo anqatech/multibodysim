@@ -72,3 +72,4 @@ docs/SYMBOLIC_COMPLEXITY_FINDINGS.md
 # --- C/cython build artifacts (optional) ---
 # *.so
 # *.dylib
+generated_evaluators/

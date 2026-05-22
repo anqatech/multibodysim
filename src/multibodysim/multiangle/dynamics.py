@@ -1566,6 +1566,10 @@ class MultiAngleFlexibleDynamics:
             ),
             self._with_specialised_parameters((self.mass_matrix, self.forcing)),
         )
+        self.eval_differentials_reference = self.eval_differentials
+        self.eval_differentials_backend = "numpy"
+        self.eval_differentials_generated_metadata = None
+        self.eval_differentials_generated_validation = None
         self.rG_func = self._lambdify_numpy(
             (
                 self.q,
@@ -1584,6 +1588,41 @@ class MultiAngleFlexibleDynamics:
                 self.v_G.to_matrix(inertial_frame),
             ),
         )
+
+    def set_eval_differentials_backend(self, backend: str):
+        if backend == "numpy":
+            self.eval_differentials = self.eval_differentials_reference
+            self.eval_differentials_backend = "numpy"
+            self.eval_differentials_generated_metadata = None
+            self.eval_differentials_generated_validation = None
+            return
+
+        if backend != "autowrap":
+            raise ValueError(
+                "eval_differentials backend must be one of "
+                "'numpy' or 'autowrap'."
+            )
+
+        from multibodysim.codegen import (
+            load_validated_autowrap_eval_differentials,
+        )
+
+        generated_evaluator = load_validated_autowrap_eval_differentials(self)
+        if generated_evaluator is None:
+            raise RuntimeError(
+                "eval_differentials backend 'autowrap' was requested, "
+                "but no valid generated evaluator artifact was found. "
+                "Call generate_autowrap_eval_differentials(...) first."
+            )
+
+        self.eval_differentials = generated_evaluator["function"]
+        self.eval_differentials_backend = "autowrap"
+        self.eval_differentials_generated_metadata = generated_evaluator[
+            "metadata"
+        ]
+        self.eval_differentials_generated_validation = generated_evaluator[
+            "validation"
+        ]
 
     def get_parameter_values(self):
         return [
