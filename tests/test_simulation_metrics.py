@@ -5,8 +5,10 @@ import sympy as sm
 import sympy.physics.mechanics as me
 
 from multibodysim.analysis import (
+    MultiAngleDiagnosticContext,
     compute_angular_momentum_diagnostics,
     compute_energy_diagnostics,
+    diagnostic_context_from_simulator,
     simulation_diagnostics,
     simulation_diagnostics_table,
 )
@@ -64,6 +66,7 @@ class FakeAngularMomentumSimulator:
     def __init__(self):
         self.dynamics = FakeAngularMomentumDynamics()
         self.parameter_values = np.array([])
+        self.initial_torque_values = np.array([])
 
 
 def test_compute_angular_momentum_diagnostics_returns_momentum_and_drift():
@@ -79,7 +82,7 @@ def test_compute_angular_momentum_diagnostics_returns_momentum_and_drift():
     }
 
     angular_momentum = compute_angular_momentum_diagnostics(
-        FakeAngularMomentumSimulator(),
+        diagnostic_context_from_simulator(FakeAngularMomentumSimulator()),
         results,
         sample_every=2,
     )
@@ -100,16 +103,24 @@ def test_compute_angular_momentum_diagnostics_returns_momentum_and_drift():
 def test_compute_angular_momentum_diagnostics_rejects_invalid_sampling():
     with np.testing.assert_raises(ValueError):
         compute_angular_momentum_diagnostics(
-            FakeAngularMomentumSimulator(),
+            diagnostic_context_from_simulator(FakeAngularMomentumSimulator()),
             {},
             sample_every=0,
         )
 
     with np.testing.assert_raises(ValueError):
         compute_angular_momentum_diagnostics(
-            FakeAngularMomentumSimulator(),
+            diagnostic_context_from_simulator(FakeAngularMomentumSimulator()),
             {},
             quadrature_points=0,
+        )
+
+
+def test_compute_angular_momentum_diagnostics_rejects_simulator_object():
+    with np.testing.assert_raises(TypeError):
+        compute_angular_momentum_diagnostics(
+            FakeAngularMomentumSimulator(),
+            {},
         )
 
 
@@ -126,7 +137,7 @@ def test_compute_energy_diagnostics_returns_energy_components_and_drift():
     }
 
     energy = compute_energy_diagnostics(
-        FakeSimulator(),
+        diagnostic_context_from_simulator(FakeSimulator()),
         results,
         sample_every=2,
     )
@@ -146,7 +157,48 @@ def test_compute_energy_diagnostics_returns_energy_components_and_drift():
 
 def test_compute_energy_diagnostics_rejects_invalid_sample_every():
     with np.testing.assert_raises(ValueError):
-        compute_energy_diagnostics(FakeSimulator(), {}, sample_every=0)
+        compute_energy_diagnostics(
+            diagnostic_context_from_simulator(FakeSimulator()),
+            {},
+            sample_every=0,
+        )
+
+
+def test_compute_energy_diagnostics_rejects_simulator_object():
+    with np.testing.assert_raises(TypeError):
+        compute_energy_diagnostics(FakeSimulator(), {})
+
+
+def test_diagnostic_context_from_simulator_copies_numerical_arrays():
+    simulator = FakeSimulator()
+    context = diagnostic_context_from_simulator(simulator)
+
+    simulator.parameter_values[0] = 99.0
+    simulator.initial_torque_values[0] = 88.0
+
+    assert context.dynamics is simulator.dynamics
+    np.testing.assert_allclose(context.parameter_values, [10.0])
+    np.testing.assert_allclose(context.torque_values, [0.0])
+
+
+def test_compute_energy_diagnostics_uses_context_torque_values():
+    class TorqueSensitiveDynamics(FakeDynamics):
+        def eval_differentials(self, q, u, torques):
+            return np.array([[float(torques[0])]]), np.array([0.0])
+
+    results = {
+        "time": np.array([0.0]),
+        "states": np.array([[2.0, 3.0]]),
+    }
+    context = MultiAngleDiagnosticContext(
+        dynamics=TorqueSensitiveDynamics(),
+        parameter_values=np.array([10.0]),
+        torque_values=np.array([6.0]),
+    )
+
+    energy = compute_energy_diagnostics(context, results)
+
+    np.testing.assert_allclose(energy["kinetic"], [27.0])
 
 
 def test_simulation_diagnostics_computes_attitude_and_flexible_metrics():

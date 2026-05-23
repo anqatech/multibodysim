@@ -1,9 +1,25 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 import sympy as sm
+
+
+@dataclass(frozen=True)
+class MultiAngleDiagnosticContext:
+    dynamics: Any
+    parameter_values: np.ndarray
+    torque_values: np.ndarray
+
+
+def diagnostic_context_from_simulator(simulator: Any) -> MultiAngleDiagnosticContext:
+    return MultiAngleDiagnosticContext(
+        dynamics=simulator.dynamics,
+        parameter_values=np.asarray(simulator.parameter_values, dtype=float).copy(),
+        torque_values=np.asarray(simulator.initial_torque_values, dtype=float).copy(),
+    )
 
 
 def _vector_from_matrix(components, frame):
@@ -14,8 +30,11 @@ def _vector_from_matrix(components, frame):
     )
 
 
-def _build_angular_momentum_functions(simulator: Any, quadrature_points: int = 8):
-    dyn = simulator.dynamics
+def _build_angular_momentum_functions(
+    context: MultiAngleDiagnosticContext,
+    quadrature_points: int = 8,
+):
+    dyn = context.dynamics
     inertial_frame = dyn.frames["inertial"]
     parameters = list(dyn.parameter_symbols.values())
 
@@ -101,12 +120,29 @@ def _build_angular_momentum_functions(simulator: Any, quadrature_points: int = 8
     }
 
 
+def _require_multiangle_diagnostic_context(
+    context: MultiAngleDiagnosticContext,
+    function_name: str,
+) -> None:
+    if not isinstance(context, MultiAngleDiagnosticContext):
+        raise TypeError(
+            f"{function_name} expects a MultiAngleDiagnosticContext. "
+            "Use run['diagnostic_context'] or "
+            "diagnostic_context_from_simulator(...)."
+        )
+
+
 def compute_angular_momentum_diagnostics(
-    simulator: Any,
+    context: MultiAngleDiagnosticContext,
     results: dict[str, Any],
     sample_every: int = 1,
     quadrature_points: int = 8,
 ):
+    _require_multiangle_diagnostic_context(
+        context,
+        "compute_angular_momentum_diagnostics",
+    )
+
     if sample_every < 1:
         raise ValueError("sample_every must be >= 1.")
     if quadrature_points < 1:
@@ -121,12 +157,12 @@ def compute_angular_momentum_diagnostics(
         ) from exc
 
     funcs = _build_angular_momentum_functions(
-        simulator,
+        context,
         quadrature_points=quadrature_points,
     )
 
-    dyn = simulator.dynamics
-    parameter_values = simulator.parameter_values
+    dyn = context.dynamics
+    parameter_values = context.parameter_values
 
     states = np.asarray(results["states"], dtype=float)
     time = np.asarray(results["time"], dtype=float)
@@ -182,10 +218,15 @@ def compute_angular_momentum_diagnostics(
 
 
 def compute_energy_diagnostics(
-    simulator: Any,
+    context: MultiAngleDiagnosticContext,
     results: dict[str, Any],
     sample_every: int = 1,
 ):
+    _require_multiangle_diagnostic_context(
+        context,
+        "compute_energy_diagnostics",
+    )
+
     if sample_every < 1:
         raise ValueError("sample_every must be >= 1.")
 
@@ -197,9 +238,9 @@ def compute_energy_diagnostics(
             "Install the package with the dev extras or install pandas."
         ) from exc
 
-    dyn = simulator.dynamics
-    parameter_values = simulator.parameter_values
-    torques = simulator.initial_torque_values
+    dyn = context.dynamics
+    parameter_values = context.parameter_values
+    torques = context.torque_values
 
     states = np.asarray(results["states"], dtype=float)
     time = np.asarray(results["time"], dtype=float)

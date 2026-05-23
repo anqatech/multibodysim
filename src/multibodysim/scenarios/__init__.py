@@ -1,15 +1,11 @@
-from .dynamics import MultiAngleFlexibleDynamics
-from ..scenarios import (
+from .multiangle import (
     MultiAngleScenario,
     PreparedMultiAngleSimulator,
     prepare_autowrapped_simulator,
     run_scenarios,
 )
-from .simulator import MultiAngleFlexibleSimulator
 
 __all__ = [
-    "MultiAngleFlexibleDynamics",
-    "MultiAngleFlexibleSimulator",
     "MultiAngleScenario",
     "PreparedMultiAngleSimulator",
     "prepare_autowrapped_simulator",
