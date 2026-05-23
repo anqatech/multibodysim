@@ -9,6 +9,7 @@ from types import ModuleType
 from .constants import GENERATED_EVALUATOR_ROOT, METADATA_FILENAME
 from .metadata import (
     autowrap_eval_differentials_cache_key,
+    autowrap_eval_kinematics_cache_key,
     make_json_serialisable,
 )
 
@@ -17,10 +18,32 @@ def autowrap_eval_differentials_artifact_dir(
     dyn,
     cache_root: Path | None = None,
 ) -> Path:
-    root = Path(cache_root) if cache_root is not None else GENERATED_EVALUATOR_ROOT
-    return root / "autowrap_eval_differentials" / (
-        autowrap_eval_differentials_cache_key(dyn)
+    return autowrap_evaluator_artifact_dir(
+        "autowrap_eval_differentials",
+        autowrap_eval_differentials_cache_key(dyn),
+        cache_root=cache_root,
     )
+
+
+def autowrap_eval_kinematics_artifact_dir(
+    dyn,
+    cache_root: Path | None = None,
+) -> Path:
+    return autowrap_evaluator_artifact_dir(
+        "autowrap_eval_kinematics",
+        autowrap_eval_kinematics_cache_key(dyn),
+        cache_root=cache_root,
+    )
+
+
+def autowrap_evaluator_artifact_dir(
+    evaluator_folder: str,
+    cache_key: str,
+    *,
+    cache_root: Path | None = None,
+) -> Path:
+    root = Path(cache_root) if cache_root is not None else GENERATED_EVALUATOR_ROOT
+    return root / evaluator_folder / cache_key
 
 
 def metadata_path(artifact_dir: Path) -> Path:

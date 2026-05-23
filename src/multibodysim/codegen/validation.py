@@ -75,3 +75,77 @@ def validate_eval_differentials_candidate(
         "max_forcing_difference": max_forcing_difference,
         "max_solve_difference": max_solve_difference,
     }
+
+
+def validate_eval_kinematics_candidate(
+    dyn,
+    candidate,
+    *,
+    tolerance: float = 1e-8,
+) -> dict:
+    reference = getattr(
+        dyn,
+        "eval_kinematics_reference",
+        dyn.eval_kinematics,
+    )
+    torques = dyn.get_torque_values()
+    initial_state = dyn.get_initial_conditions(verbose=False)
+    n = dyn.state_dimension
+
+    samples = [(initial_state[:n], initial_state[n:])]
+
+    q_perturbed = initial_state[:n].copy()
+    u_perturbed = initial_state[n:].copy()
+    q_perturbed += np.linspace(-1e-7, 1e-7, n)
+    u_perturbed += np.linspace(1e-8, -1e-8, n)
+    samples.append((q_perturbed, u_perturbed))
+
+    max_matrix_difference = 0.0
+    max_forcing_difference = 0.0
+    max_solve_difference = 0.0
+
+    for q_values, u_values in samples:
+        reference_matrix, reference_forcing = reference(q_values, u_values, torques)
+        candidate_matrix, candidate_forcing = candidate(q_values, u_values, torques)
+
+        reference_matrix = np.asarray(reference_matrix, dtype=float)
+        reference_forcing = np.asarray(reference_forcing, dtype=float)
+        candidate_matrix = np.asarray(candidate_matrix, dtype=float)
+        candidate_forcing = np.asarray(candidate_forcing, dtype=float)
+
+        matrix_difference = float(
+            np.max(np.abs(reference_matrix - candidate_matrix)),
+        )
+        forcing_difference = float(
+            np.max(np.abs(reference_forcing - candidate_forcing)),
+        )
+
+        reference_solve = -np.linalg.solve(
+            reference_matrix,
+            reference_forcing.squeeze(),
+        )
+        candidate_solve = -np.linalg.solve(
+            candidate_matrix,
+            candidate_forcing.squeeze(),
+        )
+        solve_difference = float(
+            np.max(np.abs(reference_solve - candidate_solve)),
+        )
+
+        max_matrix_difference = max(max_matrix_difference, matrix_difference)
+        max_forcing_difference = max(max_forcing_difference, forcing_difference)
+        max_solve_difference = max(max_solve_difference, solve_difference)
+
+    success = (
+        max_matrix_difference < tolerance
+        and max_forcing_difference < tolerance
+        and max_solve_difference < tolerance
+    )
+
+    return {
+        "success": success,
+        "tolerance": tolerance,
+        "max_matrix_difference": max_matrix_difference,
+        "max_forcing_difference": max_forcing_difference,
+        "max_solve_difference": max_solve_difference,
+    }

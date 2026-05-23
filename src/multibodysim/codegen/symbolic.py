@@ -16,12 +16,7 @@ def safe_scalar_name(symbol, index: int) -> str:
 
 def symbolic_eval_differentials_data(dyn) -> dict:
     torques = list(dyn.bus_torque_symbols.values())
-    original_args = [*dyn.q, *dyn.u, *torques]
-    scalar_args = [
-        sm.Symbol(safe_scalar_name(symbol, index))
-        for index, symbol in enumerate(original_args)
-    ]
-    replacements = dict(zip(original_args, scalar_args))
+    scalar_args, replacements = scalar_args_and_replacements(dyn, torques)
 
     mass_matrix, forcing = dyn._with_specialised_parameters(
         (dyn.mass_matrix, dyn.forcing),
@@ -51,6 +46,47 @@ def symbolic_eval_differentials_data(dyn) -> dict:
     }
 
 
+def symbolic_eval_kinematics_data(dyn) -> dict:
+    torques = list(dyn.bus_torque_symbols.values())
+    scalar_args, replacements = scalar_args_and_replacements(dyn, torques)
+
+    kinematic_matrix, kinematic_forcing = dyn._with_specialised_parameters(
+        (dyn.Mk, dyn.gk),
+    )
+    kinematic_matrix = sm.Matrix(kinematic_matrix).xreplace(replacements)
+    kinematic_forcing = sm.Matrix(kinematic_forcing).xreplace(replacements)
+
+    matrix_rows, matrix_cols = kinematic_matrix.shape
+    forcing_rows, forcing_cols = kinematic_forcing.shape
+
+    flat_matrix = [
+        kinematic_matrix[row, col]
+        for row in range(matrix_rows)
+        for col in range(matrix_cols)
+    ]
+    flat_forcing = [
+        kinematic_forcing[row, col]
+        for row in range(forcing_rows)
+        for col in range(forcing_cols)
+    ]
+
+    return {
+        "scalar_args": scalar_args,
+        "matrix_shape": (matrix_rows, matrix_cols),
+        "forcing_shape": (forcing_rows, forcing_cols),
+        "flat_outputs": [*flat_matrix, *flat_forcing],
+    }
+
+
+def scalar_args_and_replacements(dyn, torques: list) -> tuple[list, dict]:
+    original_args = [*dyn.q, *dyn.u, *torques]
+    scalar_args = [
+        sm.Symbol(safe_scalar_name(symbol, index))
+        for index, symbol in enumerate(original_args)
+    ]
+    return scalar_args, dict(zip(original_args, scalar_args))
+
+
 def wrap_flat_autowrap_function(function, data: dict):
     mass_shape = data["mass_shape"]
     forcing_shape = data["forcing_shape"]
@@ -68,3 +104,22 @@ def wrap_flat_autowrap_function(function, data: dict):
         return mass_matrix, forcing
 
     return eval_differentials_autowrap
+
+
+def wrap_flat_autowrap_kinematics_function(function, data: dict):
+    matrix_shape = data["matrix_shape"]
+    forcing_shape = data["forcing_shape"]
+    matrix_size = matrix_shape[0] * matrix_shape[1]
+
+    def eval_kinematics_autowrap(q, u, torques):
+        values = [
+            *np.asarray(q, dtype=float).reshape(-1),
+            *np.asarray(u, dtype=float).reshape(-1),
+            *np.asarray(torques, dtype=float).reshape(-1),
+        ]
+        flat_output = np.asarray(function(*values), dtype=float).reshape(-1)
+        kinematic_matrix = flat_output[:matrix_size].reshape(matrix_shape)
+        kinematic_forcing = flat_output[matrix_size:].reshape(forcing_shape)
+        return kinematic_matrix, kinematic_forcing
+
+    return eval_kinematics_autowrap

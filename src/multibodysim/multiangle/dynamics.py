@@ -1558,6 +1558,10 @@ class MultiAngleFlexibleDynamics:
             ),
             self._with_specialised_parameters((self.Mk, self.gk)),
         )
+        self.eval_kinematics_reference = self.eval_kinematics
+        self.eval_kinematics_backend = "numpy"
+        self.eval_kinematics_generated_metadata = None
+        self.eval_kinematics_generated_validation = None
         self.eval_differentials = self._lambdify_numpy(
             (
                 self.q,
@@ -1588,6 +1592,41 @@ class MultiAngleFlexibleDynamics:
                 self.v_G.to_matrix(inertial_frame),
             ),
         )
+
+    def set_eval_kinematics_backend(self, backend: str):
+        if backend == "numpy":
+            self.eval_kinematics = self.eval_kinematics_reference
+            self.eval_kinematics_backend = "numpy"
+            self.eval_kinematics_generated_metadata = None
+            self.eval_kinematics_generated_validation = None
+            return
+
+        if backend != "autowrap":
+            raise ValueError(
+                "eval_kinematics backend must be one of "
+                "'numpy' or 'autowrap'."
+            )
+
+        from multibodysim.codegen import (
+            load_validated_autowrap_eval_kinematics,
+        )
+
+        generated_evaluator = load_validated_autowrap_eval_kinematics(self)
+        if generated_evaluator is None:
+            raise RuntimeError(
+                "eval_kinematics backend 'autowrap' was requested, "
+                "but no valid generated evaluator artifact was found. "
+                "Call generate_autowrap_eval_kinematics(...) first."
+            )
+
+        self.eval_kinematics = generated_evaluator["function"]
+        self.eval_kinematics_backend = "autowrap"
+        self.eval_kinematics_generated_metadata = generated_evaluator[
+            "metadata"
+        ]
+        self.eval_kinematics_generated_validation = generated_evaluator[
+            "validation"
+        ]
 
     def set_eval_differentials_backend(self, backend: str):
         if backend == "numpy":

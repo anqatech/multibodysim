@@ -30,6 +30,11 @@ def test_multiangle_simulator_builds_from_multiangle_config(
         simulator.dynamics.eval_differentials
         is simulator.dynamics.eval_differentials_reference
     )
+    assert simulator.dynamics.eval_kinematics_backend == "numpy"
+    assert (
+        simulator.dynamics.eval_kinematics
+        is simulator.dynamics.eval_kinematics_reference
+    )
     np.testing.assert_allclose(
         simulator.get_torque_values(),
         simulator.initial_torque_values,

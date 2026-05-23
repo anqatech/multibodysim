@@ -5,7 +5,10 @@ import copy
 import sympy as sm
 import pytest
 
-from multibodysim.codegen import autowrap_eval_differentials_cache_key
+from multibodysim.codegen import (
+    autowrap_eval_differentials_cache_key,
+    autowrap_eval_kinematics_cache_key,
+)
 from multibodysim.multiangle.dynamics import MultiAngleFlexibleDynamics
 from multibodysim.multiangle.simulator import MultiAngleFlexibleSimulator
 
@@ -13,6 +16,8 @@ from multibodysim.multiangle.simulator import MultiAngleFlexibleSimulator
 class FakeMultiAngleDynamics:
     def __init__(self):
         self.state_dimension = 2
+        self.Mk = sm.eye(2)
+        self.gk = sm.Matrix([sm.Symbol("u1"), sm.Symbol("u2")])
         self.mass_matrix = sm.eye(2)
         self.forcing = sm.Matrix([sm.Symbol("tau_bus_1"), sm.S.Zero])
         self.enable_gravity_gradient = False
@@ -81,6 +86,88 @@ def test_autowrap_cache_key_changes_when_mode_counts_change():
     dynamics.flexible_bodies["panel_1"]["eta_list"].append(sm.Symbol("eta1_2"))
 
     assert autowrap_eval_differentials_cache_key(dynamics) != baseline_key
+
+
+def test_autowrap_kinematics_cache_key_is_distinct_from_differentials_key():
+    dynamics = FakeMultiAngleDynamics()
+
+    assert autowrap_eval_kinematics_cache_key(dynamics) != (
+        autowrap_eval_differentials_cache_key(dynamics)
+    )
+
+
+def test_autowrap_kinematics_cache_key_changes_when_parameters_change():
+    dynamics = FakeMultiAngleDynamics()
+    baseline_key = autowrap_eval_kinematics_cache_key(dynamics)
+
+    dynamics.parameter_values = copy.deepcopy(dynamics.parameter_values)
+    dynamics.parameter_values["L"] = 4.0
+
+    assert autowrap_eval_kinematics_cache_key(dynamics) != baseline_key
+
+
+def test_dynamics_can_restore_numpy_eval_kinematics_backend():
+    dynamics = object.__new__(MultiAngleFlexibleDynamics)
+    reference = lambda q, u, torques: (sm.eye(1), sm.zeros(1, 1))
+    dynamics.eval_kinematics_reference = reference
+    dynamics.eval_kinematics = object()
+    dynamics.eval_kinematics_backend = "autowrap"
+    dynamics.eval_kinematics_generated_metadata = {"cache_key": "fake"}
+    dynamics.eval_kinematics_generated_validation = {"success": True}
+
+    dynamics.set_eval_kinematics_backend("numpy")
+
+    assert dynamics.eval_kinematics_backend == "numpy"
+    assert dynamics.eval_kinematics is reference
+    assert dynamics.eval_kinematics_generated_metadata is None
+    assert dynamics.eval_kinematics_generated_validation is None
+
+
+def test_dynamics_rejects_unknown_eval_kinematics_backend():
+    dynamics = object.__new__(MultiAngleFlexibleDynamics)
+
+    with pytest.raises(ValueError, match="numpy.*autowrap"):
+        dynamics.set_eval_kinematics_backend("cython")
+
+
+def test_dynamics_raises_when_autowrap_kinematics_artifact_is_missing(
+    monkeypatch,
+):
+    dynamics = object.__new__(MultiAngleFlexibleDynamics)
+
+    monkeypatch.setattr(
+        "multibodysim.codegen.load_validated_autowrap_eval_kinematics",
+        lambda dynamics: None,
+    )
+
+    with pytest.raises(RuntimeError, match="no valid generated evaluator"):
+        dynamics.set_eval_kinematics_backend("autowrap")
+
+
+def test_dynamics_uses_loaded_autowrap_eval_kinematics_backend(monkeypatch):
+    dynamics = object.__new__(MultiAngleFlexibleDynamics)
+
+    def fake_eval_kinematics(q, u, torques):
+        return sm.eye(1), sm.zeros(1, 1)
+
+    def fake_loader(dynamics):
+        return {
+            "function": fake_eval_kinematics,
+            "metadata": {"cache_key": "fake"},
+            "validation": {"success": True},
+        }
+
+    monkeypatch.setattr(
+        "multibodysim.codegen.load_validated_autowrap_eval_kinematics",
+        fake_loader,
+    )
+
+    dynamics.set_eval_kinematics_backend("autowrap")
+
+    assert dynamics.eval_kinematics_backend == "autowrap"
+    assert dynamics.eval_kinematics is fake_eval_kinematics
+    assert dynamics.eval_kinematics_generated_metadata == {"cache_key": "fake"}
+    assert dynamics.eval_kinematics_generated_validation == {"success": True}
 
 
 def test_dynamics_can_restore_numpy_eval_differentials_backend():
@@ -158,5 +245,22 @@ def test_simulator_eval_differentials_backend_switch_delegates_to_dynamics():
     simulator.dynamics = FakeDynamics()
 
     simulator.set_eval_differentials_backend("numpy")
+
+    assert simulator.dynamics.backend == "numpy"
+
+
+def test_simulator_eval_kinematics_backend_switch_delegates_to_dynamics():
+    simulator = object.__new__(MultiAngleFlexibleSimulator)
+
+    class FakeDynamics:
+        def __init__(self):
+            self.backend = None
+
+        def set_eval_kinematics_backend(self, backend):
+            self.backend = backend
+
+    simulator.dynamics = FakeDynamics()
+
+    simulator.set_eval_kinematics_backend("numpy")
 
     assert simulator.dynamics.backend == "numpy"

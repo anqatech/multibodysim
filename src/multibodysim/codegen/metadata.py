@@ -41,6 +41,33 @@ def cython_version() -> str:
 
 
 def autowrap_eval_differentials_cache_metadata(dyn) -> dict:
+    return _autowrap_evaluator_cache_metadata(
+        dyn,
+        evaluator_name="eval_differentials",
+        output_shapes={
+            "mass_matrix_shape": list(sm.Matrix(dyn.mass_matrix).shape),
+            "forcing_shape": list(sm.Matrix(dyn.forcing).shape),
+        },
+    )
+
+
+def autowrap_eval_kinematics_cache_metadata(dyn) -> dict:
+    return _autowrap_evaluator_cache_metadata(
+        dyn,
+        evaluator_name="eval_kinematics",
+        output_shapes={
+            "kinematic_matrix_shape": list(sm.Matrix(dyn.Mk).shape),
+            "kinematic_forcing_shape": list(sm.Matrix(dyn.gk).shape),
+        },
+    )
+
+
+def _autowrap_evaluator_cache_metadata(
+    dyn,
+    *,
+    evaluator_name: str,
+    output_shapes: dict,
+) -> dict:
     flexible_mode_counts = {
         body: len(dyn.flexible_bodies[body]["eta_list"])
         for body in dyn.flexible_body_names
@@ -49,10 +76,9 @@ def autowrap_eval_differentials_cache_metadata(dyn) -> dict:
     metadata = {
         "model_kind": "multiangle",
         "backend": BACKEND_NAME,
+        "evaluator_name": evaluator_name,
         "codegen_version": CODEGEN_VERSION,
         "state_dimension": dyn.state_dimension,
-        "mass_matrix_shape": list(sm.Matrix(dyn.mass_matrix).shape),
-        "forcing_shape": list(sm.Matrix(dyn.forcing).shape),
         "enable_gravity_gradient": bool(dyn.enable_gravity_gradient),
         "body_names": list(dyn.body_names),
         "body_type": dict(dyn.body_type),
@@ -73,13 +99,14 @@ def autowrap_eval_differentials_cache_metadata(dyn) -> dict:
         "cython_version": cython_version(),
         "platform_tag": platform.platform(),
     }
-    metadata["cache_key"] = autowrap_eval_differentials_cache_key_from_metadata(
+    metadata.update(output_shapes)
+    metadata["cache_key"] = autowrap_evaluator_cache_key_from_metadata(
         metadata,
     )
     return metadata
 
 
-def autowrap_eval_differentials_cache_key_from_metadata(metadata: dict) -> str:
+def autowrap_evaluator_cache_key_from_metadata(metadata: dict) -> str:
     comparable_metadata = {
         key: value
         for key, value in metadata.items()
@@ -93,5 +120,13 @@ def autowrap_eval_differentials_cache_key_from_metadata(metadata: dict) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
+def autowrap_eval_differentials_cache_key_from_metadata(metadata: dict) -> str:
+    return autowrap_evaluator_cache_key_from_metadata(metadata)
+
+
 def autowrap_eval_differentials_cache_key(dyn) -> str:
     return autowrap_eval_differentials_cache_metadata(dyn)["cache_key"]
+
+
+def autowrap_eval_kinematics_cache_key(dyn) -> str:
+    return autowrap_eval_kinematics_cache_metadata(dyn)["cache_key"]
