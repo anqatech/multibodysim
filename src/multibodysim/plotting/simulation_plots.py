@@ -275,27 +275,48 @@ def plot_energy_diagnostics(
     kinetic = np.asarray(energy["kinetic"])[plot_slice]
     kepler_potential = np.asarray(energy["kepler_potential"])[plot_slice]
     strain_potential = np.asarray(energy["strain_potential"])[plot_slice]
-    total_energy_drift = np.asarray(energy["total_energy_drift"])[plot_slice]
+    gravity_gradient_potential = np.asarray(
+        energy["gravity_gradient_potential"]
+    )[plot_slice]
+    total_energy_relative_drift = np.asarray(
+        energy["total_energy_relative_drift"]
+    )[plot_slice]
 
     orbital_mechanical = kinetic + kepler_potential
     orbital_mechanical_drift = orbital_mechanical - orbital_mechanical[0]
+    strain_gravity_potential = strain_potential + gravity_gradient_potential
+    strain_gravity_potential_drift = (
+        strain_gravity_potential
+        - strain_gravity_potential[0]
+    )
 
     fig, axes = plt.subplots(3, 1, figsize=figsize, sharex=True)
 
-    axes[0].plot(time, strain_potential)
-    axes[0].set_ylabel("Strain energy [J]")
-    axes[0].set_title("Flexible Strain Energy")
+    axes[0].plot(time, 1e3 * strain_potential)
+    axes[0].set_ylabel("Strain energy [mJ]")
+    axes[0].set_title("Strain Energy")
     axes[0].grid(True)
 
-    axes[1].plot(time, orbital_mechanical_drift)
-    axes[1].set_ylabel("(T + V_kepler) drift [J]")
-    axes[1].set_title("Orbital + Multibody Kinetic/Kepler Exchange")
+    axes[1].plot(
+        time,
+        1e3 * orbital_mechanical_drift,
+        label="Δ(T + V_kepler)",
+    )
+    axes[1].plot(
+        time,
+        -1e3 * strain_gravity_potential_drift,
+        linestyle="--",
+        label="-Δ(V_strain + V_gg)",
+    )
+    axes[1].set_ylabel("Energy exchange [mJ]")
+    axes[1].set_title("Energy Exchange Components")
+    axes[1].legend()
     axes[1].grid(True)
 
-    axes[2].plot(time, total_energy_drift)
-    axes[2].set_ylabel("Total energy drift [J]")
+    axes[2].plot(time, total_energy_relative_drift)
+    axes[2].set_ylabel("Relative drift [-]")
     axes[2].set_xlabel("Time [s]")
-    axes[2].set_title("Total Mechanical Energy Drift")
+    axes[2].set_title("Total Energy Relative Drift")
     axes[2].grid(True)
 
     fig.tight_layout()
@@ -313,17 +334,21 @@ def plot_angular_momentum_diagnostics(
 ):
     plot_slice = _as_plot_slice(data_slice)
     time = np.asarray(angular_momentum["time"])[plot_slice]
-    H_origin_drift = np.asarray(angular_momentum["H_origin_z_drift"])[plot_slice]
-    H_cm_drift = np.asarray(angular_momentum["H_cm_z_drift"])[plot_slice]
+    H_origin_drift = np.asarray(
+        angular_momentum["H_origin_z_relative_drift"]
+    )[plot_slice]
+    H_cm_drift = np.asarray(
+        angular_momentum["H_cm_z_relative_drift"]
+    )[plot_slice]
 
     fig, axes = plt.subplots(2, 1, figsize=figsize, sharex=True)
 
     axes[0].plot(time, H_origin_drift)
-    axes[0].set_ylabel("H about O drift [kg m²/s]")
+    axes[0].set_ylabel("H about O scaled drift [-]")
     axes[0].grid(True)
 
     axes[1].plot(time, H_cm_drift)
-    axes[1].set_ylabel("H about G drift [kg m²/s]")
+    axes[1].set_ylabel("H about G scaled drift [-]")
     axes[1].set_xlabel("Time [s]")
     axes[1].grid(True)
 

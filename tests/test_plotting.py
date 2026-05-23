@@ -318,19 +318,25 @@ def test_plot_energy_diagnostics_plots_energy_dataframe():
         "kinetic": np.array([10.0, 11.0, 13.0]),
         "kepler_potential": np.array([-4.0, -4.5, -5.0]),
         "strain_potential": np.array([0.2, 0.3, 0.1]),
+        "gravity_gradient_potential": np.array([0.0, 0.05, 0.02]),
         "total_energy_drift": np.array([0.0, 0.1, -0.1]),
+        "total_energy_relative_drift": np.array([0.0, 0.01, -0.01]),
     }
 
     fig, axes = plot_energy_diagnostics(energy, show=False)
 
     assert len(axes) == 3
-    assert axes[0].get_ylabel() == "Strain energy [J]"
-    assert axes[1].get_ylabel() == "(T + V_kepler) drift [J]"
-    assert axes[2].get_ylabel() == "Total energy drift [J]"
+    assert axes[0].get_ylabel() == "Strain energy [mJ]"
+    assert axes[0].get_title() == "Strain Energy"
+    assert axes[1].get_ylabel() == "Energy exchange [mJ]"
+    assert axes[1].get_title() == "Energy Exchange Components"
+    assert axes[2].get_ylabel() == "Relative drift [-]"
+    assert axes[2].get_title() == "Total Energy Relative Drift"
     assert axes[2].get_xlabel() == "Time [s]"
-    assert np.allclose(axes[0].lines[0].get_ydata(), np.array([0.2, 0.3, 0.1]))
-    assert np.allclose(axes[1].lines[0].get_ydata(), np.array([0.0, 0.5, 2.0]))
-    assert np.allclose(axes[2].lines[0].get_ydata(), np.array([0.0, 0.1, -0.1]))
+    assert np.allclose(axes[0].lines[0].get_ydata(), np.array([200.0, 300.0, 100.0]))
+    assert np.allclose(axes[1].lines[0].get_ydata(), np.array([0.0, 500.0, 2000.0]))
+    assert np.allclose(axes[1].lines[1].get_ydata(), np.array([0.0, -150.0, 80.0]))
+    assert np.allclose(axes[2].lines[0].get_ydata(), np.array([0.0, 0.01, -0.01]))
 
     plt.close(fig)
 
@@ -341,7 +347,9 @@ def test_plot_energy_diagnostics_accepts_data_slice():
         "kinetic": np.array([10.0, 11.0, 13.0]),
         "kepler_potential": np.array([-4.0, -4.5, -5.0]),
         "strain_potential": np.array([0.2, 0.3, 0.1]),
+        "gravity_gradient_potential": np.array([0.0, 0.05, 0.02]),
         "total_energy_drift": np.array([0.0, 0.1, -0.1]),
+        "total_energy_relative_drift": np.array([0.0, 0.01, -0.01]),
     }
 
     fig, axes = plot_energy_diagnostics(
@@ -351,8 +359,10 @@ def test_plot_energy_diagnostics_accepts_data_slice():
     )
 
     assert np.allclose(axes[0].lines[0].get_xdata(), np.array([1.0, 2.0]))
-    assert np.allclose(axes[0].lines[0].get_ydata(), np.array([0.3, 0.1]))
-    assert np.allclose(axes[1].lines[0].get_ydata(), np.array([0.0, 1.5]))
+    assert np.allclose(axes[0].lines[0].get_ydata(), np.array([300.0, 100.0]))
+    assert np.allclose(axes[1].lines[0].get_ydata(), np.array([0.0, 1500.0]))
+    assert np.allclose(axes[1].lines[1].get_ydata(), np.array([0.0, 230.0]))
+    assert np.allclose(axes[2].lines[0].get_ydata(), np.array([0.01, -0.01]))
 
     plt.close(fig)
 
@@ -362,6 +372,8 @@ def test_plot_angular_momentum_diagnostics_plots_drift_dataframe():
         "time": np.array([0.0, 1.0, 2.0]),
         "H_origin_z_drift": np.array([0.0, 0.1, 0.2]),
         "H_cm_z_drift": np.array([0.0, -0.01, -0.02]),
+        "H_origin_z_relative_drift": np.array([0.0, 1e-3, 2e-3]),
+        "H_cm_z_relative_drift": np.array([0.0, -1e-4, -2e-4]),
     }
 
     fig, axes = plot_angular_momentum_diagnostics(
@@ -370,11 +382,11 @@ def test_plot_angular_momentum_diagnostics_plots_drift_dataframe():
     )
 
     assert len(axes) == 2
-    assert axes[0].get_ylabel() == "H about O drift [kg m²/s]"
-    assert axes[1].get_ylabel() == "H about G drift [kg m²/s]"
+    assert axes[0].get_ylabel() == "H about O scaled drift [-]"
+    assert axes[1].get_ylabel() == "H about G scaled drift [-]"
     assert axes[1].get_xlabel() == "Time [s]"
-    assert np.allclose(axes[0].lines[0].get_ydata(), np.array([0.0, 0.1, 0.2]))
-    assert np.allclose(axes[1].lines[0].get_ydata(), np.array([0.0, -0.01, -0.02]))
+    assert np.allclose(axes[0].lines[0].get_ydata(), np.array([0.0, 1e-3, 2e-3]))
+    assert np.allclose(axes[1].lines[0].get_ydata(), np.array([0.0, -1e-4, -2e-4]))
 
     plt.close(fig)
 
@@ -384,6 +396,8 @@ def test_plot_angular_momentum_diagnostics_accepts_data_slice():
         "time": np.array([0.0, 1.0, 2.0]),
         "H_origin_z_drift": np.array([0.0, 0.1, 0.2]),
         "H_cm_z_drift": np.array([0.0, -0.01, -0.02]),
+        "H_origin_z_relative_drift": np.array([0.0, 1e-3, 2e-3]),
+        "H_cm_z_relative_drift": np.array([0.0, -1e-4, -2e-4]),
     }
 
     fig, axes = plot_angular_momentum_diagnostics(
@@ -393,7 +407,7 @@ def test_plot_angular_momentum_diagnostics_accepts_data_slice():
     )
 
     assert np.allclose(axes[0].lines[0].get_xdata(), np.array([1.0, 2.0]))
-    assert np.allclose(axes[0].lines[0].get_ydata(), np.array([0.1, 0.2]))
-    assert np.allclose(axes[1].lines[0].get_ydata(), np.array([-0.01, -0.02]))
+    assert np.allclose(axes[0].lines[0].get_ydata(), np.array([1e-3, 2e-3]))
+    assert np.allclose(axes[1].lines[0].get_ydata(), np.array([-1e-4, -2e-4]))
 
     plt.close(fig)
