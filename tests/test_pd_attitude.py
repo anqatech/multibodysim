@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from multibodysim.controllers.pd_attitude import PlanarAttitudeController
+from multibodysim.controllers.plant_view import MultiAnglePlantView
 
 
 class FakePlantView:
@@ -18,6 +19,18 @@ class FakePlantView:
 
     def com_state(self, q, u):
         return 1.0, 0.0, 0.0, 1.0
+
+
+class FakeMultiAngleDynamics:
+    central_body = "bus_2"
+    q_reference = {"bus_1": None, "bus_2": None, "bus_3": None}
+    u_reference = {"bus_1": None, "bus_2": None, "bus_3": None}
+
+    def rG_func(self, q, u):
+        return np.array([[1.0], [2.0], [3.0]])
+
+    def vG_func(self, q, u):
+        return np.array([[4.0], [5.0], [6.0]])
 
 
 def test_smooth_step_boundary_values():
@@ -105,3 +118,14 @@ def test_nadir_pd_returns_finite_feedforward_and_feedback():
 
     assert np.isfinite(output.tau_ff)
     assert np.isfinite(output.tau_fb)
+
+
+def test_multiangle_plant_view_com_state_accepts_column_vectors():
+    plant_view = MultiAnglePlantView(FakeMultiAngleDynamics())
+
+    assert plant_view.com_state(q=np.zeros(3), u=np.zeros(3)) == (
+        1.0,
+        2.0,
+        4.0,
+        5.0,
+    )

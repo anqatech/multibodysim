@@ -1,3 +1,6 @@
+import numpy as np
+
+
 class FlexibleNSPlantView:
     def __init__(self, dynamics, p_vals):
         self.dynamics = dynamics
@@ -44,6 +47,8 @@ class MultiAnglePlantView:
     def com_state(self, q, u):
         rG = self.dynamics.rG_func(q, u)
         vG = self.dynamics.vG_func(q, u)
+        rG = np.asarray(rG, dtype=float).reshape(-1)
+        vG = np.asarray(vG, dtype=float).reshape(-1)
 
         return (
             float(rG[0]),
