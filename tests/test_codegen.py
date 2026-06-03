@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import copy
 
+import numpy as np
 import sympy as sm
-import pytest
 
 from multibodysim.codegen import (
     autowrap_eval_differentials_cache_key,
     autowrap_eval_kinematics_cache_key,
+    prepare_autowrap_evaluators,
+    validate_autowrap_evaluators,
 )
 from multibodysim.multiangle.dynamics import MultiAngleFlexibleDynamics
 from multibodysim.multiangle.simulator import MultiAngleFlexibleSimulator
@@ -106,161 +108,176 @@ def test_autowrap_kinematics_cache_key_changes_when_parameters_change():
     assert autowrap_eval_kinematics_cache_key(dynamics) != baseline_key
 
 
-def test_dynamics_can_restore_numpy_eval_kinematics_backend():
-    dynamics = object.__new__(MultiAngleFlexibleDynamics)
-    reference = lambda q, u, torques: (sm.eye(1), sm.zeros(1, 1))
-    dynamics.eval_kinematics_reference = reference
-    dynamics.eval_kinematics = object()
-    dynamics.eval_kinematics_backend = "autowrap"
-    dynamics.eval_kinematics_generated_metadata = {"cache_key": "fake"}
-    dynamics.eval_kinematics_generated_validation = {"success": True}
-
-    dynamics.set_eval_kinematics_backend("numpy")
-
-    assert dynamics.eval_kinematics_backend == "numpy"
-    assert dynamics.eval_kinematics is reference
-    assert dynamics.eval_kinematics_generated_metadata is None
-    assert dynamics.eval_kinematics_generated_validation is None
-
-
-def test_dynamics_rejects_unknown_eval_kinematics_backend():
-    dynamics = object.__new__(MultiAngleFlexibleDynamics)
-
-    with pytest.raises(ValueError, match="numpy.*autowrap"):
-        dynamics.set_eval_kinematics_backend("cython")
-
-
-def test_dynamics_raises_when_autowrap_kinematics_artifact_is_missing(
-    monkeypatch,
-):
-    dynamics = object.__new__(MultiAngleFlexibleDynamics)
-
-    monkeypatch.setattr(
-        "multibodysim.codegen.load_validated_autowrap_eval_kinematics",
-        lambda dynamics: None,
-    )
-
-    with pytest.raises(RuntimeError, match="no valid generated evaluator"):
-        dynamics.set_eval_kinematics_backend("autowrap")
-
-
-def test_dynamics_uses_loaded_autowrap_eval_kinematics_backend(monkeypatch):
+def test_prepare_autowrap_uses_loaded_evaluators(monkeypatch):
     dynamics = object.__new__(MultiAngleFlexibleDynamics)
 
     def fake_eval_kinematics(q, u, torques):
         return sm.eye(1), sm.zeros(1, 1)
 
-    def fake_loader(dynamics):
-        return {
-            "function": fake_eval_kinematics,
-            "metadata": {"cache_key": "fake"},
-            "validation": {"success": True},
-        }
+    def fake_eval_differentials(q, u, torques):
+        return sm.eye(1), sm.zeros(1, 1)
+
+    def fail_generation(dynamics, cache_root=None):
+        raise AssertionError("cache hit should not generate")
 
     monkeypatch.setattr(
-        "multibodysim.codegen.load_validated_autowrap_eval_kinematics",
-        fake_loader,
+        "multibodysim.codegen.preparation.load_autowrap_eval_kinematics",
+        lambda dynamics, cache_root=None: {
+            "success": True,
+            "function": fake_eval_kinematics,
+            "metadata": {"cache_key": "kinematics"},
+        },
+    )
+    monkeypatch.setattr(
+        "multibodysim.codegen.preparation.load_autowrap_eval_differentials",
+        lambda dynamics, cache_root=None: {
+            "success": True,
+            "function": fake_eval_differentials,
+            "metadata": {"cache_key": "differentials"},
+        },
+    )
+    monkeypatch.setattr(
+        "multibodysim.codegen.preparation.generate_autowrap_eval_kinematics",
+        fail_generation,
+    )
+    monkeypatch.setattr(
+        "multibodysim.codegen.preparation.generate_autowrap_eval_differentials",
+        fail_generation,
     )
 
-    dynamics.set_eval_kinematics_backend("autowrap")
+    metadata = prepare_autowrap_evaluators(dynamics)
 
     assert dynamics.eval_kinematics_backend == "autowrap"
-    assert dynamics.eval_kinematics is fake_eval_kinematics
-    assert dynamics.eval_kinematics_generated_metadata == {"cache_key": "fake"}
-    assert dynamics.eval_kinematics_generated_validation == {"success": True}
+    assert dynamics.eval_differentials_backend == "autowrap"
+    assert dynamics._eval_kinematics is fake_eval_kinematics
+    assert dynamics._eval_differentials is fake_eval_differentials
+    assert dynamics.eval_kinematics_codegen_timing["source"] == "cache"
+    assert dynamics.eval_differentials_codegen_timing["source"] == "cache"
+    assert metadata["kinematics"]["metadata"] == {"cache_key": "kinematics"}
+    assert metadata["differentials"]["metadata"] == {"cache_key": "differentials"}
 
 
-def test_dynamics_can_restore_numpy_eval_differentials_backend():
+def test_prepare_autowrap_generates_when_cache_is_missing(monkeypatch):
     dynamics = object.__new__(MultiAngleFlexibleDynamics)
-    reference = lambda q, u, torques: (sm.eye(1), sm.zeros(1, 1))
-    dynamics.eval_differentials_reference = reference
-    dynamics.eval_differentials = object()
-    dynamics.eval_differentials_backend = "autowrap"
-    dynamics.eval_differentials_generated_metadata = {"cache_key": "fake"}
-    dynamics.eval_differentials_generated_validation = {"success": True}
+    generated = []
 
-    dynamics.set_eval_differentials_backend("numpy")
-
-    assert dynamics.eval_differentials_backend == "numpy"
-    assert dynamics.eval_differentials is reference
-    assert dynamics.eval_differentials_generated_metadata is None
-    assert dynamics.eval_differentials_generated_validation is None
-
-
-def test_dynamics_rejects_unknown_eval_differentials_backend():
-    dynamics = object.__new__(MultiAngleFlexibleDynamics)
-
-    with pytest.raises(ValueError, match="numpy.*autowrap"):
-        dynamics.set_eval_differentials_backend("cython")
-
-
-def test_dynamics_raises_when_autowrap_artifact_is_missing(monkeypatch):
-    dynamics = object.__new__(MultiAngleFlexibleDynamics)
-
-    monkeypatch.setattr(
-        "multibodysim.codegen.load_validated_autowrap_eval_differentials",
-        lambda dynamics: None,
-    )
-
-    with pytest.raises(RuntimeError, match="no valid generated evaluator"):
-        dynamics.set_eval_differentials_backend("autowrap")
-
-
-def test_dynamics_uses_loaded_autowrap_eval_differentials_backend(monkeypatch):
-    dynamics = object.__new__(MultiAngleFlexibleDynamics)
+    def fake_eval_kinematics(q, u, torques):
+        return sm.eye(1), sm.zeros(1, 1)
 
     def fake_eval_differentials(q, u, torques):
         return sm.eye(1), sm.zeros(1, 1)
 
-    def fake_loader(dynamics):
+    def fake_kinematics_generator(dynamics, cache_root=None):
+        generated.append("kinematics")
         return {
+            "success": True,
+            "function": fake_eval_kinematics,
+            "metadata": {"cache_key": "generated-kinematics"},
+        }
+
+    def fake_differentials_generator(dynamics, cache_root=None):
+        generated.append("differentials")
+        return {
+            "success": True,
             "function": fake_eval_differentials,
-            "metadata": {"cache_key": "fake"},
-            "validation": {"success": True},
+            "metadata": {"cache_key": "generated-differentials"},
         }
 
     monkeypatch.setattr(
-        "multibodysim.codegen.load_validated_autowrap_eval_differentials",
-        fake_loader,
+        "multibodysim.codegen.preparation.load_autowrap_eval_kinematics",
+        lambda dynamics, cache_root=None: None,
+    )
+    monkeypatch.setattr(
+        "multibodysim.codegen.preparation.load_autowrap_eval_differentials",
+        lambda dynamics, cache_root=None: None,
+    )
+    monkeypatch.setattr(
+        "multibodysim.codegen.preparation.generate_autowrap_eval_kinematics",
+        fake_kinematics_generator,
+    )
+    monkeypatch.setattr(
+        "multibodysim.codegen.preparation.generate_autowrap_eval_differentials",
+        fake_differentials_generator,
     )
 
-    dynamics.set_eval_differentials_backend("autowrap")
+    prepare_autowrap_evaluators(dynamics)
 
+    assert generated == ["kinematics", "differentials"]
+    assert dynamics.eval_kinematics_backend == "autowrap"
     assert dynamics.eval_differentials_backend == "autowrap"
-    assert dynamics.eval_differentials is fake_eval_differentials
-    assert dynamics.eval_differentials_generated_metadata == {"cache_key": "fake"}
-    assert dynamics.eval_differentials_generated_validation == {"success": True}
+    assert dynamics.eval_kinematics_codegen_timing["source"] == "generated"
+    assert dynamics.eval_differentials_codegen_timing["source"] == "generated"
+    assert dynamics.eval_kinematics_generated_metadata == {
+        "cache_key": "generated-kinematics",
+    }
+    assert dynamics._eval_differentials is fake_eval_differentials
 
 
-def test_simulator_eval_differentials_backend_switch_delegates_to_dynamics():
-    simulator = object.__new__(MultiAngleFlexibleSimulator)
+def test_validate_autowrap_evaluators_builds_numpy_references_on_demand(
+    monkeypatch,
+):
+    dynamics = object.__new__(MultiAngleFlexibleDynamics)
+    dynamics.state_dimension = 1
+    dynamics.get_torque_values = lambda: np.array([0.0], dtype=float)
+    dynamics.get_initial_conditions = (
+        lambda verbose=False: np.array([0.1, -0.2], dtype=float)
+    )
+    dynamics.eval_kinematics_backend = "autowrap"
+    dynamics.eval_differentials_backend = "autowrap"
+    dynamics._eval_kinematics = lambda q, u, torques: (
+        np.eye(1),
+        np.array([[-float(u[0])]]),
+    )
+    dynamics._eval_differentials = lambda q, u, torques: (
+        np.eye(1),
+        np.array([[float(q[0]) + float(torques[0])]]),
+    )
+    dynamics.eval_kinematics_generated_metadata = {"cache_key": "kinematics"}
+    dynamics.eval_differentials_generated_metadata = {"cache_key": "differentials"}
+    dynamics.autowrap_codegen_metadata = {
+        "kinematics": {"artifact_dir": "kinematics-dir"},
+        "differentials": {"artifact_dir": "differentials-dir"},
+    }
 
-    class FakeDynamics:
-        def __init__(self):
-            self.backend = None
+    monkeypatch.setattr(
+        "multibodysim.codegen.validation.make_numpy_eval_kinematics_reference",
+        lambda dynamics: (
+            lambda q, u, torques: (np.eye(1), np.array([[-float(u[0])]]))
+        ),
+    )
+    monkeypatch.setattr(
+        "multibodysim.codegen.validation.make_numpy_eval_differentials_reference",
+        lambda dynamics: (
+            lambda q, u, torques: (
+                np.eye(1),
+                np.array([[float(q[0]) + float(torques[0])]]),
+            )
+        ),
+    )
 
-        def set_eval_differentials_backend(self, backend):
-            self.backend = backend
+    report = validate_autowrap_evaluators(dynamics)
 
-    simulator.dynamics = FakeDynamics()
+    assert report["success"]
+    assert report["kinematics"]["artifact_dir"] == "kinematics-dir"
+    assert report["differentials"]["artifact_dir"] == "differentials-dir"
+    assert report["kinematics"]["validation"]["success"]
+    assert report["differentials"]["validation"]["success"]
 
-    simulator.set_eval_differentials_backend("numpy")
 
-    assert simulator.dynamics.backend == "numpy"
-
-
-def test_simulator_eval_kinematics_backend_switch_delegates_to_dynamics():
-    simulator = object.__new__(MultiAngleFlexibleSimulator)
-
-    class FakeDynamics:
-        def __init__(self):
-            self.backend = None
-
-        def set_eval_kinematics_backend(self, backend):
-            self.backend = backend
-
-    simulator.dynamics = FakeDynamics()
-
-    simulator.set_eval_kinematics_backend("numpy")
-
-    assert simulator.dynamics.backend == "numpy"
+def test_multiangle_backend_switching_api_is_removed():
+    assert not hasattr(
+        MultiAngleFlexibleDynamics,
+        "set_eval_kinematics_backend",
+    )
+    assert not hasattr(
+        MultiAngleFlexibleDynamics,
+        "set_eval_differentials_backend",
+    )
+    assert not hasattr(
+        MultiAngleFlexibleSimulator,
+        "set_eval_kinematics_backend",
+    )
+    assert not hasattr(
+        MultiAngleFlexibleSimulator,
+        "set_eval_differentials_backend",
+    )

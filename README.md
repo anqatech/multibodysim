@@ -75,7 +75,8 @@ The simulator then follows this workflow:
    forces.
 3. Derive Kane equations in the form
    `mass_matrix * ud = forcing`.
-4. Lambdify the kinematic and dynamic equations.
+4. For the multi-angle simulator, load or generate autowrap evaluators for
+   runtime use.
 5. Build initial conditions from the configuration.
 6. Integrate the first-order state system with `scipy.integrate.solve_ivp`.
 7. Return a results dictionary containing time histories, solver diagnostics,
@@ -113,6 +114,18 @@ from multibodysim.multiangle import MultiAngleFlexibleSimulator
 
 simulator = MultiAngleFlexibleSimulator(config)
 results = simulator.run_simulation(eval_flag=True)
+```
+
+Multi-angle simulator construction prepares the autowrap evaluators
+automatically. On a fresh cache, this can compile local generated artifacts
+before the first simulation run.
+
+Autowrap evaluators can be validated explicitly from notebooks when needed:
+
+```python
+from multibodysim.codegen import validate_autowrap_evaluators
+
+validation_report = validate_autowrap_evaluators(simulator.dynamics)
 ```
 
 Attitude PD control:

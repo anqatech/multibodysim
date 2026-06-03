@@ -281,7 +281,7 @@ def compute_energy_diagnostics(
         q = states[index, :state_dimension]
         u = states[index, state_dimension:]
 
-        mass_matrix, _ = dyn.eval_differentials(
+        mass_matrix, _ = dyn._eval_differentials(
             q,
             u,
             torques,

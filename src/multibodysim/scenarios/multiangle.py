@@ -8,10 +8,6 @@ from typing import Any
 import numpy as np
 
 from ..analysis import diagnostic_context_from_simulator
-from ..codegen import (
-    generate_autowrap_eval_differentials,
-    generate_autowrap_eval_kinematics,
-)
 from ..controllers.base import AttitudeController
 from ..multiangle.simulator import MultiAngleFlexibleSimulator
 
@@ -27,86 +23,24 @@ class MultiAngleScenario:
     metadata: dict[str, Any] | None = None
 
 
-@dataclass
-class PreparedMultiAngleSimulator:
-    simulator: MultiAngleFlexibleSimulator
-    baseline_q_initial: dict[str, float]
-    baseline_initial_speeds: dict[str, float]
-    baseline_torques: dict[str, float]
-    baseline_torque_weights: dict[str, float]
-    baseline_controller: AttitudeController | None
-    setup_timing: dict[str, float]
-    codegen_metadata: dict[str, Any]
-
-
-def prepare_autowrapped_simulator(config: dict) -> PreparedMultiAngleSimulator:
-    total_start = time.perf_counter()
-
-    simulator_start = time.perf_counter()
-    simulator = MultiAngleFlexibleSimulator(config)
-    simulator_build_time = time.perf_counter() - simulator_start
-
-    kinematics_start = time.perf_counter()
-    kinematics_result = generate_autowrap_eval_kinematics(simulator.dynamics)
-    kinematics_time = time.perf_counter() - kinematics_start
-    if not kinematics_result["success"]:
-        raise RuntimeError(kinematics_result["validation"])
-
-    differentials_start = time.perf_counter()
-    differentials_result = generate_autowrap_eval_differentials(
-        simulator.dynamics,
-    )
-    differentials_time = time.perf_counter() - differentials_start
-    if not differentials_result["success"]:
-        raise RuntimeError(differentials_result["validation"])
-
-    switch_start = time.perf_counter()
-    simulator.set_eval_kinematics_backend("autowrap")
-    simulator.set_eval_differentials_backend("autowrap")
-    backend_switch_time = time.perf_counter() - switch_start
-
-    setup_timing = {
-        "simulator_build_time_s": simulator_build_time,
-        "autowrap_kinematics_time_s": kinematics_time,
-        "autowrap_differentials_time_s": differentials_time,
-        "backend_switch_time_s": backend_switch_time,
-        "total_setup_time_s": time.perf_counter() - total_start,
-    }
-
-    codegen_metadata = {
-        "kinematics": kinematics_result,
-        "differentials": differentials_result,
-    }
-
-    return PreparedMultiAngleSimulator(
-        simulator=simulator,
-        baseline_q_initial=deepcopy(config.get("q_initial", {})),
-        baseline_initial_speeds=deepcopy(config.get("initial_speeds", {})),
-        baseline_torques=deepcopy(config.get("torques", {})),
-        baseline_torque_weights=deepcopy(config.get("torque_weights", {})),
-        baseline_controller=simulator.controller,
-        setup_timing=setup_timing,
-        codegen_metadata=codegen_metadata,
-    )
-
-
 def run_scenarios(
-    prepared: PreparedMultiAngleSimulator,
+    simulator: MultiAngleFlexibleSimulator,
     scenarios: MultiAngleScenario | list[MultiAngleScenario],
     *,
     eval_flag: bool = True,
     verbose: bool = False,
 ) -> list[dict[str, Any]]:
     scenario_list = _as_scenario_list(scenarios)
+    baseline = _baseline_from_simulator(simulator)
 
     run_records = []
     for scenario in scenario_list:
-        _apply_scenario(prepared, scenario)
+        _apply_scenario(simulator, baseline, scenario)
         diagnostic_context = diagnostic_context_from_simulator(
-            prepared.simulator,
+            simulator,
         )
         start = time.perf_counter()
-        results = prepared.simulator.run_simulation(
+        results = simulator.run_simulation(
             eval_flag=eval_flag,
             verbose=verbose,
         )
@@ -126,7 +60,7 @@ def run_scenarios(
             }
         )
 
-    _restore_baseline(prepared)
+    _restore_baseline(simulator, baseline)
     return run_records
 
 
@@ -139,12 +73,24 @@ def _as_scenario_list(
     return list(scenarios)
 
 
+def _baseline_from_simulator(
+    simulator: MultiAngleFlexibleSimulator,
+) -> dict[str, Any]:
+    return {
+        "q_initial": deepcopy(simulator.config.get("q_initial", {})),
+        "initial_speeds": deepcopy(simulator.config.get("initial_speeds", {})),
+        "torques": deepcopy(simulator.config.get("torques", {})),
+        "torque_weights": deepcopy(simulator.config.get("torque_weights", {})),
+        "controller": simulator.controller,
+    }
+
+
 def _apply_scenario(
-    prepared: PreparedMultiAngleSimulator,
+    simulator: MultiAngleFlexibleSimulator,
+    baseline: dict[str, Any],
     scenario: MultiAngleScenario,
 ) -> None:
-    simulator = prepared.simulator
-    _restore_baseline(prepared)
+    _restore_baseline(simulator, baseline)
 
     if scenario.q_initial is not None:
         simulator.config["q_initial"].update(deepcopy(scenario.q_initial))
@@ -175,15 +121,17 @@ def _apply_scenario(
     simulator.results = None
 
 
-def _restore_baseline(prepared: PreparedMultiAngleSimulator) -> None:
-    simulator = prepared.simulator
-    simulator.config["q_initial"] = deepcopy(prepared.baseline_q_initial)
+def _restore_baseline(
+    simulator: MultiAngleFlexibleSimulator,
+    baseline: dict[str, Any],
+) -> None:
+    simulator.config["q_initial"] = deepcopy(baseline["q_initial"])
     simulator.config["initial_speeds"] = deepcopy(
-        prepared.baseline_initial_speeds,
+        baseline["initial_speeds"],
     )
-    simulator.config["torques"] = deepcopy(prepared.baseline_torques)
+    simulator.config["torques"] = deepcopy(baseline["torques"])
     simulator.config["torque_weights"] = deepcopy(
-        prepared.baseline_torque_weights,
+        baseline["torque_weights"],
     )
     simulator.initial_torque_values = np.array(
         simulator.dynamics.get_torque_values(),
@@ -193,6 +141,6 @@ def _restore_baseline(prepared: PreparedMultiAngleSimulator) -> None:
         simulator.dynamics.get_torque_weights(),
         dtype=float,
     )
-    simulator.set_controller(prepared.baseline_controller)
+    simulator.set_controller(baseline["controller"])
     simulator.reset_torque_values()
     simulator.results = None

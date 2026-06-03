@@ -18,10 +18,9 @@ from .symbolic import (
     symbolic_eval_kinematics_data,
     wrap_flat_autowrap_kinematics_function,
 )
-from .validation import validate_eval_kinematics_candidate
 
 
-def load_validated_autowrap_eval_kinematics(
+def load_autowrap_eval_kinematics(
     dyn,
     *,
     cache_root: Path | None = None,
@@ -38,21 +37,14 @@ def load_validated_autowrap_eval_kinematics(
     if metadata.get("cache_key") != expected_metadata["cache_key"]:
         return None
 
-    validation_metadata = metadata.get("validation", {})
-    if validation_metadata.get("success") is not True:
-        return None
-
     data = symbolic_eval_kinematics_data(dyn)
     raw_function = load_function_from_metadata(artifact_dir, metadata)
     function = wrap_flat_autowrap_kinematics_function(raw_function, data)
-    validation = validate_eval_kinematics_candidate(dyn, function)
-    if not validation["success"]:
-        return None
 
     return {
+        "success": True,
         "function": function,
         "metadata": metadata,
-        "validation": validation,
         "artifact_dir": artifact_dir,
     }
 
@@ -85,20 +77,15 @@ def generate_autowrap_eval_kinematics(
     build_time_s = time.perf_counter() - build_start
 
     function = wrap_flat_autowrap_kinematics_function(raw_function, data)
-    validation = validate_eval_kinematics_candidate(dyn, function)
 
     result = {
-        "success": validation["success"],
+        "success": True,
         "backend": BACKEND_NAME,
         "build_time_s": build_time_s,
         "artifact_dir": artifact_dir,
         "metadata": metadata,
-        "validation": validation,
-        "function": function if validation["success"] else None,
+        "function": function,
     }
-
-    if not validation["success"]:
-        return result
 
     module = sys.modules[raw_function.__module__]
     module_file = Path(module.__file__)
@@ -107,17 +94,9 @@ def generate_autowrap_eval_kinematics(
             "module_name": raw_function.__module__,
             "function_name": raw_function.__name__,
             "module_file": module_file.name,
-            "validation": validation,
         }
     )
     write_metadata(artifact_dir, metadata)
     result["metadata"] = metadata
 
     return result
-
-
-__all__ = [
-    "GENERATED_EVALUATOR_ROOT",
-    "generate_autowrap_eval_kinematics",
-    "load_validated_autowrap_eval_kinematics",
-]

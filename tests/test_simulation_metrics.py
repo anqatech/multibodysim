@@ -26,7 +26,7 @@ class FakeDynamics:
         self.V_strain = self.q[0] ** 2
         self.V_gg = sm.S.Zero
 
-    def eval_differentials(self, q, u, torques):
+    def _eval_differentials(self, q, u, torques):
         return np.array([[4.0]]), np.array([0.0])
 
 
@@ -183,7 +183,7 @@ def test_diagnostic_context_from_simulator_copies_numerical_arrays():
 
 def test_compute_energy_diagnostics_uses_context_torque_values():
     class TorqueSensitiveDynamics(FakeDynamics):
-        def eval_differentials(self, q, u, torques):
+        def _eval_differentials(self, q, u, torques):
             return np.array([[float(torques[0])]]), np.array([0.0])
 
     results = {

@@ -1547,33 +1547,17 @@ class MultiAngleFlexibleDynamics:
         )
 
     def _create_lambdified_functions(self):
-        torques = list(self.bus_torque_symbols.values())
         inertial_frame = self.frames["inertial"]
 
-        self.eval_kinematics = self._lambdify_numpy(
-            (
-                self.q,
-                self.u,
-                torques,
-            ),
-            self._with_specialised_parameters((self.Mk, self.gk)),
-        )
-        self.eval_kinematics_reference = self.eval_kinematics
-        self.eval_kinematics_backend = "numpy"
+        self._eval_kinematics = None
+        self.eval_kinematics_backend = "unprepared"
         self.eval_kinematics_generated_metadata = None
-        self.eval_kinematics_generated_validation = None
-        self.eval_differentials = self._lambdify_numpy(
-            (
-                self.q,
-                self.u,
-                torques,
-            ),
-            self._with_specialised_parameters((self.mass_matrix, self.forcing)),
-        )
-        self.eval_differentials_reference = self.eval_differentials
-        self.eval_differentials_backend = "numpy"
+        self.eval_kinematics_codegen_timing = None
+        self._eval_differentials = None
+        self.eval_differentials_backend = "unprepared"
         self.eval_differentials_generated_metadata = None
-        self.eval_differentials_generated_validation = None
+        self.eval_differentials_codegen_timing = None
+        self.autowrap_codegen_metadata = None
         self.rG_func = self._lambdify_numpy(
             (
                 self.q,
@@ -1593,75 +1577,27 @@ class MultiAngleFlexibleDynamics:
             ),
         )
 
-    def set_eval_kinematics_backend(self, backend: str):
-        if backend == "numpy":
-            self.eval_kinematics = self.eval_kinematics_reference
-            self.eval_kinematics_backend = "numpy"
-            self.eval_kinematics_generated_metadata = None
-            self.eval_kinematics_generated_validation = None
-            return
-
-        if backend != "autowrap":
-            raise ValueError(
-                "eval_kinematics backend must be one of "
-                "'numpy' or 'autowrap'."
-            )
-
-        from multibodysim.codegen import (
-            load_validated_autowrap_eval_kinematics,
-        )
-
-        generated_evaluator = load_validated_autowrap_eval_kinematics(self)
-        if generated_evaluator is None:
-            raise RuntimeError(
-                "eval_kinematics backend 'autowrap' was requested, "
-                "but no valid generated evaluator artifact was found. "
-                "Call generate_autowrap_eval_kinematics(...) first."
-            )
-
-        self.eval_kinematics = generated_evaluator["function"]
+    def _install_autowrap_evaluators(
+        self,
+        *,
+        kinematics: dict,
+        differentials: dict,
+    ) -> dict:
+        self._eval_kinematics = kinematics["function"]
         self.eval_kinematics_backend = "autowrap"
-        self.eval_kinematics_generated_metadata = generated_evaluator[
-            "metadata"
-        ]
-        self.eval_kinematics_generated_validation = generated_evaluator[
-            "validation"
-        ]
+        self.eval_kinematics_generated_metadata = kinematics["metadata"]
+        self.eval_kinematics_codegen_timing = kinematics["timing"]
 
-    def set_eval_differentials_backend(self, backend: str):
-        if backend == "numpy":
-            self.eval_differentials = self.eval_differentials_reference
-            self.eval_differentials_backend = "numpy"
-            self.eval_differentials_generated_metadata = None
-            self.eval_differentials_generated_validation = None
-            return
-
-        if backend != "autowrap":
-            raise ValueError(
-                "eval_differentials backend must be one of "
-                "'numpy' or 'autowrap'."
-            )
-
-        from multibodysim.codegen import (
-            load_validated_autowrap_eval_differentials,
-        )
-
-        generated_evaluator = load_validated_autowrap_eval_differentials(self)
-        if generated_evaluator is None:
-            raise RuntimeError(
-                "eval_differentials backend 'autowrap' was requested, "
-                "but no valid generated evaluator artifact was found. "
-                "Call generate_autowrap_eval_differentials(...) first."
-            )
-
-        self.eval_differentials = generated_evaluator["function"]
+        self._eval_differentials = differentials["function"]
         self.eval_differentials_backend = "autowrap"
-        self.eval_differentials_generated_metadata = generated_evaluator[
-            "metadata"
-        ]
-        self.eval_differentials_generated_validation = generated_evaluator[
-            "validation"
-        ]
+        self.eval_differentials_generated_metadata = differentials["metadata"]
+        self.eval_differentials_codegen_timing = differentials["timing"]
+
+        self.autowrap_codegen_metadata = {
+            "kinematics": kinematics,
+            "differentials": differentials,
+        }
+        return self.autowrap_codegen_metadata
 
     def get_parameter_values(self):
         return [

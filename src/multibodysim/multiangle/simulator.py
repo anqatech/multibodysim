@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 from scipy.integrate import solve_ivp
 
+from ..codegen import prepare_autowrap_evaluators
 from ..controllers.base import AttitudeController, ControlOutput
 from ..controllers.plant_view import MultiAnglePlantView
 from .dynamics import MultiAngleFlexibleDynamics
@@ -25,6 +26,7 @@ class MultiAngleFlexibleSimulator:
     def __init__(self, config: dict):
         self.config = config
         self.dynamics = MultiAngleFlexibleDynamics(config)
+        self.codegen_metadata = prepare_autowrap_evaluators(self.dynamics)
 
         self.parameter_values = np.array(
             self.dynamics.get_parameter_values(),
@@ -56,12 +58,6 @@ class MultiAngleFlexibleSimulator:
     def set_controller(self, controller: AttitudeController | None):
         self.controller = controller
 
-    def set_eval_differentials_backend(self, backend: str):
-        self.dynamics.set_eval_differentials_backend(backend)
-
-    def set_eval_kinematics_backend(self, backend: str):
-        self.dynamics.set_eval_kinematics_backend(backend)
-
     def get_control_output(
         self,
         t: float,
@@ -91,7 +87,7 @@ class MultiAngleFlexibleSimulator:
         if torque_values is not None:
             torques = np.asarray(torque_values, dtype=float).copy()
 
-        Mk, gk = self.dynamics.eval_kinematics(
+        Mk, gk = self.dynamics._eval_kinematics(
             q,
             u,
             torques,
@@ -101,7 +97,7 @@ class MultiAngleFlexibleSimulator:
             np.asarray(gk, dtype=float).squeeze(),
         )
 
-        mass_matrix, forcing = self.dynamics.eval_differentials(
+        mass_matrix, forcing = self.dynamics._eval_differentials(
             q,
             u,
             torques,
@@ -117,7 +113,7 @@ class MultiAngleFlexibleSimulator:
             tau_control = control_output.tau_total
             if tau_control != 0.0:
                 torques = torques + tau_control * self.torque_weights
-                mass_matrix, forcing = self.dynamics.eval_differentials(
+                mass_matrix, forcing = self.dynamics._eval_differentials(
                     q,
                     u,
                     torques,
@@ -270,7 +266,7 @@ class MultiAngleFlexibleSimulator:
         vG_z = np.zeros_like(times)
 
         for index, (time, qk, uk) in enumerate(zip(times, q, u)):
-            mass_matrix, _ = self.dynamics.eval_differentials(
+            mass_matrix, _ = self.dynamics._eval_differentials(
                 qk,
                 uk,
                 self.initial_torque_values,

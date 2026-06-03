@@ -4,11 +4,8 @@ import copy
 
 import numpy as np
 
-import multibodysim.scenarios.multiangle as multiangle_scenarios
 from multibodysim.multiangle import (
     MultiAngleScenario,
-    PreparedMultiAngleSimulator,
-    prepare_autowrapped_simulator,
     run_scenarios,
 )
 
@@ -52,12 +49,6 @@ class FakeSimulator:
         )
         self.controller = None
         self.results = None
-
-    def set_eval_kinematics_backend(self, backend):
-        self.dynamics.eval_kinematics_backend = backend
-
-    def set_eval_differentials_backend(self, backend):
-        self.dynamics.eval_differentials_backend = backend
 
     def set_controller(self, controller):
         self.controller = controller
@@ -114,63 +105,11 @@ def _base_config():
     }
 
 
-def _fake_codegen_result(name: str):
-    return {
-        "success": True,
-        "build_time_s": 0.0,
-        "validation": {"success": True, "name": name},
-    }
-
-
-def _prepared_simulator(config: dict) -> PreparedMultiAngleSimulator:
-    simulator = FakeSimulator(config)
-    return PreparedMultiAngleSimulator(
-        simulator=simulator,
-        baseline_q_initial=copy.deepcopy(config.get("q_initial", {})),
-        baseline_initial_speeds=copy.deepcopy(
-            config.get("initial_speeds", {}),
-        ),
-        baseline_torques=copy.deepcopy(config.get("torques", {})),
-        baseline_torque_weights=copy.deepcopy(
-            config.get("torque_weights", {}),
-        ),
-        baseline_controller=simulator.controller,
-        setup_timing={},
-        codegen_metadata={},
-    )
-
-
-def test_prepare_autowrapped_simulator_enables_both_backends(monkeypatch):
-    monkeypatch.setattr(
-        multiangle_scenarios,
-        "MultiAngleFlexibleSimulator",
-        FakeSimulator,
-    )
-    monkeypatch.setattr(
-        multiangle_scenarios,
-        "generate_autowrap_eval_kinematics",
-        lambda dynamics: _fake_codegen_result("kinematics"),
-    )
-    monkeypatch.setattr(
-        multiangle_scenarios,
-        "generate_autowrap_eval_differentials",
-        lambda dynamics: _fake_codegen_result("differentials"),
-    )
-
-    prepared = prepare_autowrapped_simulator(_base_config())
-
-    assert prepared.simulator.dynamics.eval_kinematics_backend == "autowrap"
-    assert prepared.simulator.dynamics.eval_differentials_backend == "autowrap"
-    assert prepared.codegen_metadata["kinematics"]["success"]
-    assert prepared.codegen_metadata["differentials"]["success"]
-    assert "total_setup_time_s" in prepared.setup_timing
-
-
 def test_run_scenarios_accepts_single_scenario():
-    prepared = _prepared_simulator(_base_config())
+    simulator = FakeSimulator(_base_config())
 
     runs = run_scenarios(
-        prepared,
+        simulator,
         MultiAngleScenario(
             name="single",
             q_initial={"q_central_angle": 0.2},
@@ -181,7 +120,7 @@ def test_run_scenarios_accepts_single_scenario():
     assert len(runs) == 1
     assert runs[0]["scenario"] == "single"
     assert runs[0]["metadata"] == {"candidate": 1}
-    assert runs[0]["diagnostic_context"].dynamics is prepared.simulator.dynamics
+    assert runs[0]["diagnostic_context"].dynamics is simulator.dynamics
     assert runs[0]["success"]
     assert runs[0]["results"]["q_initial_snapshot"]["q_central_angle"] == 0.2
 
@@ -190,10 +129,10 @@ def test_run_scenarios_accepts_list_and_restores_initial_conditions():
     config = _base_config()
     baseline_q = copy.deepcopy(config["q_initial"])
     baseline_speeds = copy.deepcopy(config["initial_speeds"])
-    prepared = _prepared_simulator(config)
+    simulator = FakeSimulator(config)
 
     runs = run_scenarios(
-        prepared,
+        simulator,
         [
             MultiAngleScenario(
                 name="angle",
@@ -216,15 +155,16 @@ def test_run_scenarios_accepts_list_and_restores_initial_conditions():
         runs[1]["results"]["initial_speeds_snapshot"]["u_central_angle"]
         == 0.4
     )
-    assert prepared.simulator.config["q_initial"] == baseline_q
-    assert prepared.simulator.config["initial_speeds"] == baseline_speeds
+    assert simulator.config["q_initial"] == baseline_q
+    assert simulator.config["initial_speeds"] == baseline_speeds
 
 
 def test_run_scenarios_resets_torque_weights_between_scenarios():
-    prepared = _prepared_simulator(_base_config())
+    simulator = FakeSimulator(_base_config())
+    baseline_torque_weights = copy.deepcopy(simulator.config["torque_weights"])
 
     runs = run_scenarios(
-        prepared,
+        simulator,
         [
             MultiAngleScenario(
                 name="left",
@@ -238,19 +178,19 @@ def test_run_scenarios_resets_torque_weights_between_scenarios():
     assert runs[0]["results"]["torque_weights_snapshot"]["bus_2"] == 0.0
     assert (
         runs[1]["results"]["torque_weights_snapshot"]
-        == prepared.baseline_torque_weights
+        == baseline_torque_weights
     )
     np.testing.assert_allclose(
-        prepared.simulator.torque_weights,
+        simulator.torque_weights,
         np.array([0.0, 1.0, 0.0], dtype=float),
     )
 
 
 def test_run_scenarios_captures_scenario_torque_values():
-    prepared = _prepared_simulator(_base_config())
+    simulator = FakeSimulator(_base_config())
 
     runs = run_scenarios(
-        prepared,
+        simulator,
         [
             MultiAngleScenario(
                 name="torque-a",
@@ -272,17 +212,17 @@ def test_run_scenarios_captures_scenario_torque_values():
         [4.0, 5.0, 6.0],
     )
     np.testing.assert_allclose(
-        prepared.simulator.initial_torque_values,
+        simulator.initial_torque_values,
         [0.0, 0.0, 0.0],
     )
 
 
 def test_run_scenarios_resets_controller_between_scenarios():
-    prepared = _prepared_simulator(_base_config())
+    simulator = FakeSimulator(_base_config())
     controller = object()
 
     runs = run_scenarios(
-        prepared,
+        simulator,
         [
             MultiAngleScenario(name="controlled", controller=controller),
             MultiAngleScenario(name="uncontrolled"),
@@ -291,4 +231,4 @@ def test_run_scenarios_resets_controller_between_scenarios():
 
     assert runs[0]["results"]["controller_snapshot"] is controller
     assert runs[1]["results"]["controller_snapshot"] is None
-    assert prepared.simulator.controller is None
+    assert simulator.controller is None

@@ -7,6 +7,10 @@ import pytest
 from multibodysim.beam.cantilever_beam import CantileverBeam
 from multibodysim.beam.boundary_compatible_beam import BoundaryCompatibleBeam
 from multibodysim.beam.clamped_clamped_beam import ClampedClampedBeam
+from multibodysim.codegen.reference import (
+    make_numpy_eval_differentials_reference,
+    make_numpy_eval_kinematics_reference,
+)
 from multibodysim.multiangle import MultiAngleFlexibleDynamics
 
 
@@ -1530,19 +1534,23 @@ def test_multiangle_derives_equations_of_motion_from_kane_forces(seven_part_dyna
     assert dynamics.forcing.shape == (len(dynamics.u), 1)
 
 
-def test_multiangle_creates_lambdified_equation_evaluators_at_initialisation(seven_part_dynamics):
+def test_multiangle_numpy_reference_evaluators_can_be_created_on_demand(
+    seven_part_dynamics,
+):
     dynamics = seven_part_dynamics
+    eval_kinematics = make_numpy_eval_kinematics_reference(dynamics)
+    eval_differentials = make_numpy_eval_differentials_reference(dynamics)
 
     q_values = np.zeros(len(dynamics.q))
     u_values = np.zeros(len(dynamics.u))
     torque_values = dynamics.get_torque_values()
 
-    Mk, gk = dynamics.eval_kinematics(
+    Mk, gk = eval_kinematics(
         q_values,
         u_values,
         torque_values,
     )
-    mass_matrix, forcing = dynamics.eval_differentials(
+    mass_matrix, forcing = eval_differentials(
         q_values,
         u_values,
         torque_values,

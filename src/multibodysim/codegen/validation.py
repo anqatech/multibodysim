@@ -2,18 +2,22 @@ from __future__ import annotations
 
 import numpy as np
 
+from .reference import (
+    make_numpy_eval_differentials_reference,
+    make_numpy_eval_kinematics_reference,
+)
+
 
 def validate_eval_differentials_candidate(
     dyn,
     candidate,
     *,
+    reference=None,
     tolerance: float = 1e-8,
 ) -> dict:
-    reference = getattr(
-        dyn,
-        "eval_differentials_reference",
-        dyn.eval_differentials,
-    )
+    if reference is None:
+        reference = make_numpy_eval_differentials_reference(dyn)
+
     torques = dyn.get_torque_values()
     initial_state = dyn.get_initial_conditions(verbose=False)
     n = dyn.state_dimension
@@ -48,11 +52,11 @@ def validate_eval_differentials_candidate(
 
         reference_solve = np.linalg.solve(
             reference_mass,
-            reference_forcing.squeeze(),
+            reference_forcing.reshape(-1),
         )
         candidate_solve = np.linalg.solve(
             candidate_mass,
-            candidate_forcing.squeeze(),
+            candidate_forcing.reshape(-1),
         )
         solve_difference = float(
             np.max(np.abs(reference_solve - candidate_solve)),
@@ -81,13 +85,12 @@ def validate_eval_kinematics_candidate(
     dyn,
     candidate,
     *,
+    reference=None,
     tolerance: float = 1e-8,
 ) -> dict:
-    reference = getattr(
-        dyn,
-        "eval_kinematics_reference",
-        dyn.eval_kinematics,
-    )
+    if reference is None:
+        reference = make_numpy_eval_kinematics_reference(dyn)
+
     torques = dyn.get_torque_values()
     initial_state = dyn.get_initial_conditions(verbose=False)
     n = dyn.state_dimension
@@ -122,11 +125,11 @@ def validate_eval_kinematics_candidate(
 
         reference_solve = -np.linalg.solve(
             reference_matrix,
-            reference_forcing.squeeze(),
+            reference_forcing.reshape(-1),
         )
         candidate_solve = -np.linalg.solve(
             candidate_matrix,
-            candidate_forcing.squeeze(),
+            candidate_forcing.reshape(-1),
         )
         solve_difference = float(
             np.max(np.abs(reference_solve - candidate_solve)),
@@ -149,3 +152,129 @@ def validate_eval_kinematics_candidate(
         "max_forcing_difference": max_forcing_difference,
         "max_solve_difference": max_solve_difference,
     }
+
+
+def validate_autowrap_evaluators(
+    dyn,
+    *,
+    cache_root=None,
+    tolerance: float = 1e-8,
+) -> dict:
+    kinematics = _autowrap_kinematics_candidate(
+        dyn,
+        cache_root=cache_root,
+    )
+    differentials = _autowrap_differentials_candidate(
+        dyn,
+        cache_root=cache_root,
+    )
+
+    kinematics_reference = make_numpy_eval_kinematics_reference(dyn)
+    differentials_reference = make_numpy_eval_differentials_reference(dyn)
+
+    kinematics_validation = validate_eval_kinematics_candidate(
+        dyn,
+        kinematics["function"],
+        reference=kinematics_reference,
+        tolerance=tolerance,
+    )
+    differentials_validation = validate_eval_differentials_candidate(
+        dyn,
+        differentials["function"],
+        reference=differentials_reference,
+        tolerance=tolerance,
+    )
+
+    return {
+        "success": (
+            kinematics_validation["success"]
+            and differentials_validation["success"]
+        ),
+        "tolerance": tolerance,
+        "kinematics": {
+            "artifact_dir": kinematics.get("artifact_dir"),
+            "metadata": kinematics.get("metadata"),
+            "validation": kinematics_validation,
+        },
+        "differentials": {
+            "artifact_dir": differentials.get("artifact_dir"),
+            "metadata": differentials.get("metadata"),
+            "validation": differentials_validation,
+        },
+    }
+
+
+def _autowrap_kinematics_candidate(
+    dyn,
+    *,
+    cache_root=None,
+) -> dict:
+    if (
+        getattr(dyn, "eval_kinematics_backend", None) == "autowrap"
+        and callable(getattr(dyn, "_eval_kinematics", None))
+    ):
+        return {
+            "function": dyn._eval_kinematics,
+            "metadata": getattr(dyn, "eval_kinematics_generated_metadata", None),
+            "artifact_dir": _artifact_dir_from_codegen_metadata(
+                dyn,
+                "kinematics",
+            ),
+        }
+
+    from .autowrap_eval_kinematics import (
+        generate_autowrap_eval_kinematics,
+        load_autowrap_eval_kinematics,
+    )
+
+    candidate = load_autowrap_eval_kinematics(dyn, cache_root=cache_root)
+    if candidate is not None:
+        return candidate
+
+    return generate_autowrap_eval_kinematics(dyn, cache_root=cache_root)
+
+
+def _autowrap_differentials_candidate(
+    dyn,
+    *,
+    cache_root=None,
+) -> dict:
+    if (
+        getattr(dyn, "eval_differentials_backend", None) == "autowrap"
+        and callable(getattr(dyn, "_eval_differentials", None))
+    ):
+        return {
+            "function": dyn._eval_differentials,
+            "metadata": getattr(
+                dyn,
+                "eval_differentials_generated_metadata",
+                None,
+            ),
+            "artifact_dir": _artifact_dir_from_codegen_metadata(
+                dyn,
+                "differentials",
+            ),
+        }
+
+    from .autowrap_eval_differentials import (
+        generate_autowrap_eval_differentials,
+        load_autowrap_eval_differentials,
+    )
+
+    candidate = load_autowrap_eval_differentials(dyn, cache_root=cache_root)
+    if candidate is not None:
+        return candidate
+
+    return generate_autowrap_eval_differentials(dyn, cache_root=cache_root)
+
+
+def _artifact_dir_from_codegen_metadata(dyn, key: str):
+    metadata = getattr(dyn, "autowrap_codegen_metadata", None)
+    if metadata is None:
+        return None
+
+    evaluator = metadata.get(key)
+    if evaluator is None:
+        return None
+
+    return evaluator.get("artifact_dir")
