@@ -17,6 +17,8 @@ from multibodysim.plotting import (
     plot_planar_speeds,
     plot_planar_states,
     plot_relative_attitude_states,
+    plot_state_envelopes,
+    plot_state_spectra,
 )
 from multibodysim.plotting.simulation_plots import compute_nadir_angle_error, wrap_to_pi
 
@@ -411,3 +413,119 @@ def test_plot_angular_momentum_diagnostics_accepts_data_slice():
     assert np.allclose(axes[1].lines[0].get_ydata(), np.array([-1e-4, -2e-4]))
 
     plt.close(fig)
+
+
+def test_plot_state_envelopes_uses_data_slice_and_draws_mean_and_band():
+    results = {
+        "time": np.array([0.0, 1.0, 2.0, 3.0]),
+        "eta1_1": np.array([0.0, 2.0, 4.0, 6.0]),
+    }
+
+    fig, axes = plot_state_envelopes(
+        results,
+        ["eta1_1"],
+        n_bins=1,
+        show=False,
+        data_slice=slice(1, None),
+    )
+
+    assert len(axes) == 1
+    assert axes[0].get_xlabel() == "Time [s]"
+    assert axes[0].get_title() == "eta1_1"
+    assert len(axes[0].lines) == 2
+    assert len(axes[0].collections) == 1
+    np.testing.assert_allclose(axes[0].lines[0].get_xdata(), np.array([2.0]))
+    np.testing.assert_allclose(axes[0].lines[0].get_ydata(), np.array([4.0]))
+
+    plt.close(fig)
+
+
+def test_plot_state_envelopes_applies_callable_transform_and_labels():
+    results = {
+        "time": np.array([0.0, 1.0, 2.0]),
+        "q_relative_angle_bus_1": np.array([0.0, np.pi / 2.0, np.pi]),
+    }
+
+    fig, axes = plot_state_envelopes(
+        results,
+        ["q_relative_angle_bus_1"],
+        transforms=np.rad2deg,
+        labels={"q_relative_angle_bus_1": "bus 1"},
+        ylabel="Angle [deg]",
+        n_bins=1,
+        show=False,
+    )
+
+    assert axes[0].get_ylabel() == "Angle [deg]"
+    assert axes[0].get_title() == "bus 1"
+    np.testing.assert_allclose(axes[0].lines[0].get_ydata(), np.array([90.0]))
+
+    plt.close(fig)
+
+
+def test_plot_state_spectra_uses_hertz_and_detects_sinusoid_peak():
+    frequency_hz = 2.0
+    time = np.linspace(0.0, 1.0, 101)[:-1]
+    results = {
+        "time": time,
+        "eta1_1": np.sin(2.0 * np.pi * frequency_hz * time),
+    }
+
+    fig, axes = plot_state_spectra(
+        results,
+        ["eta1_1"],
+        window=None,
+        show=False,
+    )
+
+    plotted_frequency = axes[0].lines[0].get_xdata()
+    plotted_amplitude = axes[0].lines[0].get_ydata()
+    peak_frequency = plotted_frequency[np.argmax(plotted_amplitude)]
+
+    assert axes[0].get_xlabel() == "Frequency [Hz]"
+    np.testing.assert_allclose(peak_frequency, frequency_hz)
+
+    plt.close(fig)
+
+
+def test_plot_state_spectra_applies_per_key_transforms_and_frequency_limit():
+    time = np.linspace(0.0, 1.0, 101)[:-1]
+    results = {
+        "time": time,
+        "eta1_1": np.sin(2.0 * np.pi * 2.0 * time),
+        "q_relative_angle_bus_1": np.sin(2.0 * np.pi * 4.0 * time),
+    }
+
+    fig, axes = plot_state_spectra(
+        results,
+        ["eta1_1", "q_relative_angle_bus_1"],
+        transforms={
+            "eta1_1": lambda values: 2.0 * values,
+            "q_relative_angle_bus_1": np.rad2deg,
+        },
+        labels={"eta1_1": "eta", "q_relative_angle_bus_1": "angle"},
+        max_frequency_hz=3.0,
+        window=None,
+        show=False,
+    )
+
+    assert len(axes) == 2
+    assert axes[0].get_title() == "eta"
+    assert axes[1].get_title() == "angle"
+    assert np.max(axes[0].lines[0].get_xdata()) <= 3.0
+    assert np.max(axes[1].lines[0].get_xdata()) <= 3.0
+    np.testing.assert_allclose(np.max(axes[0].lines[0].get_ydata()), 2.0)
+
+    plt.close(fig)
+
+
+def test_state_envelope_and_spectrum_plots_reject_missing_results_keys():
+    with pytest.raises(KeyError, match="time"):
+        plot_state_envelopes({"eta1_1": np.array([1.0])}, ["eta1_1"], show=False)
+
+    with pytest.raises(KeyError, match="missing"):
+        plot_state_spectra(
+            {"time": np.array([0.0, 1.0])},
+            ["missing"],
+            show=False,
+        )

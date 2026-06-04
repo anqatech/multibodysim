@@ -14,6 +14,135 @@ def _format_large_number_axes(ax):
 def _as_plot_slice(data_slice):
     return slice(None) if data_slice is None else data_slice
 
+def _as_state_keys(keys):
+    if isinstance(keys, str):
+        keys = [keys]
+    else:
+        keys = list(keys)
+
+    if not keys:
+        raise ValueError("At least one state key must be selected for plotting.")
+
+    return keys
+
+def _state_transform(transforms, key):
+    if transforms is None:
+        return None
+
+    if callable(transforms):
+        return transforms
+
+    if isinstance(transforms, dict):
+        transform = transforms.get(key)
+        if transform is not None and not callable(transform):
+            raise TypeError(f"Transform for '{key}' must be callable.")
+        return transform
+
+    raise TypeError("transforms must be None, a callable, or a dict of callables.")
+
+def _state_label(labels, key):
+    if labels is None:
+        return key
+
+    if not isinstance(labels, dict):
+        raise TypeError("labels must be None or a dict of labels.")
+
+    return labels.get(key, key)
+
+def _state_values(results, key, plot_slice, transforms=None):
+    if "time" not in results:
+        raise KeyError("Expected 'time' in results.")
+
+    if key not in results:
+        raise KeyError(f"Expected '{key}' in results.")
+
+    values = np.asarray(results[key], dtype=float)[plot_slice]
+    transform = _state_transform(transforms, key)
+    if transform is not None:
+        values = np.asarray(transform(values), dtype=float)
+
+    return values
+
+def _default_state_figsize(nplots):
+    return (10, 2.8 * nplots)
+
+def _as_axes_list(axes):
+    if isinstance(axes, np.ndarray):
+        return list(axes.flat)
+
+    return [axes]
+
+def _state_time(results, plot_slice):
+    if "time" not in results:
+        raise KeyError("Expected 'time' in results.")
+
+    return np.asarray(results["time"], dtype=float)[plot_slice]
+
+def _envelope_statistics(time, values, n_bins):
+    time = np.asarray(time, dtype=float)
+    values = np.asarray(values, dtype=float)
+
+    if n_bins <= 0:
+        raise ValueError("n_bins must be positive.")
+
+    if len(time) == 0:
+        raise ValueError("Envelope plots require at least one time sample.")
+
+    if len(time) != len(values):
+        raise ValueError("time and values must have the same length.")
+
+    edges = np.linspace(time[0], time[-1], n_bins + 1)
+    centres = 0.5 * (edges[:-1] + edges[1:])
+    lower = np.full(n_bins, np.nan)
+    upper = np.full(n_bins, np.nan)
+    mean = np.full(n_bins, np.nan)
+
+    bin_index = np.searchsorted(edges, time, side="right") - 1
+    bin_index = np.clip(bin_index, 0, n_bins - 1)
+
+    for index in range(n_bins):
+        mask = bin_index == index
+        if not np.any(mask):
+            continue
+        chunk = values[mask]
+        lower[index] = np.min(chunk)
+        upper[index] = np.max(chunk)
+        mean[index] = np.mean(chunk)
+
+    valid = ~np.isnan(mean)
+    return centres[valid], lower[valid], upper[valid], mean[valid]
+
+def _frequency_spectrum(time, values, window="hann", demean=True):
+    time = np.asarray(time, dtype=float)
+    values = np.asarray(values, dtype=float)
+
+    if len(time) < 2:
+        raise ValueError("Spectrum plots require at least two time samples.")
+
+    if len(time) != len(values):
+        raise ValueError("time and values must have the same length.")
+
+    dt = float(np.median(np.diff(time)))
+    if dt <= 0.0:
+        raise ValueError("time samples must be strictly increasing.")
+
+    spectrum_values = values - np.mean(values) if demean else values.copy()
+    if window in ("hann", "hanning"):
+        weights = np.hanning(len(spectrum_values))
+    elif window in (None, "boxcar", "rectangular"):
+        weights = np.ones_like(spectrum_values)
+    else:
+        raise ValueError("window must be 'hann', 'hanning', 'boxcar', or None.")
+
+    if np.allclose(weights.sum(), 0.0):
+        weights = np.ones_like(spectrum_values)
+
+    spectrum = np.fft.rfft(spectrum_values * weights)
+    frequency_hz = np.fft.rfftfreq(len(spectrum_values), d=dt)
+    amplitude = 2.0 * np.abs(spectrum) / weights.sum()
+
+    return frequency_hz[1:], amplitude[1:]
+
 def _attitude_key(results):
     if "q_central_angle" in results:
         return "q_central_angle"
@@ -191,6 +320,133 @@ def plot_flexible_modes(
 
     axes[-1].set_xlabel("Time [s]")
 
+    fig.tight_layout()
+
+    if show:
+        plt.show()
+
+    return fig, axes
+
+def plot_state_envelopes(
+    results,
+    keys,
+    *,
+    transforms=None,
+    labels=None,
+    ylabel=None,
+    title=None,
+    n_bins=300,
+    figsize=None,
+    show=True,
+    data_slice=None,
+):
+    plot_slice = _as_plot_slice(data_slice)
+    time = _state_time(results, plot_slice)
+    keys = _as_state_keys(keys)
+    if figsize is None:
+        figsize = _default_state_figsize(len(keys))
+
+    fig, axes = plt.subplots(len(keys), 1, sharex=True, figsize=figsize)
+    axes = _as_axes_list(axes)
+
+    for ax, key in zip(axes, keys):
+        values = _state_values(
+            results,
+            key,
+            plot_slice,
+            transforms=transforms,
+        )
+        centres, lower, upper, mean = _envelope_statistics(
+            time,
+            values,
+            n_bins,
+        )
+        line = ax.plot(
+            centres,
+            mean,
+            linewidth=1.6,
+            label=f"{_state_label(labels, key)} mean",
+        )[0]
+        ax.fill_between(
+            centres,
+            lower,
+            upper,
+            color=line.get_color(),
+            alpha=0.18,
+            linewidth=0.0,
+            label=f"{_state_label(labels, key)} min-max",
+        )
+        ax.axhline(0.0, color="black", linewidth=0.7, alpha=0.35)
+        ax.set_ylabel(ylabel if ylabel is not None else key)
+        ax.set_title(_state_label(labels, key))
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc="upper right")
+
+    axes[-1].set_xlabel("Time [s]")
+    if title is not None:
+        fig.suptitle(title)
+    fig.tight_layout()
+
+    if show:
+        plt.show()
+
+    return fig, axes
+
+def plot_state_spectra(
+    results,
+    keys,
+    *,
+    transforms=None,
+    labels=None,
+    ylabel=None,
+    title=None,
+    max_frequency_hz=None,
+    window="hann",
+    demean=True,
+    figsize=None,
+    show=True,
+    data_slice=None,
+):
+    plot_slice = _as_plot_slice(data_slice)
+    time = _state_time(results, plot_slice)
+    keys = _as_state_keys(keys)
+    if figsize is None:
+        figsize = _default_state_figsize(len(keys))
+
+    fig, axes = plt.subplots(len(keys), 1, sharex=True, figsize=figsize)
+    axes = _as_axes_list(axes)
+
+    for ax, key in zip(axes, keys):
+        values = _state_values(
+            results,
+            key,
+            plot_slice,
+            transforms=transforms,
+        )
+        frequency_hz, amplitude = _frequency_spectrum(
+            time,
+            values,
+            window=window,
+            demean=demean,
+        )
+        mask = np.ones_like(frequency_hz, dtype=bool)
+        if max_frequency_hz is not None:
+            mask = frequency_hz <= max_frequency_hz
+
+        ax.plot(
+            frequency_hz[mask],
+            amplitude[mask],
+            linewidth=1.0,
+            label=_state_label(labels, key),
+        )
+        ax.set_ylabel(ylabel if ylabel is not None else "Amplitude")
+        ax.set_title(_state_label(labels, key))
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc="upper right")
+
+    axes[-1].set_xlabel("Frequency [Hz]")
+    if title is not None:
+        fig.suptitle(title)
     fig.tight_layout()
 
     if show:

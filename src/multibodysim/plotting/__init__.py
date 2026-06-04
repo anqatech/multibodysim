@@ -8,6 +8,8 @@ from .simulation_plots import (
     plot_energy_diagnostics,
     plot_nadir_angle_error,
     plot_control_torques,
+    plot_state_envelopes,
+    plot_state_spectra,
 )
 
 __all__ = [
@@ -20,4 +22,6 @@ __all__ = [
     "plot_energy_diagnostics",
     "plot_nadir_angle_error",
     "plot_control_torques",
+    "plot_state_envelopes",
+    "plot_state_spectra",
 ]
