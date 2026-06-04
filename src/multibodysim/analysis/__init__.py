@@ -5,6 +5,7 @@ from .simulation_metrics import (
     compute_angular_momentum_diagnostics,
     compute_energy_diagnostics,
     diagnostic_context_from_simulator,
+    initial_strain_energy_by_panel,
     simulation_diagnostics,
     simulation_diagnostics_table,
 )
@@ -18,6 +19,7 @@ __all__ = [
     "compute_angular_momentum_diagnostics",
     "compute_energy_diagnostics",
     "diagnostic_context_from_simulator",
+    "initial_strain_energy_by_panel",
     "simulation_diagnostics",
     "simulation_diagnostics_table",
 ]

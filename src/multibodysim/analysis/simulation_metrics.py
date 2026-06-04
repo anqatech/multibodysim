@@ -22,6 +22,105 @@ def diagnostic_context_from_simulator(simulator: Any) -> MultiAngleDiagnosticCon
     )
 
 
+def initial_strain_energy_by_panel(
+    context: MultiAngleDiagnosticContext,
+    initial_state: np.ndarray,
+):
+    _require_multiangle_diagnostic_context(
+        context,
+        "initial_strain_energy_by_panel",
+    )
+
+    try:
+        import pandas as pd
+    except ImportError as exc:  # pragma: no cover - depends on local environment
+        raise ImportError(
+            "initial_strain_energy_by_panel requires pandas. "
+            "Install the package with the dev extras or install pandas."
+        ) from exc
+
+    dyn = context.dynamics
+    state = np.asarray(initial_state, dtype=float)
+    q = state[: dyn.state_dimension]
+    u = state[dyn.state_dimension :]
+    parameter_values = context.parameter_values
+    parameters = list(dyn.parameter_symbols.values())
+
+    rows = []
+    for panel in getattr(dyn, "outer_flexible_panels", []):
+        expression = dyn._outer_panel_modal_strain_energy(panel)
+        strain_energy = _evaluate_strain_expression(
+            dyn,
+            expression,
+            q,
+            u,
+            parameters,
+            parameter_values,
+        )
+        rows.append(
+            {
+                "panel": panel,
+                "panel_kind": "outer_modal",
+                "strain_energy_mJ": 1e3 * strain_energy,
+            }
+        )
+
+    for panel in getattr(dyn, "inter_bus_flexible_panels", []):
+        stiffness_matrix = dyn.boundary_compatible_stiffness_matrices[panel]
+        element_coordinates = dyn.element_coordinates[panel]
+        expression = sm.Rational(1, 2) * (
+            element_coordinates.T * stiffness_matrix * element_coordinates
+        )[0]
+        strain_energy = _evaluate_strain_expression(
+            dyn,
+            expression,
+            q,
+            u,
+            parameters,
+            parameter_values,
+        )
+        rows.append(
+            {
+                "panel": panel,
+                "panel_kind": "boundary_compatible",
+                "strain_energy_mJ": 1e3 * strain_energy,
+            }
+        )
+
+    total_mJ = sum(row["strain_energy_mJ"] for row in rows)
+    rows.append(
+        {
+            "panel": "total",
+            "panel_kind": "total",
+            "strain_energy_mJ": total_mJ,
+        }
+    )
+
+    return pd.DataFrame(rows)
+
+
+def _evaluate_strain_expression(
+    dyn,
+    expression,
+    q,
+    u,
+    parameters,
+    parameter_values,
+) -> float:
+    energy_function = sm.lambdify(
+        (dyn.q, dyn.u, parameters),
+        expression,
+        "numpy",
+        cse=True,
+    )
+    return float(
+        np.asarray(
+            energy_function(q, u, parameter_values),
+            dtype=float,
+        )
+    )
+
+
 def _vector_from_matrix(components, frame):
     return (
         components[0] * frame.x

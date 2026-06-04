@@ -9,6 +9,7 @@ from multibodysim.analysis import (
     compute_angular_momentum_diagnostics,
     compute_energy_diagnostics,
     diagnostic_context_from_simulator,
+    initial_strain_energy_by_panel,
     simulation_diagnostics,
     simulation_diagnostics_table,
 )
@@ -199,6 +200,60 @@ def test_compute_energy_diagnostics_uses_context_torque_values():
     energy = compute_energy_diagnostics(context, results)
 
     np.testing.assert_allclose(energy["kinetic"], [27.0])
+
+
+def test_initial_strain_energy_by_panel_returns_panel_rows_and_total():
+    class FakePanelDynamics:
+        def __init__(self):
+            q1, q2 = sm.symbols("q1 q2")
+            self.q = sm.Matrix([q1, q2])
+            self.u = sm.Matrix([])
+            self.state_dimension = 2
+            self.parameter_symbols = {}
+            self.outer_flexible_panels = ["panel_outer"]
+            self.inter_bus_flexible_panels = ["panel_inner"]
+            self.boundary_compatible_stiffness_matrices = {
+                "panel_inner": sm.Matrix([[4.0, 1.0], [1.0, 6.0]]),
+            }
+            self.element_coordinates = {
+                "panel_inner": sm.Matrix([q1, q2]),
+            }
+
+        def _outer_panel_modal_strain_energy(self, panel):
+            assert panel == "panel_outer"
+            return sm.Rational(1, 2) * 10.0 * self.q[0] ** 2
+
+    context = MultiAngleDiagnosticContext(
+        dynamics=FakePanelDynamics(),
+        parameter_values=np.array([]),
+        torque_values=np.array([]),
+    )
+
+    strain_energy = initial_strain_energy_by_panel(
+        context,
+        np.array([2.0, 3.0]),
+    )
+
+    assert strain_energy["panel"].to_list() == [
+        "panel_outer",
+        "panel_inner",
+        "total",
+    ]
+    assert strain_energy["panel_kind"].to_list() == [
+        "outer_modal",
+        "boundary_compatible",
+        "total",
+    ]
+    assert "strain_energy_J" not in strain_energy
+    np.testing.assert_allclose(
+        strain_energy["strain_energy_mJ"],
+        [20_000.0, 41_000.0, 61_000.0],
+    )
+
+
+def test_initial_strain_energy_by_panel_rejects_simulator_object():
+    with np.testing.assert_raises(TypeError):
+        initial_strain_energy_by_panel(FakeSimulator(), np.array([1.0, 2.0]))
 
 
 def test_simulation_diagnostics_computes_attitude_and_flexible_metrics():
