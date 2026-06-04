@@ -83,6 +83,18 @@ def test_plot_states_accepts_data_slice():
     plt.close(fig)
 
 
+def test_plot_states_accepts_title():
+    fig, _ = plot_planar_states(
+        motion_results(),
+        show=False,
+        title="Planar state title",
+    )
+
+    assert fig._suptitle.get_text() == "Planar state title"
+
+    plt.close(fig)
+
+
 def test_plot_speeds_converts_angular_speed_to_degrees():
     fig, axes = plot_planar_speeds(motion_results(), show=False)
 
@@ -104,6 +116,18 @@ def test_plot_speeds_accepts_data_slice():
 
     assert np.allclose(axes[0].lines[0].get_xdata(), np.array([0.0, 1_000.0]))
     assert np.allclose(axes[2].lines[0].get_ydata(), np.array([0.0, 1.0]))
+
+    plt.close(fig)
+
+
+def test_plot_speeds_accepts_title():
+    fig, _ = plot_planar_speeds(
+        motion_results(),
+        show=False,
+        title="Planar speed title",
+    )
+
+    assert fig._suptitle.get_text() == "Planar speed title"
 
     plt.close(fig)
 
@@ -163,6 +187,18 @@ def test_plot_relative_attitude_states_accepts_data_slice():
     assert np.allclose(axes[0].lines[0].get_xdata(), np.array([1_000.0, 2_000.0]))
     assert np.allclose(axes[0].lines[0].get_ydata(), np.rad2deg([0.2, 0.3]))
     assert np.allclose(axes[1].lines[0].get_ydata(), np.rad2deg([0.02, 0.03]))
+
+    plt.close(fig)
+
+
+def test_plot_relative_attitude_states_accepts_title():
+    fig, _ = plot_relative_attitude_states(
+        multiangle_motion_results(),
+        show=False,
+        title="Relative attitude title",
+    )
+
+    assert fig._suptitle.get_text() == "Relative attitude title"
 
     plt.close(fig)
 
@@ -230,6 +266,22 @@ def test_plot_flexible_modes_handles_single_coordinate():
     plt.close(fig)
 
 
+def test_plot_flexible_modes_accepts_title():
+    results = {"time": np.array([0.0, 1.0]), "eta1_1": np.array([0.0, 0.1])}
+
+    fig, _ = plot_flexible_modes(
+        results,
+        eta_keys=["eta1_1"],
+        zeta_keys=[],
+        show=False,
+        title="Flexible mode title",
+    )
+
+    assert fig._suptitle.get_text() == "Flexible mode title"
+
+    plt.close(fig)
+
+
 def test_plot_flexible_modes_requires_flexible_coordinates():
     with pytest.raises(ValueError, match="No flexible coordinates"):
         plot_flexible_modes({"time": np.array([0.0])}, show=False)
@@ -281,6 +333,19 @@ def test_plot_nadir_angle_error_accepts_data_slice():
     plt.close(fig)
 
 
+def test_plot_nadir_angle_error_accepts_title():
+    fig, ax = plot_nadir_angle_error(
+        motion_results(),
+        axis="y",
+        show=False,
+        title="Nadir title",
+    )
+
+    assert ax.get_title() == "Nadir title"
+
+    plt.close(fig)
+
+
 def test_plot_control_torques_returns_figure_and_axes():
     results = {
         "time": np.array([0.0, 1.0, 2.0]),
@@ -294,6 +359,24 @@ def test_plot_control_torques_returns_figure_and_axes():
     assert axes[0].get_ylabel() == "PD torque [N.m]"
     assert axes[1].get_ylabel() == "FF torque [N.m]"
     assert axes[1].get_xlabel() == "Time [s]"
+
+    plt.close(fig)
+
+
+def test_plot_control_torques_accepts_title():
+    results = {
+        "time": np.array([0.0, 1.0, 2.0]),
+        "tau_PD": np.array([0.0, 0.1, 0.0]),
+        "tau_FF": np.array([0.0, 0.0, 0.0]),
+    }
+
+    fig, _ = plot_control_torques(
+        results,
+        show=False,
+        title="Control torque title",
+    )
+
+    assert fig._suptitle.get_text() == "Control torque title"
 
     plt.close(fig)
 

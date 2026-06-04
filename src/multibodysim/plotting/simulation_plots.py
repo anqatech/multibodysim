@@ -170,7 +170,21 @@ def _relative_attitude_keys(results):
 
     return angle_keys, speed_keys
 
-def plot_planar_states(results, figsize=(10, 5), show=True, data_slice=None):
+def _tight_layout_with_title(fig, title=None):
+    if title is not None:
+        fig.suptitle(title)
+        fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.95))
+        return
+
+    fig.tight_layout()
+
+def plot_planar_states(
+    results,
+    figsize=(10, 5),
+    show=True,
+    data_slice=None,
+    title=None,
+):
     plot_slice = _as_plot_slice(data_slice)
     ts = results["time"][plot_slice]
     q1_km = results["q1"][plot_slice] / 1e3
@@ -197,7 +211,7 @@ def plot_planar_states(results, figsize=(10, 5), show=True, data_slice=None):
     _format_large_number_axes(axes[1])
     axes[2].ticklabel_format(axis="y", style="plain", useOffset=False)
 
-    fig.tight_layout()
+    _tight_layout_with_title(fig, title=title)
 
     if show:
         plt.show()
@@ -211,6 +225,7 @@ def plot_relative_attitude_states(
     figsize=(10, 5),
     show=True,
     data_slice=None,
+    title=None,
 ):
     plot_slice = _as_plot_slice(data_slice)
     ts = results["time"][plot_slice]
@@ -244,14 +259,20 @@ def plot_relative_attitude_states(
     axes[1].grid(True)
     axes[1].xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{int(x):,}"))
 
-    fig.tight_layout()
+    _tight_layout_with_title(fig, title=title)
 
     if show:
         plt.show()
 
     return fig, axes
 
-def plot_planar_speeds(results, figsize=(10, 5), show=True, data_slice=None):
+def plot_planar_speeds(
+    results,
+    figsize=(10, 5),
+    show=True,
+    data_slice=None,
+    title=None,
+):
     plot_slice = _as_plot_slice(data_slice)
     ts = results["time"][plot_slice]
     angular_speed_key = _angular_speed_key(results)
@@ -274,7 +295,7 @@ def plot_planar_speeds(results, figsize=(10, 5), show=True, data_slice=None):
     _format_large_number_axes(axes[0])
     _format_large_number_axes(axes[1])
 
-    fig.tight_layout()
+    _tight_layout_with_title(fig, title=title)
 
     if show:
         plt.show()
@@ -288,6 +309,7 @@ def plot_flexible_modes(
     figsize=(10, 8),
     show=True,
     data_slice=None,
+    title=None,
 ):
     plot_slice = _as_plot_slice(data_slice)
     ts = results["time"][plot_slice]
@@ -320,7 +342,7 @@ def plot_flexible_modes(
 
     axes[-1].set_xlabel("Time [s]")
 
-    fig.tight_layout()
+    _tight_layout_with_title(fig, title=title)
 
     if show:
         plt.show()
@@ -475,7 +497,14 @@ def compute_nadir_angle_error(results, axis="x"):
 
     return wrap_to_pi(alpha_body - alpha_nadir)
 
-def plot_nadir_angle_error(results, axis="x", figsize=(10, 3), show=True, data_slice=None):
+def plot_nadir_angle_error(
+    results,
+    axis="x",
+    figsize=(10, 3),
+    show=True,
+    data_slice=None,
+    title=None,
+):
     plot_slice = _as_plot_slice(data_slice)
     ts = results["time"][plot_slice]
     delta = compute_nadir_angle_error(results, axis=axis)[plot_slice]
@@ -485,7 +514,9 @@ def plot_nadir_angle_error(results, axis="x", figsize=(10, 3), show=True, data_s
     ax.plot(ts, np.rad2deg(delta))
     ax.set_xlabel("Time [s]")
     ax.set_ylabel(f"$\\delta_{axis}$ [deg]")
-    ax.set_title(f"Body {axis}-axis relative to nadir")
+    if title is None:
+        title = f"Body {axis}-axis relative to nadir"
+    ax.set_title(title)
     ax.grid(True)
     ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{int(x):,}"))
 
@@ -496,7 +527,13 @@ def plot_nadir_angle_error(results, axis="x", figsize=(10, 3), show=True, data_s
 
     return fig, ax
 
-def plot_control_torques(results, figsize=(10, 5), show=True, data_slice=None):
+def plot_control_torques(
+    results,
+    figsize=(10, 5),
+    show=True,
+    data_slice=None,
+    title=None,
+):
     plot_slice = _as_plot_slice(data_slice)
     ts = results["time"][plot_slice]
 
@@ -513,7 +550,7 @@ def plot_control_torques(results, figsize=(10, 5), show=True, data_slice=None):
     axes[1].legend(["tau_FF"])
     axes[1].grid(True)
 
-    fig.tight_layout()
+    _tight_layout_with_title(fig, title=title)
 
     if show:
         plt.show()
