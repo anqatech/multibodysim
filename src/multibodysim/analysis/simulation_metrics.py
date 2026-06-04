@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
+import pandas as pd
 import sympy as sm
 
 
@@ -30,14 +31,6 @@ def initial_strain_energy_by_panel(
         context,
         "initial_strain_energy_by_panel",
     )
-
-    try:
-        import pandas as pd
-    except ImportError as exc:  # pragma: no cover - depends on local environment
-        raise ImportError(
-            "initial_strain_energy_by_panel requires pandas. "
-            "Install the package with the dev extras or install pandas."
-        ) from exc
 
     dyn = context.dynamics
     state = np.asarray(initial_state, dtype=float)
@@ -247,14 +240,6 @@ def compute_angular_momentum_diagnostics(
     if quadrature_points < 1:
         raise ValueError("quadrature_points must be >= 1.")
 
-    try:
-        import pandas as pd
-    except ImportError as exc:  # pragma: no cover - depends on local environment
-        raise ImportError(
-            "compute_angular_momentum_diagnostics requires pandas. "
-            "Install the package with the dev extras or install pandas."
-        ) from exc
-
     funcs = _build_angular_momentum_functions(
         context,
         quadrature_points=quadrature_points,
@@ -328,14 +313,6 @@ def compute_energy_diagnostics(
 
     if sample_every < 1:
         raise ValueError("sample_every must be >= 1.")
-
-    try:
-        import pandas as pd
-    except ImportError as exc:  # pragma: no cover - depends on local environment
-        raise ImportError(
-            "compute_energy_diagnostics requires pandas. "
-            "Install the package with the dev extras or install pandas."
-        ) from exc
 
     dyn = context.dynamics
     parameter_values = context.parameter_values
