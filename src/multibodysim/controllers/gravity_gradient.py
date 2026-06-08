@@ -1,0 +1,272 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+
+from ..codegen import prepare_autowrap_gravity_gradient_evaluator
+
+
+@dataclass(frozen=True)
+class GravityGradientCompensationResult:
+    q: np.ndarray
+    u: np.ndarray
+    torque_weights: np.ndarray
+    central_speed_index: int
+    mass_matrix: np.ndarray
+    gravity_gradient_generalised_forces: np.ndarray
+    control_generalised_force_direction: np.ndarray
+    gravity_gradient_acceleration: np.ndarray
+    unit_control_acceleration: np.ndarray
+    central_gravity_gradient_acceleration: float
+    control_effectiveness: float
+    effective_attitude_inertia: float
+    equivalent_gravity_gradient_torque: float
+    cancellation_torque: float
+    central_cancellation_residual_acceleration: float
+
+
+class GravityGradientCompensator:
+    """Evaluate gravity-gradient loading in a scalar control channel."""
+
+    def __init__(
+        self,
+        dynamics: Any,
+        plant_view: Any,
+        torque_weights: np.ndarray,
+        *,
+        cache_root: Path | None = None,
+        prepared_evaluator: dict | None = None,
+    ):
+        self.dynamics = dynamics
+        self.plant_view = plant_view
+        self.torque_weights = self._normalise_torque_weights(torque_weights)
+        self.central_speed_index = self._central_speed_index()
+        self.prepared_evaluator = self._prepare_evaluator(
+            cache_root=cache_root,
+            prepared_evaluator=prepared_evaluator,
+        )
+
+    @property
+    def evaluator_metadata(self):
+        return self.prepared_evaluator.get("metadata")
+
+    @property
+    def evaluator_timing(self):
+        return self.prepared_evaluator.get("timing")
+
+    @property
+    def evaluator_artifact_dir(self):
+        return self.prepared_evaluator.get("artifact_dir")
+
+    def evaluate(
+        self,
+        q: np.ndarray,
+        u: np.ndarray,
+    ) -> GravityGradientCompensationResult:
+        q_values = self._state_vector(q, "q")
+        u_values = self._state_vector(u, "u")
+
+        gravity_gradient_forces = self._column_vector(
+            self.prepared_evaluator["function"](q_values),
+            "gravity-gradient evaluator output",
+        )
+
+        zero_torques = np.zeros(
+            len(self.dynamics.rigid_body_names),
+            dtype=float,
+        )
+        mass_matrix, zero_torque_forcing = self._evaluate_differentials(
+            q_values,
+            u_values,
+            zero_torques,
+        )
+        unit_mass_matrix, unit_control_forcing = (
+            self._evaluate_differentials(
+                q_values,
+                u_values,
+                self.torque_weights,
+            )
+        )
+
+        if not np.allclose(
+            mass_matrix,
+            unit_mass_matrix,
+            rtol=1e-12,
+            atol=1e-12,
+        ):
+            raise RuntimeError(
+                "The differential mass matrix changed with applied torque; "
+                "the numerical forcing difference cannot be interpreted "
+                "as B(q)."
+            )
+
+        control_direction = unit_control_forcing - zero_torque_forcing
+        gravity_gradient_acceleration = np.linalg.solve(
+            mass_matrix,
+            gravity_gradient_forces,
+        )
+        unit_control_acceleration = np.linalg.solve(
+            mass_matrix,
+            control_direction,
+        )
+
+        central_gg_acceleration = float(
+            gravity_gradient_acceleration[self.central_speed_index, 0]
+        )
+        control_effectiveness = float(
+            unit_control_acceleration[self.central_speed_index, 0]
+        )
+        if abs(control_effectiveness) <= np.finfo(float).eps:
+            raise ValueError(
+                "The selected torque weights have zero central-attitude "
+                "control effectiveness at this state."
+            )
+
+        effective_attitude_inertia = 1.0 / control_effectiveness
+        equivalent_gg_torque = (
+            central_gg_acceleration / control_effectiveness
+        )
+        cancellation_torque = -equivalent_gg_torque
+        cancellation_acceleration = np.linalg.solve(
+            mass_matrix,
+            gravity_gradient_forces
+            + cancellation_torque * control_direction,
+        )
+        central_cancellation_residual = float(
+            cancellation_acceleration[self.central_speed_index, 0]
+        )
+
+        return GravityGradientCompensationResult(
+            q=q_values.copy(),
+            u=u_values.copy(),
+            torque_weights=self.torque_weights.copy(),
+            central_speed_index=self.central_speed_index,
+            mass_matrix=mass_matrix,
+            gravity_gradient_generalised_forces=gravity_gradient_forces,
+            control_generalised_force_direction=control_direction,
+            gravity_gradient_acceleration=gravity_gradient_acceleration,
+            unit_control_acceleration=unit_control_acceleration,
+            central_gravity_gradient_acceleration=central_gg_acceleration,
+            control_effectiveness=control_effectiveness,
+            effective_attitude_inertia=effective_attitude_inertia,
+            equivalent_gravity_gradient_torque=equivalent_gg_torque,
+            cancellation_torque=cancellation_torque,
+            central_cancellation_residual_acceleration=(
+                central_cancellation_residual
+            ),
+        )
+
+    def _prepare_evaluator(
+        self,
+        *,
+        cache_root: Path | None,
+        prepared_evaluator: dict | None,
+    ) -> dict:
+        if not getattr(self.dynamics, "enable_gravity_gradient", False):
+            raise ValueError(
+                "GravityGradientCompensator requires "
+                "enable_gravity_gradient=True."
+            )
+        if getattr(self.dynamics, "_eval_differentials", None) is None:
+            raise RuntimeError(
+                "The differential evaluator must be prepared before creating "
+                "GravityGradientCompensator."
+            )
+
+        if prepared_evaluator is None:
+            prepared_evaluator = (
+                prepare_autowrap_gravity_gradient_evaluator(
+                    self.dynamics,
+                    cache_root=cache_root,
+                )
+            )
+        if not isinstance(prepared_evaluator, dict):
+            raise TypeError(
+                "prepared_evaluator must be a prepared evaluator dictionary."
+            )
+        if not callable(prepared_evaluator.get("function")):
+            raise ValueError(
+                "prepared_evaluator must contain a callable 'function'."
+            )
+        return prepared_evaluator
+
+    def _normalise_torque_weights(
+        self,
+        torque_weights: np.ndarray,
+    ) -> np.ndarray:
+        weights = np.asarray(torque_weights, dtype=float).reshape(-1)
+        expected_size = len(self.dynamics.rigid_body_names)
+        if weights.size != expected_size:
+            raise ValueError(
+                f"torque_weights must contain {expected_size} values; "
+                f"got {weights.size}."
+            )
+        if not np.all(np.isfinite(weights)):
+            raise ValueError(
+                "torque_weights must contain only finite values."
+            )
+        if not np.any(weights):
+            raise ValueError(
+                "torque_weights must define a non-zero control direction."
+            )
+        return weights.copy()
+
+    def _central_speed_index(self) -> int:
+        index = int(self.plant_view.i_theta_u)
+        if not 0 <= index < self.dynamics.state_dimension:
+            raise ValueError(
+                "The plant view has an invalid central-speed index."
+            )
+        return index
+
+    def _state_vector(
+        self,
+        values: np.ndarray,
+        name: str,
+    ) -> np.ndarray:
+        vector = np.asarray(values, dtype=float).reshape(-1)
+        expected_size = self.dynamics.state_dimension
+        if vector.size != expected_size:
+            raise ValueError(
+                f"{name} must contain {expected_size} values; "
+                f"got {vector.size}."
+            )
+        if not np.all(np.isfinite(vector)):
+            raise ValueError(f"{name} must contain only finite values.")
+        return vector
+
+    def _evaluate_differentials(self, q, u, torques):
+        mass_matrix, forcing = self.dynamics._eval_differentials(
+            q,
+            u,
+            torques,
+        )
+        state_dimension = self.dynamics.state_dimension
+        mass_matrix = np.asarray(mass_matrix, dtype=float)
+        if mass_matrix.shape != (state_dimension, state_dimension):
+            raise ValueError(
+                "The differential evaluator returned mass matrix shape "
+                f"{mass_matrix.shape}; expected "
+                f"({state_dimension}, {state_dimension})."
+            )
+        forcing = self._column_vector(
+            forcing,
+            "differential forcing",
+        )
+        return mass_matrix, forcing
+
+    def _column_vector(self, values, name: str) -> np.ndarray:
+        vector = np.asarray(values, dtype=float)
+        expected_size = self.dynamics.state_dimension
+        if vector.size != expected_size:
+            raise ValueError(
+                f"{name} must contain {expected_size} values; "
+                f"got {vector.size}."
+            )
+        vector = vector.reshape(expected_size, 1)
+        if not np.all(np.isfinite(vector)):
+            raise ValueError(f"{name} must contain only finite values.")
+        return vector
