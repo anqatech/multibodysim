@@ -35,3 +35,12 @@ def make_numpy_eval_differentials_reference(dyn):
         ),
         dyn._with_specialised_parameters((dyn.mass_matrix, dyn.forcing)),
     )
+
+
+def make_numpy_eval_gravity_gradient_reference(dyn):
+    return lambdify_numpy_reference(
+        (dyn.q,),
+        dyn._with_specialised_parameters(
+            dyn.gravity_gradient_generalised_forces,
+        ),
+    )

@@ -78,8 +78,42 @@ def symbolic_eval_kinematics_data(dyn) -> dict:
     }
 
 
-def scalar_args_and_replacements(dyn, torques: list) -> tuple[list, dict]:
-    original_args = [*dyn.q, *dyn.u, *torques]
+def symbolic_eval_gravity_gradient_data(dyn) -> dict:
+    scalar_args, replacements = scalar_args_and_replacements(
+        dyn,
+        [],
+        state_symbols=list(dyn.q),
+    )
+
+    gravity_gradient = dyn._with_specialised_parameters(
+        dyn.gravity_gradient_generalised_forces,
+    )
+    gravity_gradient = sm.Matrix(gravity_gradient).xreplace(replacements)
+    output_rows, output_cols = gravity_gradient.shape
+
+    flat_outputs = [
+        gravity_gradient[row, col]
+        for row in range(output_rows)
+        for col in range(output_cols)
+    ]
+
+    return {
+        "scalar_args": scalar_args,
+        "output_shape": (output_rows, output_cols),
+        "flat_outputs": flat_outputs,
+    }
+
+
+def scalar_args_and_replacements(
+    dyn,
+    torques: list,
+    *,
+    state_symbols=None,
+) -> tuple[list, dict]:
+    if state_symbols is None:
+        state_symbols = [*dyn.q, *dyn.u]
+
+    original_args = [*state_symbols, *torques]
     scalar_args = [
         sm.Symbol(safe_scalar_name(symbol, index))
         for index, symbol in enumerate(original_args)
@@ -123,3 +157,14 @@ def wrap_flat_autowrap_kinematics_function(function, data: dict):
         return kinematic_matrix, kinematic_forcing
 
     return eval_kinematics_autowrap
+
+
+def wrap_flat_autowrap_gravity_gradient_function(function, data: dict):
+    output_shape = data["output_shape"]
+
+    def eval_gravity_gradient_autowrap(q):
+        values = np.asarray(q, dtype=float).reshape(-1)
+        flat_output = np.asarray(function(*values), dtype=float).reshape(-1)
+        return flat_output.reshape(output_shape)
+
+    return eval_gravity_gradient_autowrap

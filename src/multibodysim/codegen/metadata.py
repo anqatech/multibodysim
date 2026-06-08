@@ -62,6 +62,18 @@ def autowrap_eval_kinematics_cache_metadata(dyn) -> dict:
     )
 
 
+def autowrap_eval_gravity_gradient_cache_metadata(dyn) -> dict:
+    return _autowrap_evaluator_cache_metadata(
+        dyn,
+        evaluator_name="eval_gravity_gradient",
+        output_shapes={
+            "gravity_gradient_shape": list(
+                sm.Matrix(dyn.gravity_gradient_generalised_forces).shape
+            ),
+        },
+    )
+
+
 def _autowrap_evaluator_cache_metadata(
     dyn,
     *,
@@ -130,3 +142,7 @@ def autowrap_eval_differentials_cache_key(dyn) -> str:
 
 def autowrap_eval_kinematics_cache_key(dyn) -> str:
     return autowrap_eval_kinematics_cache_metadata(dyn)["cache_key"]
+
+
+def autowrap_eval_gravity_gradient_cache_key(dyn) -> str:
+    return autowrap_eval_gravity_gradient_cache_metadata(dyn)["cache_key"]

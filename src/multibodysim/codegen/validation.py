@@ -4,6 +4,7 @@ import numpy as np
 
 from .reference import (
     make_numpy_eval_differentials_reference,
+    make_numpy_eval_gravity_gradient_reference,
     make_numpy_eval_kinematics_reference,
 )
 
@@ -151,6 +152,80 @@ def validate_eval_kinematics_candidate(
         "max_matrix_difference": max_matrix_difference,
         "max_forcing_difference": max_forcing_difference,
         "max_solve_difference": max_solve_difference,
+    }
+
+
+def validate_gravity_gradient_candidate(
+    dyn,
+    candidate,
+    *,
+    reference=None,
+    tolerance: float = 1e-8,
+) -> dict:
+    if reference is None:
+        reference = make_numpy_eval_gravity_gradient_reference(dyn)
+
+    initial_state = dyn.get_initial_conditions(verbose=False)
+    n = dyn.state_dimension
+    samples = [initial_state[:n]]
+
+    q_perturbed = initial_state[:n].copy()
+    q_perturbed += np.linspace(-1e-7, 1e-7, n)
+    samples.append(q_perturbed)
+
+    max_absolute_difference = 0.0
+    for q_values in samples:
+        reference_output = np.asarray(
+            reference(q_values),
+            dtype=float,
+        ).reshape(n, 1)
+        candidate_output = np.asarray(
+            candidate(q_values),
+            dtype=float,
+        ).reshape(n, 1)
+        max_absolute_difference = max(
+            max_absolute_difference,
+            float(np.max(np.abs(reference_output - candidate_output))),
+        )
+
+    return {
+        "success": max_absolute_difference < tolerance,
+        "tolerance": tolerance,
+        "max_absolute_difference": max_absolute_difference,
+    }
+
+
+def validate_autowrap_gravity_gradient_evaluator(
+    dyn,
+    *,
+    cache_root=None,
+    tolerance: float = 1e-8,
+) -> dict:
+    if not dyn.enable_gravity_gradient:
+        raise ValueError(
+            "Gravity-gradient evaluator validation requires "
+            "enable_gravity_gradient=True."
+        )
+
+    from .preparation import prepare_autowrap_gravity_gradient_evaluator
+
+    candidate = prepare_autowrap_gravity_gradient_evaluator(
+        dyn,
+        cache_root=cache_root,
+    )
+    validation = validate_gravity_gradient_candidate(
+        dyn,
+        candidate["function"],
+        tolerance=tolerance,
+    )
+
+    return {
+        "success": validation["success"],
+        "tolerance": tolerance,
+        "artifact_dir": candidate.get("artifact_dir"),
+        "metadata": candidate.get("metadata"),
+        "timing": candidate.get("timing"),
+        "validation": validation,
     }
 
 

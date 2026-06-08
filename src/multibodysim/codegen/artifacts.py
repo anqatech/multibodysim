@@ -9,6 +9,7 @@ from types import ModuleType
 from .constants import GENERATED_EVALUATOR_ROOT, METADATA_FILENAME
 from .metadata import (
     autowrap_eval_differentials_cache_key,
+    autowrap_eval_gravity_gradient_cache_key,
     autowrap_eval_kinematics_cache_key,
     make_json_serialisable,
 )
@@ -32,6 +33,17 @@ def autowrap_eval_kinematics_artifact_dir(
     return autowrap_evaluator_artifact_dir(
         "autowrap_eval_kinematics",
         autowrap_eval_kinematics_cache_key(dyn),
+        cache_root=cache_root,
+    )
+
+
+def autowrap_eval_gravity_gradient_artifact_dir(
+    dyn,
+    cache_root: Path | None = None,
+) -> Path:
+    return autowrap_evaluator_artifact_dir(
+        "autowrap_eval_gravity_gradient",
+        autowrap_eval_gravity_gradient_cache_key(dyn),
         cache_root=cache_root,
     )
 
