@@ -2,11 +2,19 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+import sympy as sm
 
 from multibodysim.analysis import gravity_gradient_control_diagnostic
 from multibodysim.controllers.gravity_gradient import (
     GravityGradientCompensationResult,
     GravityGradientCompensator,
+    ReferenceGravityGradientCompensationResult,
+    ReferenceGravityGradientCompensator,
+)
+from multibodysim.references import (
+    InertialRestToRestReference,
+    MultiAngleReferenceBuilder,
+    PlanarKeplerianReference,
 )
 
 
@@ -231,3 +239,148 @@ def test_control_module_does_not_depend_on_analysis():
 
     assert "multibodysim.analysis" not in source
     assert "..analysis" not in source
+
+
+class ReferenceDynamics(FakeDynamics):
+    def __init__(self):
+        self.enable_gravity_gradient = True
+        self.state_dimension = 3
+        self.rigid_body_names = ["bus_1", "bus_2"]
+        self._eval_differentials = self.eval_differentials
+        self.q1, self.q2, self.theta = sm.symbols(
+            "q1 q2 q_central_angle"
+        )
+        self.u1, self.u2, self.omega = sm.symbols(
+            "u1 u2 u_central_angle"
+        )
+        self.q = sm.Matrix([self.q1, self.q2, self.theta])
+        self.u = sm.Matrix([self.u1, self.u2, self.omega])
+        self.q_translation = {"x": self.q1, "y": self.q2}
+        self.u_translation = {"x": self.u1, "y": self.u2}
+        self.central_angle = self.theta
+        self.central_speed = self.omega
+
+    @staticmethod
+    def rG_func(q, u):
+        del u
+        return np.array([[q[0]], [q[1]], [0.0]])
+
+    @staticmethod
+    def vG_func(q, u):
+        del q
+        return np.array([[u[0]], [u[1]], [0.0]])
+
+    @staticmethod
+    def eval_differentials(q, u, torques):
+        del u
+        mass_matrix = np.diag([2.0, 3.0, 4.0])
+        torque_map = np.array(
+            [
+                [0.0, 0.0],
+                [0.0, 0.0],
+                [1.0 + 0.1 * q[2], 2.0],
+            ]
+        )
+        forcing = torque_map @ np.asarray(
+            torques,
+            dtype=float,
+        ).reshape(2, 1)
+        return mass_matrix, forcing
+
+
+class ReferencePlantView:
+    i_theta_u = 2
+
+
+def prepared_reference_evaluator():
+    return {
+        "success": True,
+        "function": lambda q: np.array(
+            [
+                [0.0],
+                [0.0],
+                [2.0 + q[2]],
+            ]
+        ),
+    }
+
+
+def test_reference_compensator_evaluates_nominal_reference_state():
+    dynamics = ReferenceDynamics()
+    plant_view = ReferencePlantView()
+    orbit = PlanarKeplerianReference(
+        gravitational_parameter=1.0,
+        semi_major_axis=1.0,
+        eccentricity=0.0,
+    )
+    attitude = InertialRestToRestReference(
+        theta_target=0.5,
+        duration=10.0,
+    )
+    attitude.initialise(start_time=0.0, theta_initial=0.1)
+    reference_builder = MultiAngleReferenceBuilder(
+        dynamics,
+        orbit,
+        attitude,
+    )
+    compensator = GravityGradientCompensator(
+        dynamics,
+        plant_view,
+        np.array([0.25, 0.75]),
+        prepared_evaluator=prepared_reference_evaluator(),
+    )
+    reference_compensator = ReferenceGravityGradientCompensator(
+        reference_builder,
+        compensator,
+    )
+
+    result = reference_compensator.evaluate(5.0)
+
+    assert isinstance(
+        result,
+        ReferenceGravityGradientCompensationResult,
+    )
+    assert result.time == 5.0
+    assert np.isclose(result.reference_state.attitude.theta, 0.3)
+    assert result.reference_torque == (
+        result.compensation.equivalent_gravity_gradient_torque
+    )
+    assert result.feedforward_torque == (
+        result.compensation.cancellation_torque
+    )
+    assert result.effective_attitude_inertia == (
+        result.compensation.effective_attitude_inertia
+    )
+    assert result.control_effectiveness == (
+        result.compensation.control_effectiveness
+    )
+    assert np.isclose(
+        result.central_cancellation_residual_acceleration,
+        0.0,
+        atol=1e-15,
+    )
+
+
+def test_reference_compensator_requires_shared_dynamics():
+    first_dynamics = ReferenceDynamics()
+    second_dynamics = ReferenceDynamics()
+    orbit = PlanarKeplerianReference(1.0, 1.0, 0.0)
+    attitude = InertialRestToRestReference(0.5, 10.0)
+    attitude.initialise(start_time=0.0, theta_initial=0.1)
+    reference_builder = MultiAngleReferenceBuilder(
+        first_dynamics,
+        orbit,
+        attitude,
+    )
+    compensator = GravityGradientCompensator(
+        second_dynamics,
+        ReferencePlantView(),
+        np.array([0.25, 0.75]),
+        prepared_evaluator=prepared_reference_evaluator(),
+    )
+
+    with pytest.raises(ValueError, match="same dynamics object"):
+        ReferenceGravityGradientCompensator(
+            reference_builder,
+            compensator,
+        )

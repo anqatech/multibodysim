@@ -7,6 +7,10 @@ from typing import Any
 import numpy as np
 
 from ..codegen import prepare_autowrap_gravity_gradient_evaluator
+from ..references import (
+    MultiAngleReferenceBuilder,
+    MultiAngleReferenceState,
+)
 
 
 @dataclass(frozen=True)
@@ -26,6 +30,33 @@ class GravityGradientCompensationResult:
     equivalent_gravity_gradient_torque: float
     cancellation_torque: float
     central_cancellation_residual_acceleration: float
+
+
+@dataclass(frozen=True)
+class ReferenceGravityGradientCompensationResult:
+    time: float
+    reference_state: MultiAngleReferenceState
+    compensation: GravityGradientCompensationResult
+
+    @property
+    def reference_torque(self) -> float:
+        return self.compensation.equivalent_gravity_gradient_torque
+
+    @property
+    def feedforward_torque(self) -> float:
+        return self.compensation.cancellation_torque
+
+    @property
+    def effective_attitude_inertia(self) -> float:
+        return self.compensation.effective_attitude_inertia
+
+    @property
+    def control_effectiveness(self) -> float:
+        return self.compensation.control_effectiveness
+
+    @property
+    def central_cancellation_residual_acceleration(self) -> float:
+        return self.compensation.central_cancellation_residual_acceleration
 
 
 class GravityGradientCompensator:
@@ -270,3 +301,44 @@ class GravityGradientCompensator:
         if not np.all(np.isfinite(vector)):
             raise ValueError(f"{name} must contain only finite values.")
         return vector
+
+
+class ReferenceGravityGradientCompensator:
+    """Evaluate gravity-gradient feedforward on a nominal reference state."""
+
+    def __init__(
+        self,
+        reference_builder: MultiAngleReferenceBuilder,
+        compensator: GravityGradientCompensator,
+    ):
+        if not isinstance(reference_builder, MultiAngleReferenceBuilder):
+            raise TypeError(
+                "reference_builder must be a MultiAngleReferenceBuilder."
+            )
+        if not isinstance(compensator, GravityGradientCompensator):
+            raise TypeError(
+                "compensator must be a GravityGradientCompensator."
+            )
+        if reference_builder.dynamics is not compensator.dynamics:
+            raise ValueError(
+                "reference_builder and compensator must use the same "
+                "dynamics object."
+            )
+
+        self.reference_builder = reference_builder
+        self.compensator = compensator
+
+    def evaluate(
+        self,
+        t: float,
+    ) -> ReferenceGravityGradientCompensationResult:
+        reference_state = self.reference_builder.evaluate(t)
+        compensation = self.compensator.evaluate(
+            reference_state.q,
+            reference_state.u,
+        )
+        return ReferenceGravityGradientCompensationResult(
+            time=float(t),
+            reference_state=reference_state,
+            compensation=compensation,
+        )
