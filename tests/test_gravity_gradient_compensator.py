@@ -6,10 +6,12 @@ import sympy as sm
 
 from multibodysim.analysis import gravity_gradient_control_diagnostic
 from multibodysim.controllers.gravity_gradient import (
+    GravityGradientStiffnessEstimate,
     GravityGradientCompensationResult,
     GravityGradientCompensator,
     ReferenceGravityGradientCompensationResult,
     ReferenceGravityGradientCompensator,
+    ReferenceGravityGradientStiffnessResult,
 )
 from multibodysim.references import (
     InertialRestToRestReference,
@@ -383,4 +385,118 @@ def test_reference_compensator_requires_shared_dynamics():
         ReferenceGravityGradientCompensator(
             reference_builder,
             compensator,
+        )
+
+
+def test_reference_compensator_estimates_local_stiffness():
+    dynamics = ReferenceDynamics()
+    orbit = PlanarKeplerianReference(1.0, 1.0, 0.0)
+    attitude = InertialRestToRestReference(0.5, 10.0)
+    attitude.initialise(start_time=0.0, theta_initial=0.1)
+    builder = MultiAngleReferenceBuilder(dynamics, orbit, attitude)
+    compensator = GravityGradientCompensator(
+        dynamics,
+        ReferencePlantView(),
+        np.array([0.25, 0.75]),
+        prepared_evaluator=prepared_reference_evaluator(),
+    )
+    reference_compensator = ReferenceGravityGradientCompensator(
+        builder,
+        compensator,
+    )
+
+    result = reference_compensator.evaluate_stiffness(5.0)
+
+    assert isinstance(result, ReferenceGravityGradientStiffnessResult)
+    assert len(result.estimates) == 3
+    assert all(
+        isinstance(estimate, GravityGradientStiffnessEstimate)
+        for estimate in result.estimates
+    )
+    assert result.preferred_delta_theta == 1e-4
+    assert np.isfinite(result.stiffness)
+
+    for estimate in result.estimates:
+        expected = (
+            estimate.plus_torque - estimate.minus_torque
+        ) / (2.0 * estimate.delta_theta)
+        assert np.isclose(estimate.stiffness, expected)
+
+        reference = result.reference_compensation.reference_state
+        minus = estimate.minus_compensation
+        plus = estimate.plus_compensation
+        np.testing.assert_allclose(
+            dynamics.rG_func(minus.q, minus.u).reshape(-1)[:2],
+            reference.centre_of_mass.position,
+        )
+        np.testing.assert_allclose(
+            dynamics.rG_func(plus.q, plus.u).reshape(-1)[:2],
+            reference.centre_of_mass.position,
+        )
+        np.testing.assert_allclose(
+            dynamics.vG_func(minus.q, minus.u).reshape(-1)[:2],
+            reference.centre_of_mass.velocity,
+        )
+        np.testing.assert_allclose(
+            dynamics.vG_func(plus.q, plus.u).reshape(-1)[:2],
+            reference.centre_of_mass.velocity,
+        )
+
+
+@pytest.mark.parametrize(
+    ("perturbations", "message"),
+    [
+        ((), "must not be empty"),
+        ((0.0,), "must be positive"),
+        ((1e-4, 1e-4), "must not contain duplicates"),
+    ],
+)
+def test_reference_stiffness_rejects_invalid_perturbations(
+    perturbations,
+    message,
+):
+    dynamics = ReferenceDynamics()
+    orbit = PlanarKeplerianReference(1.0, 1.0, 0.0)
+    attitude = InertialRestToRestReference(0.5, 10.0)
+    attitude.initialise(start_time=0.0, theta_initial=0.1)
+    builder = MultiAngleReferenceBuilder(dynamics, orbit, attitude)
+    compensator = GravityGradientCompensator(
+        dynamics,
+        ReferencePlantView(),
+        np.array([0.25, 0.75]),
+        prepared_evaluator=prepared_reference_evaluator(),
+    )
+    reference_compensator = ReferenceGravityGradientCompensator(
+        builder,
+        compensator,
+    )
+
+    with pytest.raises(ValueError, match=message):
+        reference_compensator.evaluate_stiffness(
+            5.0,
+            perturbations=perturbations,
+        )
+
+
+def test_reference_stiffness_requires_preferred_perturbation():
+    dynamics = ReferenceDynamics()
+    orbit = PlanarKeplerianReference(1.0, 1.0, 0.0)
+    attitude = InertialRestToRestReference(0.5, 10.0)
+    attitude.initialise(start_time=0.0, theta_initial=0.1)
+    builder = MultiAngleReferenceBuilder(dynamics, orbit, attitude)
+    compensator = GravityGradientCompensator(
+        dynamics,
+        ReferencePlantView(),
+        np.array([0.25, 0.75]),
+        prepared_evaluator=prepared_reference_evaluator(),
+    )
+    reference_compensator = ReferenceGravityGradientCompensator(
+        builder,
+        compensator,
+    )
+
+    with pytest.raises(ValueError, match="must be included"):
+        reference_compensator.evaluate_stiffness(
+            5.0,
+            perturbations=(1e-5, 1e-3),
         )

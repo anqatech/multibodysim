@@ -59,6 +59,41 @@ class ReferenceGravityGradientCompensationResult:
         return self.compensation.central_cancellation_residual_acceleration
 
 
+@dataclass(frozen=True)
+class GravityGradientStiffnessEstimate:
+    delta_theta: float
+    minus_compensation: GravityGradientCompensationResult
+    plus_compensation: GravityGradientCompensationResult
+    stiffness: float
+
+    @property
+    def minus_torque(self) -> float:
+        return (
+            self.minus_compensation.equivalent_gravity_gradient_torque
+        )
+
+    @property
+    def plus_torque(self) -> float:
+        return self.plus_compensation.equivalent_gravity_gradient_torque
+
+
+@dataclass(frozen=True)
+class ReferenceGravityGradientStiffnessResult:
+    time: float
+    reference_compensation: ReferenceGravityGradientCompensationResult
+    estimates: tuple[GravityGradientStiffnessEstimate, ...]
+    preferred_delta_theta: float
+
+    @property
+    def stiffness(self) -> float:
+        for estimate in self.estimates:
+            if estimate.delta_theta == self.preferred_delta_theta:
+                return estimate.stiffness
+        raise RuntimeError(
+            "The preferred stiffness estimate is not available."
+        )
+
+
 class GravityGradientCompensator:
     """Evaluate gravity-gradient loading in a scalar control channel."""
 
@@ -306,6 +341,9 @@ class GravityGradientCompensator:
 class ReferenceGravityGradientCompensator:
     """Evaluate gravity-gradient feedforward on a nominal reference state."""
 
+    DEFAULT_STIFFNESS_PERTURBATIONS = (1e-5, 1e-4, 1e-3)
+    DEFAULT_PREFERRED_PERTURBATION = 1e-4
+
     def __init__(
         self,
         reference_builder: MultiAngleReferenceBuilder,
@@ -342,3 +380,92 @@ class ReferenceGravityGradientCompensator:
             reference_state=reference_state,
             compensation=compensation,
         )
+
+    def evaluate_stiffness(
+        self,
+        t: float,
+        *,
+        perturbations: tuple[float, ...] | None = None,
+        preferred_delta_theta: float = DEFAULT_PREFERRED_PERTURBATION,
+    ) -> ReferenceGravityGradientStiffnessResult:
+        deltas = self._normalise_perturbations(perturbations)
+        preferred_delta = float(preferred_delta_theta)
+        if preferred_delta not in deltas:
+            raise ValueError(
+                "preferred_delta_theta must be included in perturbations."
+            )
+
+        reference_compensation = self.evaluate(t)
+        reference_state = reference_compensation.reference_state
+        estimates = []
+
+        for delta_theta in deltas:
+            minus_compensation = self._evaluate_perturbed_reference(
+                reference_state,
+                -delta_theta,
+            )
+            plus_compensation = self._evaluate_perturbed_reference(
+                reference_state,
+                delta_theta,
+            )
+            stiffness = (
+                plus_compensation.equivalent_gravity_gradient_torque
+                - minus_compensation.equivalent_gravity_gradient_torque
+            ) / (2.0 * delta_theta)
+            estimates.append(
+                GravityGradientStiffnessEstimate(
+                    delta_theta=delta_theta,
+                    minus_compensation=minus_compensation,
+                    plus_compensation=plus_compensation,
+                    stiffness=float(stiffness),
+                )
+            )
+
+        return ReferenceGravityGradientStiffnessResult(
+            time=float(t),
+            reference_compensation=reference_compensation,
+            estimates=tuple(estimates),
+            preferred_delta_theta=preferred_delta,
+        )
+
+    def _evaluate_perturbed_reference(
+        self,
+        reference_state: MultiAngleReferenceState,
+        theta_offset: float,
+    ) -> GravityGradientCompensationResult:
+        q_perturbed = reference_state.q.copy()
+        u_perturbed = reference_state.u.copy()
+        central_index = self.reference_builder.central_angle_index
+        q_perturbed[central_index] += theta_offset
+
+        mapped = self.reference_builder.coordinate_mapper.map(
+            q_perturbed,
+            u_perturbed,
+            centre_of_mass_position=(
+                reference_state.centre_of_mass.position
+            ),
+            centre_of_mass_velocity=(
+                reference_state.centre_of_mass.velocity
+            ),
+        )
+        return self.compensator.evaluate(mapped.q, mapped.u)
+
+    def _normalise_perturbations(
+        self,
+        perturbations: tuple[float, ...] | None,
+    ) -> tuple[float, ...]:
+        if perturbations is None:
+            perturbations = self.DEFAULT_STIFFNESS_PERTURBATIONS
+
+        values = np.asarray(perturbations, dtype=float).reshape(-1)
+        if values.size == 0:
+            raise ValueError("perturbations must not be empty.")
+        if not np.all(np.isfinite(values)):
+            raise ValueError(
+                "perturbations must contain only finite values."
+            )
+        if np.any(values <= 0.0):
+            raise ValueError("perturbations must be positive.")
+        if np.unique(values).size != values.size:
+            raise ValueError("perturbations must not contain duplicates.")
+        return tuple(float(value) for value in values)
