@@ -9,6 +9,10 @@ import sympy.physics.mechanics as me
 from ..beam.cantilever_beam import CantileverBeam
 from ..beam.boundary_compatible_beam import BoundaryCompatibleBeam
 from ..beam.clamped_clamped_beam import ClampedClampedBeam
+from ..references import (
+    MultiAngleCoordinateMapper,
+    PlanarKeplerianReference,
+)
 
 
 class MultiAngleFlexibleDynamics:
@@ -1620,27 +1624,16 @@ class MultiAngleFlexibleDynamics:
         ]
 
     def _kepler_initial_centre_of_mass_state(self):
-        mu = float(self.parameter_values["planet_mu"])
-        a = float(self.parameter_values["orbit_semi_major_axis"])
-        e = float(self.parameter_values["orbit_eccentricity"])
-
-        initial_true_anomaly = 0.0
-        r0 = a * (1.0 - e**2) / (
-            1.0 + e * np.cos(initial_true_anomaly)
+        reference = PlanarKeplerianReference(
+            gravitational_parameter=self.parameter_values["planet_mu"],
+            semi_major_axis=self.parameter_values["orbit_semi_major_axis"],
+            eccentricity=self.parameter_values["orbit_eccentricity"],
         )
-        h = np.sqrt(mu * a * (1.0 - e**2))
-
-        r_G0 = np.array([r0, 0.0, 0.0], dtype=float)
-        v_G0 = np.array(
-            [
-                -(mu / h) * e * np.sin(initial_true_anomaly),
-                (mu / h) * (1.0 + e * np.cos(initial_true_anomaly)),
-                0.0,
-            ],
-            dtype=float,
+        state = reference.evaluate(0.0)
+        return (
+            np.r_[state.position, 0.0],
+            np.r_[state.velocity, 0.0],
         )
-
-        return r_G0, v_G0
 
     def get_initial_conditions(self, verbose=True):
         configured_states = self.config.get("q_initial", {})
@@ -1661,30 +1654,15 @@ class MultiAngleFlexibleDynamics:
             dtype=float,
         )
 
-        q1_index = list(self.q).index(self.q_translation["x"])
-        q2_index = list(self.q).index(self.q_translation["y"])
-        u1_index = list(self.u).index(self.u_translation["x"])
-        u2_index = list(self.u).index(self.u_translation["y"])
-
         r_G0, v_G0 = self._kepler_initial_centre_of_mass_state()
-
-        q_values[q1_index] = 0.0
-        q_values[q2_index] = 0.0
-        r_G_at_origin = np.asarray(
-            self.rG_func(q_values, u_values),
-            dtype=float,
-        ).reshape(3)
-        q_values[q1_index] = r_G0[0] - r_G_at_origin[0]
-        q_values[q2_index] = r_G0[1] - r_G_at_origin[1]
-
-        u_values[u1_index] = 0.0
-        u_values[u2_index] = 0.0
-        v_G_without_translation = np.asarray(
-            self.vG_func(q_values, u_values),
-            dtype=float,
-        ).reshape(3)
-        u_values[u1_index] = v_G0[0] - v_G_without_translation[0]
-        u_values[u2_index] = v_G0[1] - v_G_without_translation[1]
+        mapped_state = MultiAngleCoordinateMapper(self).map(
+            q_values,
+            u_values,
+            centre_of_mass_position=r_G0,
+            centre_of_mass_velocity=v_G0,
+        )
+        q_values = mapped_state.q
+        u_values = mapped_state.u
 
         if verbose:
             print("\nInitial conditions set (with momentum conservation):\n")
