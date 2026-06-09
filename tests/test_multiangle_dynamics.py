@@ -89,6 +89,45 @@ def assert_gravity_gradient_matches_direct_derivative(
         )
 
 
+def rigid_assembly_gravity_gradient_torque(dynamics):
+    """Return the textbook GG torque for the complete rigid assembly."""
+    inertial_frame = dynamics.frames["inertial"]
+    local_vertical = -dynamics.r_G / dynamics.r_G_norm
+    inertia_times_vertical = 0 * inertial_frame.x
+
+    for body in dynamics.body_names:
+        body_frame = dynamics.frames[body]
+        vertical_body = local_vertical.express(body_frame).to_matrix(
+            body_frame
+        )
+        local_components = (
+            dynamics.inertia_matrices[body] * vertical_body
+        )
+        local_inertia_times_vertical = (
+            local_components[0] * body_frame.x
+            + local_components[1] * body_frame.y
+            + local_components[2] * body_frame.z
+        )
+
+        offset = dynamics.inertial_position[body] - dynamics.r_G
+        parallel_axis_times_vertical = dynamics.mass_symbols[body] * (
+            offset.dot(offset) * local_vertical
+            - offset.dot(local_vertical) * offset
+        )
+        inertia_times_vertical += (
+            local_inertia_times_vertical
+            + parallel_axis_times_vertical
+        )
+
+    torque = (
+        3
+        * dynamics.planet_mu
+        / dynamics.r_G_norm**3
+        * local_vertical.cross(inertia_times_vertical)
+    )
+    return torque.dot(inertial_frame.z)
+
+
 def test_multiangle_bus_orientation_convention_for_seven_part_chain(seven_part_dynamics):
     dynamics = seven_part_dynamics
 
@@ -1928,6 +1967,60 @@ def test_multiangle_gravity_gradient_adds_attitude_row_forces_when_enabled(
             row,
             angle_coordinate,
         )
+
+
+def test_multiangle_central_gravity_gradient_matches_rigid_assembly_formula(
+    gravity_gradient_dynamics,
+):
+    dynamics = gravity_gradient_dynamics
+    central_row = list(dynamics.u).index(dynamics.central_speed)
+    actual = dynamics._with_specialised_parameters(
+        dynamics.gravity_gradient_generalised_forces[central_row]
+    )
+    expected = dynamics._with_specialised_parameters(
+        rigid_assembly_gravity_gradient_torque(dynamics)
+    )
+    actual_func = sm.lambdify(
+        dynamics.q,
+        actual,
+        "numpy",
+        cse=True,
+        docstring_limit=0,
+    )
+    expected_func = sm.lambdify(
+        dynamics.q,
+        expected,
+        "numpy",
+        cse=True,
+        docstring_limit=0,
+    )
+
+    q_values = np.zeros(dynamics.state_dimension, dtype=float)
+    q_x_index = list(dynamics.q).index(dynamics.q_translation["x"])
+    q_y_index = list(dynamics.q).index(dynamics.q_translation["y"])
+    central_angle_index = list(dynamics.q).index(dynamics.central_angle)
+    radius = dynamics.parameter_values["orbit_semi_major_axis"]
+    positions = (
+        (radius, 0.0),
+        (0.8 * radius, 0.6 * radius),
+        (0.0, 1.2 * radius),
+    )
+
+    for x_position, y_position in positions:
+        q_values[q_x_index] = x_position
+        q_values[q_y_index] = y_position
+
+        for central_angle in (0.0, 0.2, np.pi / 4, 0.9):
+            q_values[central_angle_index] = central_angle
+            actual_value = float(np.asarray(actual_func(*q_values)))
+            expected_value = float(np.asarray(expected_func(*q_values)))
+
+            np.testing.assert_allclose(
+                actual_value,
+                expected_value,
+                rtol=1e-9,
+                atol=1e-12,
+            )
 
 
 def test_multiangle_gravity_gradient_adds_modal_row_forces_when_enabled(
