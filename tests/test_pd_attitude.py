@@ -81,6 +81,7 @@ def test_attitude_pd_returns_expected_transient_torque():
         Kp=2.0,
         Kd=3.0,
         manoeuvre_duration=10.0,
+        reference_acceleration_gain=5.0,
     )
 
     controller.compute(t=0.0, q=np.array([0.0]), u=np.array([0.0]))
@@ -93,9 +94,10 @@ def test_attitude_pd_returns_expected_transient_torque():
             10.0,
         )
     )
+    theta_ddot_ref = controller.reference.theta_ddot(5.0)
     expected = 2.0 * (theta_ref - 0.25) + 3.0 * (theta_dot_ref - 0.1)
 
-    assert np.isclose(output.tau_ff, 0.0)
+    assert np.isclose(output.tau_ff, 5.0 * theta_ddot_ref)
     assert np.isclose(output.tau_fb, expected)
 
 
@@ -112,16 +114,16 @@ def test_input_shaping_requires_modal_parameters():
         )
 
 
-def test_nadir_pd_requires_mass_matrix():
+def test_reference_acceleration_gain_must_be_finite():
     controller = PlanarAttitudeController(FakePlantView())
-    controller.configure_nadir_pd(
-        Kp=1.0,
-        Kd=1.0,
-        manoeuvre_duration=10.0,
-    )
 
-    with pytest.raises(ValueError, match="Nadir PD requires Md"):
-        controller.compute(t=0.0, q=np.array([0.0]), u=np.array([0.0]))
+    with pytest.raises(ValueError, match="reference_acceleration_gain"):
+        controller.configure_nadir_pd(
+            Kp=1.0,
+            Kd=1.0,
+            manoeuvre_duration=10.0,
+            reference_acceleration_gain=np.nan,
+        )
 
 
 def test_nadir_pd_returns_finite_feedforward_and_feedback():
@@ -165,26 +167,25 @@ def test_nadir_pd_accepts_reference_offset():
 
 def test_nadir_pd_matches_direct_nadir_equations_after_acquisition():
     controller = PlanarAttitudeController(GeneralOrbitPlantView())
+    acceleration_gain = 7.0
     controller.configure_nadir_pd(
         Kp=2.0,
         Kd=3.0,
         manoeuvre_duration=4.0,
+        reference_acceleration_gain=acceleration_gain,
     )
 
     theta = 0.3
     theta_dot = 0.1
-    inertia = 5.0
     controller.compute(
         t=0.0,
         q=np.array([theta]),
         u=np.array([theta_dot]),
-        Md=np.array([[inertia]]),
     )
     output = controller.compute(
         t=4.0,
         q=np.array([theta]),
         u=np.array([theta_dot]),
-        Md=np.array([[inertia]]),
     )
 
     r_x, r_y, v_x, v_y = 2.0, 1.0, -0.2, 0.7
@@ -202,7 +203,10 @@ def test_nadir_pd_matches_direct_nadir_equations_after_acquisition():
     ) % (2.0 * np.pi) - np.pi
     error_dot = theta_dot_reference - theta_dot
 
-    assert np.isclose(output.tau_ff, inertia * theta_ddot_reference)
+    assert np.isclose(
+        output.tau_ff,
+        acceleration_gain * theta_ddot_reference,
+    )
     assert np.isclose(output.tau_fb, 2.0 * error + 3.0 * error_dot)
 
 

@@ -23,6 +23,7 @@ class PlanarAttitudeController:
         self.use_input_shaping = False
         self.shaper = None
         self.manoeuvre_duration = 0.0
+        self.reference_acceleration_gain = 0.0
         self.reference = None
 
         self.manoeuvre_start_time = None
@@ -59,6 +60,9 @@ class PlanarAttitudeController:
     def raw_theta_dot_command(self, t):
         return self.reference.theta_dot(t)
 
+    def raw_theta_ddot_command(self, t):
+        return self.reference.theta_ddot(t)
+
     def configure_inertial_pd(
         self,
         *,
@@ -66,6 +70,7 @@ class PlanarAttitudeController:
         Kp,
         Kd,
         manoeuvre_duration,
+        reference_acceleration_gain=0.0,
         use_input_shaping=False,
         shaper=None,
         omega=None,
@@ -76,6 +81,9 @@ class PlanarAttitudeController:
         self.theta_target = float(theta_target)
         self.Kp = float(Kp)
         self.Kd = float(Kd)
+        self.reference_acceleration_gain = self._validated_acceleration_gain(
+            reference_acceleration_gain
+        )
 
         self.manoeuvre_duration = float(manoeuvre_duration)
         self.use_input_shaping = bool(use_input_shaping)
@@ -104,11 +112,15 @@ class PlanarAttitudeController:
         Kp,
         Kd,
         manoeuvre_duration,
+        reference_acceleration_gain=0.0,
     ):
         self.mode = "nadir_pd"
 
         self.Kp_nadir = float(Kp)
         self.Kd_nadir = float(Kd)
+        self.reference_acceleration_gain = self._validated_acceleration_gain(
+            reference_acceleration_gain
+        )
         self.manoeuvre_duration = float(manoeuvre_duration)
         self.reference = NadirAcquisitionReference(
             duration=self.manoeuvre_duration,
@@ -139,23 +151,25 @@ class PlanarAttitudeController:
             if self.use_input_shaping and self.shaper is not None:
                 theta_ref = self.shaper.shape(t, self.raw_theta_command)
                 theta_dot_ref = self.shaper.shape(t, self.raw_theta_dot_command)
+                theta_ddot_ref = self.shaper.shape(
+                    t,
+                    self.raw_theta_ddot_command,
+                )
             else:
-                theta_ref = self.raw_theta_command(t)
-                theta_dot_ref = self.raw_theta_dot_command(t)
+                reference_state = self.reference.evaluate(t)
+                theta_ref = reference_state.theta
+                theta_dot_ref = reference_state.theta_dot
+                theta_ddot_ref = reference_state.theta_ddot
 
             err = theta_ref - theta
             err_dot = theta_dot_ref - theta_dot
 
+            tau_ff = self.reference_acceleration_gain * theta_ddot_ref
             tau_fb = self.Kp * err + self.Kd * err_dot
-            return ControlOutput(tau_ff=0.0, tau_fb=float(tau_fb))
-
-        if Md is None:
-            raise ValueError("Nadir PD requires Md.")
+            return ControlOutput(tau_ff=float(tau_ff), tau_fb=float(tau_fb))
 
         theta = self.plant_view.theta(q)
         theta_dot = self.plant_view.theta_dot(u)
-
-        J = self.plant_view.J_theta(Md)
 
         rGx, rGy, vGx, vGy = self.plant_view.com_state(q, u)
         if (
@@ -181,7 +195,19 @@ class PlanarAttitudeController:
         ) % (2 * np.pi) - np.pi
         err_dot = reference_state.theta_dot - theta_dot
 
-        tau_ff = J * reference_state.theta_ddot
+        tau_ff = (
+            self.reference_acceleration_gain
+            * reference_state.theta_ddot
+        )
         tau_fb = self.Kp_nadir * err + self.Kd_nadir * err_dot
 
         return ControlOutput(tau_ff=float(tau_ff), tau_fb=float(tau_fb))
+
+    @staticmethod
+    def _validated_acceleration_gain(value):
+        gain = float(value)
+        if not np.isfinite(gain):
+            raise ValueError(
+                "reference_acceleration_gain must be finite."
+            )
+        return gain

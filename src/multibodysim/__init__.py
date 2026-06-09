@@ -6,6 +6,10 @@ from .beam.cantilever_beam import CantileverBeam
 from .beam.clamped_clamped_beam import ClampedClampedBeam
 from .flexible.flexible_ns_dynamics import FlexibleNonSymmetricDynamics
 from .flexible.flexible_ns_simulator import FlexibleNonSymmetricSimulator
+from .controllers.control_effectiveness import (
+    ScalarControlEffectiveness,
+    evaluate_scalar_control_effectiveness,
+)
 from .controllers.pd_attitude import PlanarAttitudeController
 
 
