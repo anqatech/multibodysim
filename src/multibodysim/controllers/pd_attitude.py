@@ -3,7 +3,7 @@ from .base import ControlOutput
 from ..inputshaping.zv_input_shaping import InputShaper
 from ..references import (
     InertialRestToRestReference,
-    NadirPointingReference,
+    NadirAcquisitionReference,
 )
 
 
@@ -14,7 +14,6 @@ class PlanarAttitudeController:
         self.mode = None
 
         self.theta_target = 0.0
-        self.theta_dot_target = 0.0
         self.Kp = 0.0
         self.Kd = 0.0
 
@@ -23,7 +22,7 @@ class PlanarAttitudeController:
 
         self.use_input_shaping = False
         self.shaper = None
-        self.Tr = 0.0
+        self.manoeuvre_duration = 0.0
         self.reference = None
 
         self.manoeuvre_start_time = None
@@ -32,7 +31,10 @@ class PlanarAttitudeController:
         self.delta_theta = None
 
     def reset(self):
-        if isinstance(self.reference, InertialRestToRestReference):
+        if isinstance(
+            self.reference,
+            (InertialRestToRestReference, NadirAcquisitionReference),
+        ):
             self.reference.reset()
 
         self.manoeuvre_start_time = None
@@ -57,21 +59,29 @@ class PlanarAttitudeController:
     def raw_theta_dot_command(self, t):
         return self.reference.theta_dot(t)
 
-    def configure_attitude_pd(self, theta_target, theta_dot_target, Kp, Kd, Tr,
-                              use_input_shaping=False, shaper=None,
-                              omega=None, zeta=None):
-        self.mode = "attitude_pd"
+    def configure_inertial_pd(
+        self,
+        *,
+        theta_target,
+        Kp,
+        Kd,
+        manoeuvre_duration,
+        use_input_shaping=False,
+        shaper=None,
+        omega=None,
+        zeta=None,
+    ):
+        self.mode = "inertial_pd"
 
         self.theta_target = float(theta_target)
-        self.theta_dot_target = float(theta_dot_target)
         self.Kp = float(Kp)
         self.Kd = float(Kd)
 
-        self.Tr = float(Tr)
+        self.manoeuvre_duration = float(manoeuvre_duration)
         self.use_input_shaping = bool(use_input_shaping)
         self.reference = InertialRestToRestReference(
             theta_target=self.theta_target,
-            duration=self.Tr,
+            duration=self.manoeuvre_duration,
         )
 
         if shaper is not None:
@@ -87,12 +97,23 @@ class PlanarAttitudeController:
 
         self.reset()
 
-    def configure_nadir_pd(self, Kp, Kd, offset=-0.5 * np.pi):
+    def configure_nadir_pd(
+        self,
+        *,
+        offset=-0.5 * np.pi,
+        Kp,
+        Kd,
+        manoeuvre_duration,
+    ):
         self.mode = "nadir_pd"
 
         self.Kp_nadir = float(Kp)
         self.Kd_nadir = float(Kd)
-        self.reference = NadirPointingReference(offset=offset)
+        self.manoeuvre_duration = float(manoeuvre_duration)
+        self.reference = NadirAcquisitionReference(
+            duration=self.manoeuvre_duration,
+            offset=offset,
+        )
 
         self.use_input_shaping = False
         self.shaper = None
@@ -100,7 +121,7 @@ class PlanarAttitudeController:
         self.reset()
 
     def compute(self, t, q, u, Md=None):
-        if self.mode == "attitude_pd":
+        if self.mode == "inertial_pd":
             theta = self.plant_view.theta(q)
             theta_dot = self.plant_view.theta_dot(u)
 
@@ -108,6 +129,7 @@ class PlanarAttitudeController:
                 self.reference.initialise(
                     start_time=t,
                     theta_initial=theta,
+                    theta_dot_initial=theta_dot,
                 )
                 self.manoeuvre_start_time = self.reference.start_time
                 self.theta_start = self.reference.theta_initial
@@ -136,6 +158,17 @@ class PlanarAttitudeController:
         J = self.plant_view.J_theta(Md)
 
         rGx, rGy, vGx, vGy = self.plant_view.com_state(q, u)
+        if (
+            isinstance(self.reference, NadirAcquisitionReference)
+            and not self.reference.is_initialised
+        ):
+            self.reference.initialise(
+                start_time=t,
+                theta_initial=theta,
+                theta_dot_initial=theta_dot,
+                position=(rGx, rGy),
+                velocity=(vGx, vGy),
+            )
         reference_state = self.reference.evaluate(
             t,
             position=(rGx, rGy),

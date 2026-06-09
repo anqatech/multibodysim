@@ -12,6 +12,7 @@ from .kepler import (
 from .multiangle_state import MultiAngleCoordinateMapper
 from .planar_attitude import (
     InertialRestToRestReference,
+    NadirAcquisitionReference,
     NadirPointingReference,
     PlanarAttitudeReferenceState,
 )
@@ -44,6 +45,7 @@ class MultiAngleReferenceBuilder:
 
     _SUPPORTED_ATTITUDE_REFERENCES = (
         InertialRestToRestReference,
+        NadirAcquisitionReference,
         NadirPointingReference,
     )
 
@@ -52,7 +54,9 @@ class MultiAngleReferenceBuilder:
         dynamics: Any,
         centre_of_mass_reference: PlanarKeplerianReference,
         attitude_reference: (
-            InertialRestToRestReference | NadirPointingReference
+            InertialRestToRestReference
+            | NadirAcquisitionReference
+            | NadirPointingReference
         ),
     ):
         if not isinstance(
@@ -69,7 +73,8 @@ class MultiAngleReferenceBuilder:
         ):
             raise TypeError(
                 "attitude_reference must be an "
-                "InertialRestToRestReference or NadirPointingReference."
+                "InertialRestToRestReference, NadirAcquisitionReference "
+                "or NadirPointingReference."
             )
 
         self.dynamics = dynamics
@@ -115,7 +120,10 @@ class MultiAngleReferenceBuilder:
         t: float,
         centre_of_mass: PlanarCentreOfMassReferenceState,
     ) -> PlanarAttitudeReferenceState:
-        if isinstance(self.attitude_reference, NadirPointingReference):
+        if isinstance(
+            self.attitude_reference,
+            (NadirAcquisitionReference, NadirPointingReference),
+        ):
             return self.attitude_reference.evaluate(
                 t,
                 position=centre_of_mass.position,

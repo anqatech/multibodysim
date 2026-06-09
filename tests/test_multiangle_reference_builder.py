@@ -6,6 +6,7 @@ import sympy as sm
 from multibodysim.references import (
     InertialRestToRestReference,
     MultiAngleReferenceBuilder,
+    NadirAcquisitionReference,
     NadirPointingReference,
     PlanarKeplerianReference,
 )
@@ -115,6 +116,37 @@ def test_nadir_builder_uses_propagated_orbit_for_attitude_reference():
     assert np.isclose(reference.attitude.theta_ddot, 0.0)
     np.testing.assert_array_equal(reference.q[3:], 0.0)
     np.testing.assert_array_equal(reference.u[3:], 0.0)
+
+
+def test_nadir_acquisition_builder_uses_moving_orbit_reference():
+    dynamics = FakeDynamics()
+    orbit = PlanarKeplerianReference(MU, A, 0.0)
+    initial_orbit = orbit.evaluate(0.0)
+    attitude = NadirAcquisitionReference(duration=100.0)
+    attitude.initialise(
+        start_time=0.0,
+        theta_initial=0.2,
+        theta_dot_initial=0.0,
+        position=initial_orbit.position,
+        velocity=initial_orbit.velocity,
+    )
+    builder = MultiAngleReferenceBuilder(dynamics, orbit, attitude)
+
+    initial = builder.evaluate(0.0)
+    final = builder.evaluate(100.0)
+    final_orbit = orbit.evaluate(100.0)
+    final_nadir = NadirPointingReference().evaluate(
+        100.0,
+        position=final_orbit.position,
+        velocity=final_orbit.velocity,
+    )
+
+    assert initial.attitude.theta == 0.2
+    assert initial.attitude.theta_dot == 0.0
+    assert initial.attitude.theta_ddot == 0.0
+    assert final.attitude == final_nadir
+    np.testing.assert_array_equal(final.q[3:], 0.0)
+    np.testing.assert_array_equal(final.u[3:], 0.0)
 
 
 def test_builder_zeroes_real_model_internal_reference_states(

@@ -90,12 +90,11 @@ def test_multiangle_simulator_builds_from_multiangle_config(
     u = initial_conditions[simulator.dynamics.state_dimension:]
     theta_initial = simulator.plant_view.theta(q)
     controller = PlanarAttitudeController(simulator.plant_view)
-    controller.configure_attitude_pd(
+    controller.configure_inertial_pd(
         theta_target=theta_initial + 0.01,
-        theta_dot_target=0.0,
         Kp=2.0,
         Kd=0.0,
-        Tr=1.0,
+        manoeuvre_duration=1.0,
     )
     simulator.set_controller(controller)
 

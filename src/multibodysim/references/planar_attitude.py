@@ -16,8 +16,9 @@ class InertialRestToRestReference:
     def __init__(self, theta_target: float, duration: float):
         self.theta_target = float(theta_target)
         self.duration = float(duration)
-        self.start_time = None
-        self.theta_initial = None
+        if self.duration <= 0.0:
+            raise ValueError("duration must be positive.")
+        self.reset()
 
     @property
     def is_initialised(self) -> bool:
@@ -29,38 +30,86 @@ class InertialRestToRestReference:
             return None
         return self.theta_target - self.theta_initial
 
-    def initialise(self, start_time: float, theta_initial: float) -> None:
+    def initialise(
+        self,
+        start_time: float,
+        theta_initial: float,
+        theta_dot_initial: float = 0.0,
+    ) -> None:
+        delta_theta = self.theta_target - float(theta_initial)
+        duration = self.duration
+        coefficients = np.empty(6, dtype=float)
+        coefficients[0] = 0.0
+        coefficients[1] = duration * float(theta_dot_initial)
+        coefficients[2] = 0.0
+        terminal_system = np.array(
+            [
+                [1.0, 1.0, 1.0],
+                [3.0, 4.0, 5.0],
+                [6.0, 12.0, 20.0],
+            ],
+            dtype=float,
+        )
+        terminal_values = np.array(
+            [
+                delta_theta - np.sum(coefficients[:3]),
+                -(coefficients[1] + 2.0 * coefficients[2]),
+                -2.0 * coefficients[2],
+            ],
+            dtype=float,
+        )
+        coefficients[3:] = np.linalg.solve(
+            terminal_system,
+            terminal_values,
+        )
+
         self.start_time = float(start_time)
         self.theta_initial = float(theta_initial)
+        self.theta_dot_initial = float(theta_dot_initial)
+        self.coefficients = coefficients
 
     def reset(self) -> None:
         self.start_time = None
         self.theta_initial = None
+        self.theta_dot_initial = None
+        self.coefficients = None
 
     def evaluate(self, t: float) -> PlanarAttitudeReferenceState:
         self._require_initialised()
         elapsed_time = float(t) - self.start_time
-        delta_theta = self.delta_theta
+        if elapsed_time <= 0.0:
+            return PlanarAttitudeReferenceState(
+                theta=self.theta_initial,
+                theta_dot=self.theta_dot_initial,
+                theta_ddot=0.0,
+            )
+        if elapsed_time >= self.duration:
+            return PlanarAttitudeReferenceState(
+                theta=self.theta_target,
+                theta_dot=0.0,
+                theta_ddot=0.0,
+            )
 
+        normalised_time = elapsed_time / self.duration
+        powers = normalised_time ** np.arange(6)
         return PlanarAttitudeReferenceState(
-            theta=(
-                self.theta_initial
-                + delta_theta
-                * self.smooth_step_5th_order(elapsed_time, self.duration)
-            ),
-            theta_dot=(
-                delta_theta
-                * self.smooth_step_5th_order_derivative(
-                    elapsed_time,
-                    self.duration,
+            theta=float(self.theta_initial + self.coefficients @ powers),
+            theta_dot=float(
+                np.arange(1, 6)
+                @ (
+                    self.coefficients[1:]
+                    * normalised_time ** np.arange(5)
                 )
+                / self.duration
             ),
-            theta_ddot=(
-                delta_theta
-                * self.smooth_step_5th_order_second_derivative(
-                    elapsed_time,
-                    self.duration,
+            theta_ddot=float(
+                np.arange(2, 6)
+                @ (
+                    np.arange(1, 5)
+                    * self.coefficients[2:]
+                    * normalised_time ** np.arange(4)
                 )
+                / self.duration**2
             ),
         )
 
@@ -158,3 +207,154 @@ class NadirPointingReference:
                 / radius**3
             ),
         )
+
+
+class NadirAcquisitionReference:
+    """Join the current attitude smoothly to a moving nadir reference."""
+
+    def __init__(
+        self,
+        duration: float,
+        offset: float = -0.5 * np.pi,
+    ):
+        self.duration = float(duration)
+        self.offset = float(offset)
+        if self.duration <= 0.0:
+            raise ValueError("duration must be positive.")
+
+        self.nadir_reference = NadirPointingReference(offset=self.offset)
+        self.reset()
+
+    @property
+    def is_initialised(self) -> bool:
+        return self.start_time is not None
+
+    def initialise(
+        self,
+        start_time: float,
+        theta_initial: float,
+        theta_dot_initial: float,
+        *,
+        position,
+        velocity,
+    ) -> None:
+        nadir_initial = self.nadir_reference.evaluate(
+            start_time,
+            position=position,
+            velocity=velocity,
+        )
+        relative_angle_initial = self._wrap_angle(
+            float(theta_initial) - nadir_initial.theta
+        )
+        relative_rate_initial = (
+            float(theta_dot_initial) - nadir_initial.theta_dot
+        )
+        relative_acceleration_initial = -nadir_initial.theta_ddot
+
+        duration = self.duration
+        coefficients = np.empty(6, dtype=float)
+        coefficients[0] = relative_angle_initial
+        coefficients[1] = duration * relative_rate_initial
+        coefficients[2] = (
+            0.5
+            * duration**2
+            * relative_acceleration_initial
+        )
+        terminal_system = np.array(
+            [
+                [1.0, 1.0, 1.0],
+                [3.0, 4.0, 5.0],
+                [6.0, 12.0, 20.0],
+            ],
+            dtype=float,
+        )
+        terminal_values = np.array(
+            [
+                -np.sum(coefficients[:3]),
+                -(coefficients[1] + 2.0 * coefficients[2]),
+                -2.0 * coefficients[2],
+            ],
+            dtype=float,
+        )
+        coefficients[3:] = np.linalg.solve(
+            terminal_system,
+            terminal_values,
+        )
+
+        self.start_time = float(start_time)
+        self.theta_initial = float(theta_initial)
+        self.theta_dot_initial = float(theta_dot_initial)
+        self.relative_angle_initial = relative_angle_initial
+        self.relative_rate_initial = relative_rate_initial
+        self.coefficients = coefficients
+
+    def reset(self) -> None:
+        self.start_time = None
+        self.theta_initial = None
+        self.theta_dot_initial = None
+        self.relative_angle_initial = None
+        self.relative_rate_initial = None
+        self.coefficients = None
+
+    def evaluate(
+        self,
+        t: float,
+        *,
+        position,
+        velocity,
+    ) -> PlanarAttitudeReferenceState:
+        self._require_initialised()
+        time = float(t)
+        nadir = self.nadir_reference.evaluate(
+            time,
+            position=position,
+            velocity=velocity,
+        )
+        elapsed_time = time - self.start_time
+
+        if elapsed_time <= 0.0:
+            return PlanarAttitudeReferenceState(
+                theta=self.theta_initial,
+                theta_dot=self.theta_dot_initial,
+                theta_ddot=0.0,
+            )
+        if elapsed_time >= self.duration:
+            return nadir
+
+        normalised_time = elapsed_time / self.duration
+        powers = normalised_time ** np.arange(6)
+        relative_angle = float(self.coefficients @ powers)
+        relative_rate = float(
+            np.arange(1, 6)
+            @ (
+                self.coefficients[1:]
+                * normalised_time ** np.arange(5)
+            )
+            / self.duration
+        )
+        relative_acceleration = float(
+            np.arange(2, 6)
+            @ (
+                np.arange(1, 5)
+                * self.coefficients[2:]
+                * normalised_time ** np.arange(4)
+            )
+            / self.duration**2
+        )
+
+        return PlanarAttitudeReferenceState(
+            theta=self._wrap_angle(nadir.theta + relative_angle),
+            theta_dot=nadir.theta_dot + relative_rate,
+            theta_ddot=nadir.theta_ddot + relative_acceleration,
+        )
+
+    def _require_initialised(self) -> None:
+        if not self.is_initialised:
+            raise RuntimeError(
+                "NadirAcquisitionReference must be initialised before "
+                "evaluation."
+            )
+
+    @staticmethod
+    def _wrap_angle(angle: float) -> float:
+        return (angle + np.pi) % (2.0 * np.pi) - np.pi

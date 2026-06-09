@@ -5,6 +5,7 @@ import pytest
 
 from multibodysim.references import (
     InertialRestToRestReference,
+    NadirAcquisitionReference,
     NadirPointingReference,
 )
 
@@ -56,6 +57,33 @@ def test_inertial_reference_reset_allows_new_initial_state():
     assert reference.delta_theta == 0.5
 
 
+def test_inertial_reference_matches_nonzero_initial_rate():
+    reference = InertialRestToRestReference(
+        theta_target=1.0,
+        duration=10.0,
+    )
+    reference.initialise(
+        start_time=2.0,
+        theta_initial=0.25,
+        theta_dot_initial=0.1,
+    )
+
+    initial = reference.evaluate(2.0)
+    final = reference.evaluate(12.0)
+
+    assert initial.theta == 0.25
+    assert initial.theta_dot == 0.1
+    assert initial.theta_ddot == 0.0
+    assert final.theta == 1.0
+    assert final.theta_dot == 0.0
+    assert final.theta_ddot == 0.0
+
+
+def test_inertial_reference_rejects_non_positive_duration():
+    with pytest.raises(ValueError, match="duration must be positive"):
+        InertialRestToRestReference(theta_target=1.0, duration=0.0)
+
+
 def test_nadir_reference_matches_existing_circular_orbit_kinematics():
     reference = NadirPointingReference()
 
@@ -92,3 +120,98 @@ def test_nadir_reference_rejects_zero_orbit_radius():
             position=(0.0, 0.0),
             velocity=(0.0, 0.0),
         )
+
+
+def circular_orbit_state(t):
+    return (
+        (np.cos(t), np.sin(t)),
+        (-np.sin(t), np.cos(t)),
+    )
+
+
+def test_nadir_acquisition_requires_initialisation():
+    reference = NadirAcquisitionReference(duration=10.0)
+
+    with pytest.raises(RuntimeError, match="must be initialised"):
+        reference.evaluate(
+            0.0,
+            position=(1.0, 0.0),
+            velocity=(0.0, 1.0),
+        )
+
+
+def test_nadir_acquisition_matches_initial_state_and_final_nadir():
+    reference = NadirAcquisitionReference(duration=2.0)
+    initial_position, initial_velocity = circular_orbit_state(0.0)
+    reference.initialise(
+        start_time=0.0,
+        theta_initial=0.25,
+        theta_dot_initial=0.1,
+        position=initial_position,
+        velocity=initial_velocity,
+    )
+
+    initial = reference.evaluate(
+        0.0,
+        position=initial_position,
+        velocity=initial_velocity,
+    )
+    midpoint_position, midpoint_velocity = circular_orbit_state(1.0)
+    midpoint = reference.evaluate(
+        1.0,
+        position=midpoint_position,
+        velocity=midpoint_velocity,
+    )
+    final_position, final_velocity = circular_orbit_state(2.0)
+    final = reference.evaluate(
+        2.0,
+        position=final_position,
+        velocity=final_velocity,
+    )
+    final_nadir = NadirPointingReference().evaluate(
+        2.0,
+        position=final_position,
+        velocity=final_velocity,
+    )
+
+    assert initial.theta == 0.25
+    assert initial.theta_dot == 0.1
+    assert initial.theta_ddot == 0.0
+    assert np.all(np.isfinite(
+        [midpoint.theta, midpoint.theta_dot, midpoint.theta_ddot]
+    ))
+    assert final == final_nadir
+
+
+def test_nadir_acquisition_reset_allows_new_initial_state():
+    reference = NadirAcquisitionReference(duration=2.0)
+    position, velocity = circular_orbit_state(0.0)
+    reference.initialise(
+        start_time=0.0,
+        theta_initial=0.25,
+        theta_dot_initial=0.1,
+        position=position,
+        velocity=velocity,
+    )
+    reference.reset()
+    reference.initialise(
+        start_time=1.0,
+        theta_initial=-0.5,
+        theta_dot_initial=0.2,
+        position=position,
+        velocity=velocity,
+    )
+
+    state = reference.evaluate(
+        1.0,
+        position=position,
+        velocity=velocity,
+    )
+
+    assert state.theta == -0.5
+    assert state.theta_dot == 0.2
+
+
+def test_nadir_acquisition_rejects_non_positive_duration():
+    with pytest.raises(ValueError, match="duration must be positive"):
+        NadirAcquisitionReference(duration=0.0)

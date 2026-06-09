@@ -7,7 +7,7 @@ from multibodysim.controllers.pd_attitude import PlanarAttitudeController
 from multibodysim.controllers.plant_view import MultiAnglePlantView
 from multibodysim.references import (
     InertialRestToRestReference,
-    NadirPointingReference,
+    NadirAcquisitionReference,
 )
 
 
@@ -55,12 +55,11 @@ def test_smooth_step_boundary_values():
 
 def test_attitude_pd_returns_zero_torque_at_final_target():
     controller = PlanarAttitudeController(FakePlantView())
-    controller.configure_attitude_pd(
+    controller.configure_inertial_pd(
         theta_target=1.0,
-        theta_dot_target=0.0,
         Kp=2.0,
         Kd=3.0,
-        Tr=10.0,
+        manoeuvre_duration=10.0,
     )
 
     first = controller.compute(t=0.0, q=np.array([0.0]), u=np.array([0.0]))
@@ -77,12 +76,11 @@ def test_attitude_pd_returns_zero_torque_at_final_target():
 
 def test_attitude_pd_returns_expected_transient_torque():
     controller = PlanarAttitudeController(FakePlantView())
-    controller.configure_attitude_pd(
+    controller.configure_inertial_pd(
         theta_target=1.0,
-        theta_dot_target=0.0,
         Kp=2.0,
         Kd=3.0,
-        Tr=10.0,
+        manoeuvre_duration=10.0,
     )
 
     controller.compute(t=0.0, q=np.array([0.0]), u=np.array([0.0]))
@@ -105,19 +103,22 @@ def test_input_shaping_requires_modal_parameters():
     controller = PlanarAttitudeController(FakePlantView())
 
     with pytest.raises(ValueError, match="Input shaping requested"):
-        controller.configure_attitude_pd(
+        controller.configure_inertial_pd(
             theta_target=1.0,
-            theta_dot_target=0.0,
             Kp=1.0,
             Kd=1.0,
-            Tr=10.0,
+            manoeuvre_duration=10.0,
             use_input_shaping=True,
         )
 
 
 def test_nadir_pd_requires_mass_matrix():
     controller = PlanarAttitudeController(FakePlantView())
-    controller.configure_nadir_pd(Kp=1.0, Kd=1.0)
+    controller.configure_nadir_pd(
+        Kp=1.0,
+        Kd=1.0,
+        manoeuvre_duration=10.0,
+    )
 
     with pytest.raises(ValueError, match="Nadir PD requires Md"):
         controller.compute(t=0.0, q=np.array([0.0]), u=np.array([0.0]))
@@ -125,7 +126,11 @@ def test_nadir_pd_requires_mass_matrix():
 
 def test_nadir_pd_returns_finite_feedforward_and_feedback():
     controller = PlanarAttitudeController(FakePlantView())
-    controller.configure_nadir_pd(Kp=2.0, Kd=3.0)
+    controller.configure_nadir_pd(
+        Kp=2.0,
+        Kd=3.0,
+        manoeuvre_duration=10.0,
+    )
 
     output = controller.compute(
         t=0.0,
@@ -136,31 +141,45 @@ def test_nadir_pd_returns_finite_feedforward_and_feedback():
 
     assert np.isfinite(output.tau_ff)
     assert np.isfinite(output.tau_fb)
-    assert isinstance(controller.reference, NadirPointingReference)
+    assert isinstance(controller.reference, NadirAcquisitionReference)
 
 
 def test_nadir_pd_accepts_reference_offset():
     controller = PlanarAttitudeController(FakePlantView())
-    controller.configure_nadir_pd(Kp=2.0, Kd=0.0, offset=0.0)
+    controller.configure_nadir_pd(
+        offset=0.0,
+        Kp=2.0,
+        Kd=0.0,
+        manoeuvre_duration=10.0,
+    )
 
-    output = controller.compute(
+    controller.compute(
         t=0.0,
         q=np.array([np.pi]),
         u=np.array([1.0]),
         Md=np.array([[5.0]]),
     )
 
-    assert np.isclose(output.tau_ff, 0.0)
-    assert np.isclose(output.tau_fb, 0.0)
+    assert controller.reference.offset == 0.0
 
 
-def test_nadir_pd_matches_previous_inline_reference_equations():
+def test_nadir_pd_matches_direct_nadir_equations_after_acquisition():
     controller = PlanarAttitudeController(GeneralOrbitPlantView())
-    controller.configure_nadir_pd(Kp=2.0, Kd=3.0)
+    controller.configure_nadir_pd(
+        Kp=2.0,
+        Kd=3.0,
+        manoeuvre_duration=4.0,
+    )
 
     theta = 0.3
     theta_dot = 0.1
     inertia = 5.0
+    controller.compute(
+        t=0.0,
+        q=np.array([theta]),
+        u=np.array([theta_dot]),
+        Md=np.array([[inertia]]),
+    )
     output = controller.compute(
         t=4.0,
         q=np.array([theta]),
@@ -185,6 +204,51 @@ def test_nadir_pd_matches_previous_inline_reference_equations():
 
     assert np.isclose(output.tau_ff, inertia * theta_ddot_reference)
     assert np.isclose(output.tau_fb, 2.0 * error + 3.0 * error_dot)
+
+
+def test_nadir_pd_acquisition_starts_from_current_attitude_and_rate():
+    controller = PlanarAttitudeController(FakePlantView())
+    controller.configure_nadir_pd(
+        Kp=2.0,
+        Kd=3.0,
+        manoeuvre_duration=10.0,
+    )
+
+    output = controller.compute(
+        t=0.0,
+        q=np.array([0.25]),
+        u=np.array([0.1]),
+        Md=np.array([[5.0]]),
+    )
+
+    assert isinstance(controller.reference, NadirAcquisitionReference)
+    assert np.isclose(output.tau_ff, 0.0)
+    assert np.isclose(output.tau_fb, 0.0)
+
+
+def test_nadir_pd_acquisition_becomes_direct_nadir_tracking():
+    controller = PlanarAttitudeController(FakePlantView())
+    controller.configure_nadir_pd(
+        Kp=2.0,
+        Kd=3.0,
+        manoeuvre_duration=10.0,
+    )
+    controller.compute(
+        t=0.0,
+        q=np.array([0.25]),
+        u=np.array([0.1]),
+        Md=np.array([[5.0]]),
+    )
+
+    output = controller.compute(
+        t=10.0,
+        q=np.array([0.5 * np.pi]),
+        u=np.array([1.0]),
+        Md=np.array([[5.0]]),
+    )
+
+    assert np.isclose(output.tau_ff, 0.0)
+    assert np.isclose(output.tau_fb, 0.0)
 
 
 def test_multiangle_plant_view_com_state_accepts_column_vectors():

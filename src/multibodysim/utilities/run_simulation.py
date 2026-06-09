@@ -45,18 +45,16 @@ print(f"Input Shaping Zeta = {zeta:.6f}, Omega = {omega:.4f}, Omega_d = {omega_d
 
 theta0            = config["q_initial"]["q3"]
 theta_target      = theta0 + np.deg2rad(30.0)
-theta_dot_target  = 0.0
 
 # # ----------------------------------------------------------------------
 # # ----------------------------------------------------------------------
 
 ctrl = PlanarAttitudeController(sim.plant_view)
-ctrl.configure_attitude_pd(
+ctrl.configure_inertial_pd(
     theta_target=theta_target,
-    theta_dot_target=theta_dot_target,
     Kp=Kp,
     Kd=Kd,
-    Tr=Tr,
+    manoeuvre_duration=Tr,
     use_input_shaping=False,
     shaper=None,
     omega=omega,

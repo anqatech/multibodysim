@@ -12,6 +12,7 @@ from .multiangle_reference import (
 )
 from .planar_attitude import (
     InertialRestToRestReference,
+    NadirAcquisitionReference,
     NadirPointingReference,
     PlanarAttitudeReferenceState,
 )
@@ -22,6 +23,7 @@ __all__ = [
     "MultiAngleMappedState",
     "MultiAngleReferenceBuilder",
     "MultiAngleReferenceState",
+    "NadirAcquisitionReference",
     "NadirPointingReference",
     "PlanarCentreOfMassReferenceState",
     "PlanarAttitudeReferenceState",
