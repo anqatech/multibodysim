@@ -257,6 +257,8 @@ class MultiAngleFlexibleSimulator:
         theta_index = self.plant_view.i_theta_u
         J_eff = np.zeros_like(times)
         tau_ff = np.zeros_like(times)
+        tau_reference_ff = np.zeros_like(times)
+        tau_gravity_gradient_ff = np.zeros_like(times)
         tau_pd = np.zeros_like(times)
         rG_x = np.zeros_like(times)
         rG_y = np.zeros_like(times)
@@ -281,6 +283,12 @@ class MultiAngleFlexibleSimulator:
                 mass_matrix=mass_matrix,
             )
             tau_ff[index] = control_output.tau_ff
+            tau_reference_ff[index] = (
+                control_output.tau_reference_ff
+            )
+            tau_gravity_gradient_ff[index] = (
+                control_output.tau_gravity_gradient_ff
+            )
             tau_pd[index] = control_output.tau_fb
 
             rG = np.asarray(
@@ -297,6 +305,8 @@ class MultiAngleFlexibleSimulator:
 
         self.results["J_eff"] = J_eff
         self.results["tau_FF"] = tau_ff
+        self.results["tau_reference_FF"] = tau_reference_ff
+        self.results["tau_GG_FF"] = tau_gravity_gradient_ff
         self.results["tau_PD"] = tau_pd
         self.results["rG_x"] = rG_x
         self.results["rG_y"] = rG_y

@@ -24,6 +24,7 @@ class PlanarAttitudeController:
         self.shaper = None
         self.manoeuvre_duration = 0.0
         self.reference_acceleration_gain = 0.0
+        self.gravity_gradient_feedforward = None
         self.reference = None
 
         self.manoeuvre_start_time = None
@@ -75,6 +76,7 @@ class PlanarAttitudeController:
         shaper=None,
         omega=None,
         zeta=None,
+        gravity_gradient_feedforward=None,
     ):
         self.mode = "inertial_pd"
 
@@ -83,6 +85,11 @@ class PlanarAttitudeController:
         self.Kd = float(Kd)
         self.reference_acceleration_gain = self._validated_acceleration_gain(
             reference_acceleration_gain
+        )
+        self.gravity_gradient_feedforward = (
+            self._validated_gravity_gradient_feedforward(
+                gravity_gradient_feedforward
+            )
         )
 
         self.manoeuvre_duration = float(manoeuvre_duration)
@@ -113,6 +120,7 @@ class PlanarAttitudeController:
         Kd,
         manoeuvre_duration,
         reference_acceleration_gain=0.0,
+        gravity_gradient_feedforward=None,
     ):
         self.mode = "nadir_pd"
 
@@ -120,6 +128,11 @@ class PlanarAttitudeController:
         self.Kd_nadir = float(Kd)
         self.reference_acceleration_gain = self._validated_acceleration_gain(
             reference_acceleration_gain
+        )
+        self.gravity_gradient_feedforward = (
+            self._validated_gravity_gradient_feedforward(
+                gravity_gradient_feedforward
+            )
         )
         self.manoeuvre_duration = float(manoeuvre_duration)
         self.reference = NadirAcquisitionReference(
@@ -164,9 +177,20 @@ class PlanarAttitudeController:
             err = theta_ref - theta
             err_dot = theta_dot_ref - theta_dot
 
-            tau_ff = self.reference_acceleration_gain * theta_ddot_ref
+            tau_reference_ff = (
+                self.reference_acceleration_gain * theta_ddot_ref
+            )
+            tau_gravity_gradient_ff = (
+                self._gravity_gradient_feedforward_torque(q, u, theta)
+            )
             tau_fb = self.Kp * err + self.Kd * err_dot
-            return ControlOutput(tau_ff=float(tau_ff), tau_fb=float(tau_fb))
+            return ControlOutput(
+                tau_fb=float(tau_fb),
+                tau_reference_ff=float(tau_reference_ff),
+                tau_gravity_gradient_ff=float(
+                    tau_gravity_gradient_ff
+                ),
+            )
 
         theta = self.plant_view.theta(q)
         theta_dot = self.plant_view.theta_dot(u)
@@ -195,13 +219,20 @@ class PlanarAttitudeController:
         ) % (2 * np.pi) - np.pi
         err_dot = reference_state.theta_dot - theta_dot
 
-        tau_ff = (
+        tau_reference_ff = (
             self.reference_acceleration_gain
             * reference_state.theta_ddot
         )
+        tau_gravity_gradient_ff = (
+            self._gravity_gradient_feedforward_torque(q, u, theta)
+        )
         tau_fb = self.Kp_nadir * err + self.Kd_nadir * err_dot
 
-        return ControlOutput(tau_ff=float(tau_ff), tau_fb=float(tau_fb))
+        return ControlOutput(
+            tau_fb=float(tau_fb),
+            tau_reference_ff=float(tau_reference_ff),
+            tau_gravity_gradient_ff=float(tau_gravity_gradient_ff),
+        )
 
     @staticmethod
     def _validated_acceleration_gain(value):
@@ -211,3 +242,31 @@ class PlanarAttitudeController:
                 "reference_acceleration_gain must be finite."
             )
         return gain
+
+    @staticmethod
+    def _validated_gravity_gradient_feedforward(value):
+        if value is not None and not callable(
+            getattr(value, "evaluate", None)
+        ):
+            raise TypeError(
+                "gravity_gradient_feedforward must expose an "
+                "evaluate() method."
+            )
+        return value
+
+    def _gravity_gradient_feedforward_torque(self, q, u, theta):
+        if self.gravity_gradient_feedforward is None:
+            return 0.0
+
+        rG_x, rG_y, _, _ = self.plant_view.com_state(q, u)
+        result = self.gravity_gradient_feedforward.evaluate(
+            centre_of_mass_position=(rG_x, rG_y),
+            central_attitude=theta,
+        )
+        torque = float(result.cancellation_torque)
+        if not np.isfinite(torque):
+            raise ValueError(
+                "gravity-gradient feedforward returned a non-finite "
+                "cancellation torque."
+            )
+        return torque

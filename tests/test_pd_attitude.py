@@ -30,6 +30,20 @@ class GeneralOrbitPlantView(FakePlantView):
         return 2.0, 1.0, -0.2, 0.7
 
 
+class RecordingGravityGradientFeedforward:
+    def __init__(self, cancellation_torque):
+        self.cancellation_torque = float(cancellation_torque)
+        self.calls = []
+
+    def evaluate(self, *, centre_of_mass_position, central_attitude):
+        self.calls.append((centre_of_mass_position, central_attitude))
+        return type(
+            "GravityGradientFeedforwardResult",
+            (),
+            {"cancellation_torque": self.cancellation_torque},
+        )()
+
+
 class FakeMultiAngleDynamics:
     central_body = "bus_2"
     q_reference = {"bus_1": None, "bus_2": None, "bus_3": None}
@@ -126,6 +140,36 @@ def test_reference_acceleration_gain_must_be_finite():
         )
 
 
+def test_inertial_pd_separates_reference_and_gg_feedforward():
+    feedforward = RecordingGravityGradientFeedforward(
+        cancellation_torque=-0.25,
+    )
+    controller = PlanarAttitudeController(GeneralOrbitPlantView())
+    controller.configure_inertial_pd(
+        theta_target=1.0,
+        Kp=2.0,
+        Kd=3.0,
+        manoeuvre_duration=10.0,
+        reference_acceleration_gain=5.0,
+        gravity_gradient_feedforward=feedforward,
+    )
+
+    controller.compute(t=0.0, q=np.array([0.0]), u=np.array([0.0]))
+    output = controller.compute(t=5.0, q=np.array([0.25]), u=np.array([0.1]))
+
+    assert len(feedforward.calls) == 2
+    assert feedforward.calls[-1] == ((2.0, 1.0), 0.25)
+    assert np.isclose(output.tau_gravity_gradient_ff, -0.25)
+    assert np.isclose(
+        output.tau_reference_ff,
+        5.0 * controller.reference.theta_ddot(5.0),
+    )
+    assert np.isclose(
+        output.tau_ff,
+        output.tau_reference_ff + output.tau_gravity_gradient_ff,
+    )
+
+
 def test_nadir_pd_returns_finite_feedforward_and_feedback():
     controller = PlanarAttitudeController(FakePlantView())
     controller.configure_nadir_pd(
@@ -144,6 +188,29 @@ def test_nadir_pd_returns_finite_feedforward_and_feedback():
     assert np.isfinite(output.tau_ff)
     assert np.isfinite(output.tau_fb)
     assert isinstance(controller.reference, NadirAcquisitionReference)
+
+
+def test_nadir_pd_uses_observable_gg_feedforward_inputs():
+    feedforward = RecordingGravityGradientFeedforward(
+        cancellation_torque=0.125,
+    )
+    controller = PlanarAttitudeController(GeneralOrbitPlantView())
+    controller.configure_nadir_pd(
+        Kp=2.0,
+        Kd=3.0,
+        manoeuvre_duration=10.0,
+        gravity_gradient_feedforward=feedforward,
+    )
+
+    output = controller.compute(
+        t=0.0,
+        q=np.array([0.3]),
+        u=np.array([0.1]),
+    )
+
+    assert feedforward.calls == [((2.0, 1.0), 0.3)]
+    assert np.isclose(output.tau_gravity_gradient_ff, 0.125)
+    assert np.isclose(output.tau_ff, 0.125)
 
 
 def test_nadir_pd_accepts_reference_offset():

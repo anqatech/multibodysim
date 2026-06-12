@@ -185,7 +185,13 @@ def test_multiangle_simulator_runs_short_integration(
     assert "u_central_angle" in results
     assert results["J_eff"].shape == (3,)
     assert results["tau_FF"].shape == (3,)
+    assert results["tau_reference_FF"].shape == (3,)
+    assert results["tau_GG_FF"].shape == (3,)
     assert results["tau_PD"].shape == (3,)
+    np.testing.assert_allclose(
+        results["tau_FF"],
+        results["tau_reference_FF"] + results["tau_GG_FF"],
+    )
     assert results["rG_x"].shape == (3,)
     assert results["vG_y"].shape == (3,)
     assert np.all(np.isfinite(results["J_eff"]))

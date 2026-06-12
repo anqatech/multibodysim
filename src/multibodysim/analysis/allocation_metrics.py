@@ -57,6 +57,14 @@ def allocation_metrics(
     central_angle_speed = np.asarray(results["u_central_angle"], dtype=float)
     tau_pd = np.asarray(results.get("tau_PD", np.zeros_like(time)), dtype=float)
     tau_ff = np.asarray(results.get("tau_FF", np.zeros_like(time)), dtype=float)
+    tau_reference_ff = np.asarray(
+        results.get("tau_reference_FF", np.zeros_like(time)),
+        dtype=float,
+    )
+    tau_gg_ff = np.asarray(
+        results.get("tau_GG_FF", np.zeros_like(time)),
+        dtype=float,
+    )
     tau_cmd = tau_pd + tau_ff
 
     metrics: dict[str, Any] = {
@@ -99,6 +107,15 @@ def allocation_metrics(
         )
 
     _add_torque_metrics(metrics, "tau_PD", tau_pd, time)
+    if "tau_reference_FF" in results:
+        _add_torque_metrics(
+            metrics,
+            "tau_reference_FF",
+            tau_reference_ff,
+            time,
+        )
+    if "tau_GG_FF" in results:
+        _add_torque_metrics(metrics, "tau_GG_FF", tau_gg_ff, time)
     _add_torque_metrics(metrics, "tau_FF", tau_ff, time)
     _add_torque_metrics(metrics, "tau_cmd", tau_cmd, time)
 

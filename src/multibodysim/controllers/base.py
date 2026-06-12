@@ -3,10 +3,31 @@ from typing import Optional, Protocol
 import numpy as np
 
 
-@dataclass
+@dataclass(init=False)
 class ControlOutput:
-    tau_ff: float = 0.0
-    tau_fb: float = 0.0
+    tau_fb: float
+    tau_reference_ff: float
+    tau_gravity_gradient_ff: float
+
+    def __init__(
+        self,
+        tau_ff: float = 0.0,
+        tau_fb: float = 0.0,
+        *,
+        tau_reference_ff: float | None = None,
+        tau_gravity_gradient_ff: float = 0.0,
+    ):
+        self.tau_fb = float(tau_fb)
+        self.tau_reference_ff = float(
+            tau_ff if tau_reference_ff is None else tau_reference_ff
+        )
+        self.tau_gravity_gradient_ff = float(
+            tau_gravity_gradient_ff
+        )
+
+    @property
+    def tau_ff(self) -> float:
+        return self.tau_reference_ff + self.tau_gravity_gradient_ff
 
     @property
     def tau_total(self) -> float:

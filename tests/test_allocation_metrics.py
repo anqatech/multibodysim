@@ -81,6 +81,25 @@ def test_allocation_metrics_table_formats_known_and_dynamic_labels():
     assert rows[5] == ("eta1_1_peak_abs", "-", 0.2)
 
 
+def test_allocation_metrics_reports_feedforward_components_when_present():
+    results = {
+        "time": np.array([0.0, 1.0, 2.0]),
+        "success": True,
+        "q_central_angle": np.zeros(3),
+        "u_central_angle": np.zeros(3),
+        "tau_PD": np.array([0.0, 0.1, 0.0]),
+        "tau_reference_FF": np.array([0.0, 0.2, 0.0]),
+        "tau_GG_FF": np.array([0.0, -0.05, 0.0]),
+        "tau_FF": np.array([0.0, 0.15, 0.0]),
+    }
+
+    metrics = allocation_metrics(results, {"bus_1": 1.0})
+
+    assert np.isclose(metrics["tau_reference_FF_peak_abs_Nm"], 0.2)
+    assert np.isclose(metrics["tau_GG_FF_peak_abs_Nm"], 0.05)
+    assert np.isclose(metrics["tau_FF_peak_abs_Nm"], 0.15)
+
+
 def test_allocation_metrics_rejects_invalid_pointing_axis():
     with pytest.raises(ValueError, match="pointing_axis"):
         allocation_metrics(allocation_results(), {"bus_1": 1.0}, pointing_axis="z")

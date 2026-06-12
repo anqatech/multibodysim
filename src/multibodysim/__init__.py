@@ -11,6 +11,14 @@ from .controllers.control_effectiveness import (
     evaluate_scalar_control_effectiveness,
 )
 from .controllers.pd_attitude import PlanarAttitudeController
+from .controllers.rigid_gravity_gradient import (
+    RigidGravityGradientTorqueEstimator,
+    RigidGravityGradientTorqueResult,
+    TorqueAllocatedRigidGravityGradientFeedforward,
+    TorqueAllocatedRigidGravityGradientResult,
+    compute_nominal_rigid_inertia,
+    prepare_rigid_gravity_gradient_feedforward,
+)
 
 
 __version__ = "0.1.0"

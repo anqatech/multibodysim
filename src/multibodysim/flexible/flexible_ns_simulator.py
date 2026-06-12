@@ -201,6 +201,8 @@ class FlexibleNonSymmetricSimulator:
 
         J_eff = np.zeros_like(ts)
         tau_ff = np.zeros_like(ts)
+        tau_reference_ff = np.zeros_like(ts)
+        tau_gravity_gradient_ff = np.zeros_like(ts)
         tau_pd = np.zeros_like(ts)
         rG_x = np.zeros_like(ts)
         rG_y = np.zeros_like(ts)
@@ -215,6 +217,10 @@ class FlexibleNonSymmetricSimulator:
             J_eff[k] = np.abs(Md[theta_index, theta_index])
             ctrl_out = self.get_control_output(tk, qk, uk, Md=Md)
             tau_ff[k] = ctrl_out.tau_ff
+            tau_reference_ff[k] = ctrl_out.tau_reference_ff
+            tau_gravity_gradient_ff[k] = (
+                ctrl_out.tau_gravity_gradient_ff
+            )
             tau_pd[k] = ctrl_out.tau_fb
 
             # --- COM position/velocity diagnostics ---
@@ -228,6 +234,8 @@ class FlexibleNonSymmetricSimulator:
 
         self.results["J_eff"] = J_eff
         self.results["tau_FF"] = tau_ff
+        self.results["tau_reference_FF"] = tau_reference_ff
+        self.results["tau_GG_FF"] = tau_gravity_gradient_ff
         self.results["tau_PD"] = tau_pd
         self.results["rG_x"] = np.array(rG_x)
         self.results["rG_y"] = np.array(rG_y)
