@@ -1,17 +1,13 @@
 import numpy as np
+
 from .base import ControlOutput
-from ..inputshaping.zv_input_shaping import InputShaper
-from ..references import (
-    InertialRestToRestReference,
-    NadirAcquisitionReference,
-)
+from .planar_attitude_reference import PlanarAttitudeReferenceTracker
 
 
 class PlanarAttitudeController:
     def __init__(self, plant_view):
         self.plant_view = plant_view
-
-        self.mode = None
+        self.reference_tracker = PlanarAttitudeReferenceTracker(plant_view)
 
         self.theta_target = 0.0
         self.Kp = 0.0
@@ -20,49 +16,64 @@ class PlanarAttitudeController:
         self.Kp_nadir = 0.0
         self.Kd_nadir = 0.0
 
-        self.use_input_shaping = False
-        self.shaper = None
         self.manoeuvre_duration = 0.0
         self.reference_acceleration_gain = 0.0
         self.gravity_gradient_feedforward = None
-        self.reference = None
 
-        self.manoeuvre_start_time = None
-        self.theta_start = None
-        self.theta_final = None
-        self.delta_theta = None
+    @property
+    def mode(self):
+        return self.reference_tracker.mode
+
+    @property
+    def reference(self):
+        return self.reference_tracker.reference
+
+    @property
+    def use_input_shaping(self):
+        return self.reference_tracker.use_input_shaping
+
+    @property
+    def shaper(self):
+        return self.reference_tracker.shaper
+
+    @property
+    def manoeuvre_start_time(self):
+        return self.reference_tracker.manoeuvre_start_time
+
+    @property
+    def theta_start(self):
+        return self.reference_tracker.theta_start
+
+    @property
+    def theta_final(self):
+        return self.reference_tracker.theta_final
+
+    @property
+    def delta_theta(self):
+        return self.reference_tracker.delta_theta
 
     def reset(self):
-        if isinstance(
-            self.reference,
-            (InertialRestToRestReference, NadirAcquisitionReference),
-        ):
-            self.reference.reset()
-
-        self.manoeuvre_start_time = None
-        self.theta_start = None
-        self.theta_final = None
-        self.delta_theta = None
+        self.reference_tracker.reset()
 
     @staticmethod
     def smooth_step_5th_order(t, Tr):
-        return InertialRestToRestReference.smooth_step_5th_order(t, Tr)
+        return PlanarAttitudeReferenceTracker.smooth_step_5th_order(t, Tr)
 
     @staticmethod
     def derivative_smooth_step_5th_order(t, Tr):
-        return (
-            InertialRestToRestReference
-            .smooth_step_5th_order_derivative(t, Tr)
+        return PlanarAttitudeReferenceTracker.derivative_smooth_step_5th_order(
+            t,
+            Tr,
         )
 
     def raw_theta_command(self, t):
-        return self.reference.theta(t)
+        return self.reference_tracker.raw_theta_command(t)
 
     def raw_theta_dot_command(self, t):
-        return self.reference.theta_dot(t)
+        return self.reference_tracker.raw_theta_dot_command(t)
 
     def raw_theta_ddot_command(self, t):
-        return self.reference.theta_ddot(t)
+        return self.reference_tracker.raw_theta_ddot_command(t)
 
     def configure_inertial_pd(
         self,
@@ -78,8 +89,6 @@ class PlanarAttitudeController:
         zeta=None,
         gravity_gradient_feedforward=None,
     ):
-        self.mode = "inertial_pd"
-
         self.theta_target = float(theta_target)
         self.Kp = float(Kp)
         self.Kd = float(Kd)
@@ -91,26 +100,15 @@ class PlanarAttitudeController:
                 gravity_gradient_feedforward
             )
         )
-
         self.manoeuvre_duration = float(manoeuvre_duration)
-        self.use_input_shaping = bool(use_input_shaping)
-        self.reference = InertialRestToRestReference(
+        self.reference_tracker.configure_inertial(
             theta_target=self.theta_target,
-            duration=self.manoeuvre_duration,
+            manoeuvre_duration=self.manoeuvre_duration,
+            use_input_shaping=use_input_shaping,
+            shaper=shaper,
+            omega=omega,
+            zeta=zeta,
         )
-
-        if shaper is not None:
-            self.shaper = shaper
-        elif self.use_input_shaping:
-            if omega is None or zeta is None:
-                raise ValueError(
-                    "Input shaping requested but omega or zeta not provided."
-                )
-            self.shaper = InputShaper.zvd(omega=float(omega), zeta=float(zeta))
-        else:
-            self.shaper = None
-
-        self.reset()
 
     def configure_nadir_pd(
         self,
@@ -122,8 +120,6 @@ class PlanarAttitudeController:
         reference_acceleration_gain=0.0,
         gravity_gradient_feedforward=None,
     ):
-        self.mode = "nadir_pd"
-
         self.Kp_nadir = float(Kp)
         self.Kd_nadir = float(Kd)
         self.reference_acceleration_gain = self._validated_acceleration_gain(
@@ -135,55 +131,29 @@ class PlanarAttitudeController:
             )
         )
         self.manoeuvre_duration = float(manoeuvre_duration)
-        self.reference = NadirAcquisitionReference(
-            duration=self.manoeuvre_duration,
+        self.reference_tracker.configure_nadir(
+            manoeuvre_duration=self.manoeuvre_duration,
             offset=offset,
         )
 
-        self.use_input_shaping = False
-        self.shaper = None
-
-        self.reset()
-
     def compute(self, t, q, u, Md=None):
+        command_state = self.reference_tracker.evaluate(t, q, u)
         if self.mode == "inertial_pd":
-            theta = self.plant_view.theta(q)
-            theta_dot = self.plant_view.theta_dot(u)
-
-            if not self.reference.is_initialised:
-                self.reference.initialise(
-                    start_time=t,
-                    theta_initial=theta,
-                    theta_dot_initial=theta_dot,
-                )
-                self.manoeuvre_start_time = self.reference.start_time
-                self.theta_start = self.reference.theta_initial
-                self.theta_final = self.theta_target
-                self.delta_theta = self.reference.delta_theta
-
-            if self.use_input_shaping and self.shaper is not None:
-                theta_ref = self.shaper.shape(t, self.raw_theta_command)
-                theta_dot_ref = self.shaper.shape(t, self.raw_theta_dot_command)
-                theta_ddot_ref = self.shaper.shape(
-                    t,
-                    self.raw_theta_ddot_command,
-                )
-            else:
-                reference_state = self.reference.evaluate(t)
-                theta_ref = reference_state.theta
-                theta_dot_ref = reference_state.theta_dot
-                theta_ddot_ref = reference_state.theta_ddot
-
-            err = theta_ref - theta
-            err_dot = theta_dot_ref - theta_dot
-
             tau_reference_ff = (
-                self.reference_acceleration_gain * theta_ddot_ref
+                self.reference_acceleration_gain
+                * command_state.theta_ddot_ref
             )
             tau_gravity_gradient_ff = (
-                self._gravity_gradient_feedforward_torque(q, u, theta)
+                self._gravity_gradient_feedforward_torque(
+                    q,
+                    u,
+                    command_state.theta,
+                )
             )
-            tau_fb = self.Kp * err + self.Kd * err_dot
+            tau_fb = (
+                self.Kp * command_state.error
+                + self.Kd * command_state.error_dot
+            )
             return ControlOutput(
                 tau_fb=float(tau_fb),
                 tau_reference_ff=float(tau_reference_ff),
@@ -192,41 +162,21 @@ class PlanarAttitudeController:
                 ),
             )
 
-        theta = self.plant_view.theta(q)
-        theta_dot = self.plant_view.theta_dot(u)
-
-        rGx, rGy, vGx, vGy = self.plant_view.com_state(q, u)
-        if (
-            isinstance(self.reference, NadirAcquisitionReference)
-            and not self.reference.is_initialised
-        ):
-            self.reference.initialise(
-                start_time=t,
-                theta_initial=theta,
-                theta_dot_initial=theta_dot,
-                position=(rGx, rGy),
-                velocity=(vGx, vGy),
-            )
-        reference_state = self.reference.evaluate(
-            t,
-            position=(rGx, rGy),
-            velocity=(vGx, vGy),
-        )
-
-        # --- errors ---
-        err = (
-            reference_state.theta - theta + np.pi
-        ) % (2 * np.pi) - np.pi
-        err_dot = reference_state.theta_dot - theta_dot
-
         tau_reference_ff = (
             self.reference_acceleration_gain
-            * reference_state.theta_ddot
+            * command_state.theta_ddot_ref
         )
         tau_gravity_gradient_ff = (
-            self._gravity_gradient_feedforward_torque(q, u, theta)
+            self._gravity_gradient_feedforward_torque(
+                q,
+                u,
+                command_state.theta,
+            )
         )
-        tau_fb = self.Kp_nadir * err + self.Kd_nadir * err_dot
+        tau_fb = (
+            self.Kp_nadir * command_state.error
+            + self.Kd_nadir * command_state.error_dot
+        )
 
         return ControlOutput(
             tau_fb=float(tau_fb),

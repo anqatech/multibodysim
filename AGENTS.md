@@ -15,6 +15,19 @@ the physics step by step.
   `q_central_angle`, `u_central_angle`, `q_relative_angle_*`, and
   `u_relative_angle_*`.
 
+## Control/Optimisation Workflow
+
+For new control, allocation, or optimisation ideas:
+- Do not implement a large feature in one patch.
+- First agree the mathematical object and assumptions with the user.
+- If the method introduces unfamiliar maths, pause for a worked toy example
+  before coding.
+- Build in small slices: math helper, toy test, unit test, simulator
+  integration, notebook validation.
+- After each slice, stop for review before adding the next conceptual layer.
+- Distinguish clearly between "the code solves the stated problem" and "the
+  control design is physically good."
+
 ## Working Style
 
 - Make small, reviewable patches.
