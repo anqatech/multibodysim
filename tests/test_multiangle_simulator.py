@@ -5,6 +5,7 @@ import copy
 import numpy as np
 import pytest
 
+from multibodysim.controllers.base import ControlOutput
 from multibodysim.controllers.pd_attitude import PlanarAttitudeController
 from multibodysim.multiangle import (
     MultiAngleFlexibleDynamics,
@@ -50,6 +51,17 @@ def fake_autowrap_preparation(monkeypatch):
         prepare_autowrap_evaluators,
     )
     return calls
+
+
+class ConstantControlOutputController:
+    def __init__(self, output):
+        self.output = output
+
+    def reset(self):
+        pass
+
+    def compute(self, t, q, u, Md=None):
+        return self.output
 
 
 def test_multiangle_simulator_builds_from_multiangle_config(
@@ -124,6 +136,67 @@ def test_direct_multiangle_dynamics_construction_leaves_rhs_evaluators_unprepare
     assert dynamics.eval_kinematics_generated_metadata is None
     assert dynamics.eval_differentials_generated_metadata is None
     assert dynamics.autowrap_codegen_metadata is None
+
+
+def test_multiangle_simulator_applies_direct_bus_torques(
+    distributed_7part_zf_gg_off_multiangle_config,
+):
+    simulator = MultiAngleFlexibleSimulator(
+        distributed_7part_zf_gg_off_multiangle_config,
+    )
+    initial_conditions = simulator.setup_initial_conditions(verbose=False)
+    bus_torques = np.array([0.01, -0.02, 0.03])
+    simulator.set_controller(
+        ConstantControlOutputController(
+            ControlOutput(bus_torques=bus_torques)
+        )
+    )
+
+    simulator.evaluate_rhs(0.0, initial_conditions)
+
+    np.testing.assert_allclose(simulator.get_torque_values(), bus_torques)
+
+
+def test_multiangle_simulator_rejects_wrong_direct_bus_torque_count(
+    distributed_7part_zf_gg_off_multiangle_config,
+):
+    simulator = MultiAngleFlexibleSimulator(
+        distributed_7part_zf_gg_off_multiangle_config,
+    )
+    initial_conditions = simulator.setup_initial_conditions(verbose=False)
+    simulator.set_controller(
+        ConstantControlOutputController(
+            ControlOutput(bus_torques=np.array([0.01, -0.02]))
+        )
+    )
+
+    with pytest.raises(ValueError, match="bus_torques must contain 3 values"):
+        simulator.evaluate_rhs(0.0, initial_conditions)
+
+
+def test_multiangle_simulator_rejects_mixed_scalar_and_direct_bus_torques(
+    distributed_7part_zf_gg_off_multiangle_config,
+):
+    simulator = MultiAngleFlexibleSimulator(
+        distributed_7part_zf_gg_off_multiangle_config,
+    )
+    initial_conditions = simulator.setup_initial_conditions(verbose=False)
+    simulator.set_controller(
+        ConstantControlOutputController(
+            ControlOutput(
+                tau_fb=1.0,
+                bus_torques=np.array([0.01, -0.02, 0.03]),
+            )
+        )
+    )
+
+    with pytest.raises(ValueError, match="both direct bus_torques"):
+        simulator.evaluate_rhs(0.0, initial_conditions)
+
+
+def test_control_output_rejects_nonfinite_direct_bus_torques():
+    with pytest.raises(ValueError, match="bus_torques must contain only finite"):
+        ControlOutput(bus_torques=np.array([0.0, np.nan, 1.0]))
 
 
 def test_multiangle_absolute_tolerances_use_grouped_attitude_defaults(

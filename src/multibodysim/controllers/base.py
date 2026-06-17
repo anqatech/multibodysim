@@ -8,6 +8,7 @@ class ControlOutput:
     tau_fb: float
     tau_reference_ff: float
     tau_gravity_gradient_ff: float
+    bus_torques: np.ndarray | None
 
     def __init__(
         self,
@@ -16,6 +17,7 @@ class ControlOutput:
         *,
         tau_reference_ff: float | None = None,
         tau_gravity_gradient_ff: float = 0.0,
+        bus_torques=None,
     ):
         self.tau_fb = float(tau_fb)
         self.tau_reference_ff = float(
@@ -24,6 +26,7 @@ class ControlOutput:
         self.tau_gravity_gradient_ff = float(
             tau_gravity_gradient_ff
         )
+        self.bus_torques = self._normalise_bus_torques(bus_torques)
 
     @property
     def tau_ff(self) -> float:
@@ -32,6 +35,15 @@ class ControlOutput:
     @property
     def tau_total(self) -> float:
         return self.tau_ff + self.tau_fb
+
+    @staticmethod
+    def _normalise_bus_torques(bus_torques):
+        if bus_torques is None:
+            return None
+        torques = np.asarray(bus_torques, dtype=float).reshape(-1)
+        if not np.all(np.isfinite(torques)):
+            raise ValueError("bus_torques must contain only finite values.")
+        return torques
     
 class AttitudeController(Protocol):
     def reset(self) -> None: ...

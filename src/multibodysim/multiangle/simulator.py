@@ -110,9 +110,22 @@ class MultiAngleFlexibleSimulator:
                 u,
                 mass_matrix=np.asarray(mass_matrix, dtype=float),
             )
-            tau_control = control_output.tau_total
-            if tau_control != 0.0:
-                torques = torques + tau_control * self.torque_weights
+            if control_output.bus_torques is not None:
+                if control_output.tau_total != 0.0:
+                    raise ValueError(
+                        "ControlOutput cannot provide both direct bus_torques "
+                        "and a non-zero scalar torque command."
+                    )
+                torques = self._validated_bus_torques(
+                    control_output.bus_torques,
+                )
+                mass_matrix, forcing = self.dynamics._eval_differentials(
+                    q,
+                    u,
+                    torques,
+                )
+            elif control_output.tau_total != 0.0:
+                torques = torques + control_output.tau_total * self.torque_weights
                 mass_matrix, forcing = self.dynamics._eval_differentials(
                     q,
                     u,
@@ -127,6 +140,18 @@ class MultiAngleFlexibleSimulator:
         )
 
         return np.hstack((qd, ud))
+
+    def _validated_bus_torques(self, bus_torques) -> np.ndarray:
+        torques = np.asarray(bus_torques, dtype=float).reshape(-1)
+        expected_size = self.zero_torque_values.size
+        if torques.size != expected_size:
+            raise ValueError(
+                "bus_torques must contain "
+                f"{expected_size} values; got {torques.size}."
+            )
+        if not np.all(np.isfinite(torques)):
+            raise ValueError("bus_torques must contain only finite values.")
+        return torques.copy()
 
     def _absolute_tolerance_for_name(
         self,
