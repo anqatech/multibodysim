@@ -179,17 +179,18 @@ def _solve_active_set_pattern(
     active_indices = np.asarray(active_indices, dtype=int)
 
     if free_indices.size:
-        lagrange_multiplier = _solve_free_components(
-            torque_increments,
+        free_torques, lagrange_multiplier = _solve_free_components(
             free_indices,
             active_indices,
+            torque_increments[active_indices],
             commanded_acceleration,
             effectiveness,
             penalty_matrix,
             tolerance,
         )
-        if lagrange_multiplier is None:
+        if free_torques is None:
             return _invalid_candidate(pattern, channel_count)
+        torque_increments[free_indices] = free_torques
     else:
         if abs(effectiveness @ torque_increments - commanded_acceleration) > (
             tolerance
@@ -220,9 +221,9 @@ def _solve_active_set_pattern(
 
 
 def _solve_free_components(
-    torque_increments,
     free_indices,
     active_indices,
+    active_torques,
     commanded_acceleration,
     effectiveness,
     penalty_matrix,
@@ -235,7 +236,6 @@ def _solve_free_components(
         free_active_penalty = penalty_matrix[
             np.ix_(free_indices, active_indices)
         ]
-        active_torques = torque_increments[active_indices]
         active_effort_shift = free_active_penalty @ active_torques
         residual_acceleration = commanded_acceleration - float(
             effectiveness[active_indices] @ active_torques
@@ -250,7 +250,7 @@ def _solve_free_components(
     )
     denominator = float(free_effectiveness @ weighted_effectiveness)
     if denominator <= tolerance:
-        return None
+        return None, None
 
     weighted_active_shift = np.linalg.solve(
         free_penalty,
@@ -260,11 +260,11 @@ def _solve_free_components(
         residual_acceleration
         + float(free_effectiveness @ weighted_active_shift)
     ) / denominator
-    torque_increments[free_indices] = np.linalg.solve(
+    free_torques = np.linalg.solve(
         free_penalty,
         lagrange_multiplier * free_effectiveness - active_effort_shift,
     )
-    return float(lagrange_multiplier)
+    return free_torques, float(lagrange_multiplier)
 
 
 def _evaluate_candidate(
