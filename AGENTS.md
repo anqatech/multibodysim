@@ -35,5 +35,7 @@ For new control, allocation, or optimisation ideas:
   cover the files changed.
 - Do not silently change physics assumptions. If a change affects modelling,
   explain the mathematical reason before or alongside the code.
+- When discussing mathematics, use properly rendered LaTeX by default rather
+  than plain-text formulas.
 - Keep notebook-facing helpers lightweight and avoid putting notebook display
   concerns directly into core dynamics modules.
