@@ -1610,9 +1610,8 @@ class MultiAngleFlexibleDynamics:
         ]
 
     def get_torque_values(self):
-        configured_torques = self.config.get("torques", {})
         return [
-            configured_torques.get(body, 0.0)
+            0.0
             for body in self.rigid_body_names
         ]
 

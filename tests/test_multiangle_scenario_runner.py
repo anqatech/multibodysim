@@ -17,12 +17,7 @@ class FakeDynamics:
         self.eval_differentials_backend = "numpy"
 
     def get_torque_values(self):
-        torques = self.config.get("torques", {})
-        return [
-            torques.get("bus_1", 0.0),
-            torques.get("bus_2", 0.0),
-            torques.get("bus_3", 0.0),
-        ]
+        return [0.0, 0.0, 0.0]
 
     def get_torque_weights(self):
         weights = self.config.get("torque_weights", {})
@@ -67,7 +62,6 @@ class FakeSimulator:
             "initial_speeds_snapshot": copy.deepcopy(
                 self.config["initial_speeds"],
             ),
-            "torques_snapshot": copy.deepcopy(self.config["torques"]),
             "torque_weights_snapshot": copy.deepcopy(
                 self.config["torque_weights"],
             ),
@@ -91,11 +85,6 @@ def _base_config():
         "initial_speeds": {
             "u_central_angle": 0.0,
             "zeta1_1": 0.0,
-        },
-        "torques": {
-            "bus_1": 0.0,
-            "bus_2": 0.0,
-            "bus_3": 0.0,
         },
         "torque_weights": {
             "bus_1": 0.0,
@@ -186,30 +175,24 @@ def test_run_scenarios_resets_torque_weights_between_scenarios():
     )
 
 
-def test_run_scenarios_captures_scenario_torque_values():
+def test_run_scenarios_keeps_zero_initial_torque_values():
     simulator = FakeSimulator(_base_config())
 
     runs = run_scenarios(
         simulator,
         [
-            MultiAngleScenario(
-                name="torque-a",
-                torques={"bus_1": 1.0, "bus_2": 2.0, "bus_3": 3.0},
-            ),
-            MultiAngleScenario(
-                name="torque-b",
-                torques={"bus_1": 4.0, "bus_2": 5.0, "bus_3": 6.0},
-            ),
+            MultiAngleScenario(name="first"),
+            MultiAngleScenario(name="second"),
         ],
     )
 
     np.testing.assert_allclose(
         runs[0]["diagnostic_context"].torque_values,
-        [1.0, 2.0, 3.0],
+        [0.0, 0.0, 0.0],
     )
     np.testing.assert_allclose(
         runs[1]["diagnostic_context"].torque_values,
-        [4.0, 5.0, 6.0],
+        [0.0, 0.0, 0.0],
     )
     np.testing.assert_allclose(
         simulator.initial_torque_values,

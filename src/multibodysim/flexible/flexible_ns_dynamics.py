@@ -733,14 +733,10 @@ class FlexibleNonSymmetricDynamics:
         return self.parameter_values.values()
     
     def get_torque_values(self):
-        torques = self.config["torques"]
-
-        torque_values = []
-        for body in self.rigid_bodies:
-            torque = torques[body]
-            torque_values.append(torque)
-
-        return torque_values
+        return [
+            0.0
+            for _ in self.rigid_bodies
+        ]
 
     def get_torque_weights(self):
         torque_weights = self.config["torque_weights"].values()

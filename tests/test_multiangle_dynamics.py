@@ -1751,7 +1751,7 @@ def test_multiangle_initial_conditions_match_explicit_centre_offset_formula(
     np.testing.assert_allclose(u0[:2], expected_u_translation, rtol=1e-12, atol=1e-9)
 
 
-def test_multiangle_numeric_value_helpers_follow_symbol_order(
+def test_multiangle_numeric_value_helpers_ignore_config_torques(
     seven_part_dynamics,
     monkeypatch,
 ):
@@ -1769,7 +1769,7 @@ def test_multiangle_numeric_value_helpers_follow_symbol_order(
         dynamics.parameter_values[name]
         for name in dynamics.parameter_symbols
     ]
-    assert dynamics.get_torque_values() == [1.2, 0.0, -0.4]
+    assert dynamics.get_torque_values() == [0.0, 0.0, 0.0]
 
 
 def test_multiangle_equation_forcing_has_no_speed_derivatives(seven_part_dynamics):

@@ -17,7 +17,6 @@ class MultiAngleScenario:
     name: str
     q_initial: dict[str, float] | None = None
     initial_speeds: dict[str, float] | None = None
-    torques: dict[str, float] | None = None
     torque_weights: dict[str, float] | None = None
     controller: AttitudeController | None = None
     metadata: dict[str, Any] | None = None
@@ -79,7 +78,6 @@ def _baseline_from_simulator(
     return {
         "q_initial": deepcopy(simulator.config.get("q_initial", {})),
         "initial_speeds": deepcopy(simulator.config.get("initial_speeds", {})),
-        "torques": deepcopy(simulator.config.get("torques", {})),
         "torque_weights": deepcopy(simulator.config.get("torque_weights", {})),
         "controller": simulator.controller,
     }
@@ -98,13 +96,6 @@ def _apply_scenario(
     if scenario.initial_speeds is not None:
         simulator.config["initial_speeds"].update(
             deepcopy(scenario.initial_speeds),
-        )
-
-    if scenario.torques is not None:
-        simulator.config["torques"].update(deepcopy(scenario.torques))
-        simulator.initial_torque_values = np.array(
-            simulator.dynamics.get_torque_values(),
-            dtype=float,
         )
 
     if scenario.torque_weights is not None:
@@ -129,7 +120,6 @@ def _restore_baseline(
     simulator.config["initial_speeds"] = deepcopy(
         baseline["initial_speeds"],
     )
-    simulator.config["torques"] = deepcopy(baseline["torques"])
     simulator.config["torque_weights"] = deepcopy(
         baseline["torque_weights"],
     )
