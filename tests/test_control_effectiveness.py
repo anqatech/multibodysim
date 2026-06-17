@@ -3,6 +3,10 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from multibodysim.allocation import (
+    ControlEffectivenessVector,
+    evaluate_control_effectiveness_vector,
+)
 from multibodysim.controllers.control_effectiveness import (
     ScalarControlEffectiveness,
     evaluate_scalar_control_effectiveness,
@@ -44,6 +48,59 @@ class PlantView:
     i_theta_u = 0
 
 
+def test_vector_evaluation_returns_per_bus_control_effectiveness():
+    dynamics = CoupledDynamics()
+    q = np.array([0.2, -0.1])
+    u = np.array([0.3, -0.4])
+
+    result = evaluate_control_effectiveness_vector(
+        dynamics,
+        PlantView(),
+        q,
+        u,
+    )
+
+    mass_matrix, forcing_zero = dynamics._eval_differentials(
+        q,
+        u,
+        np.zeros(2),
+    )
+    _, forcing_bus_1 = dynamics._eval_differentials(
+        q,
+        u,
+        np.array([1.0, 0.0]),
+    )
+    _, forcing_bus_2 = dynamics._eval_differentials(
+        q,
+        u,
+        np.array([0.0, 1.0]),
+    )
+    expected_control_directions = np.column_stack(
+        (
+            (forcing_bus_1 - forcing_zero).reshape(-1),
+            (forcing_bus_2 - forcing_zero).reshape(-1),
+        )
+    )
+    expected_accelerations = np.linalg.solve(
+        mass_matrix,
+        expected_control_directions,
+    )
+
+    assert isinstance(result, ControlEffectivenessVector)
+    np.testing.assert_allclose(
+        result.control_generalised_force_directions,
+        expected_control_directions,
+    )
+    np.testing.assert_allclose(
+        result.unit_control_accelerations,
+        expected_accelerations,
+    )
+    np.testing.assert_allclose(
+        result.effectiveness,
+        expected_accelerations[0, :],
+    )
+
+
 def test_evaluation_uses_full_coupled_control_effectiveness():
     dynamics = CoupledDynamics()
     q = np.array([0.2, -0.1])
@@ -79,6 +136,50 @@ def test_evaluation_uses_full_coupled_control_effectiveness():
     assert np.isclose(
         result.reciprocal_control_effectiveness,
         1.0 / expected_effectiveness,
+    )
+
+
+@pytest.mark.parametrize(
+    "weights",
+    [
+        np.array([1.0, 0.0]),
+        np.array([0.0, 1.0]),
+        np.array([0.25, 0.75]),
+        np.array([0.5, 0.5]),
+    ],
+)
+def test_scalar_effectiveness_is_projection_of_vector_effectiveness(weights):
+    dynamics = CoupledDynamics()
+    q = np.array([0.2, -0.1])
+    u = np.array([0.3, -0.4])
+
+    vector_result = evaluate_control_effectiveness_vector(
+        dynamics,
+        PlantView(),
+        q,
+        u,
+    )
+    scalar_result = evaluate_scalar_control_effectiveness(
+        dynamics,
+        PlantView(),
+        weights,
+        q,
+        u,
+    )
+
+    assert np.isclose(
+        scalar_result.control_effectiveness,
+        vector_result.effectiveness @ weights,
+    )
+    np.testing.assert_allclose(
+        scalar_result.control_generalised_force_direction,
+        vector_result.control_generalised_force_directions
+        @ weights.reshape(-1, 1),
+    )
+    np.testing.assert_allclose(
+        scalar_result.unit_control_acceleration,
+        vector_result.unit_control_accelerations
+        @ weights.reshape(-1, 1),
     )
 
 
@@ -123,6 +224,24 @@ def test_evaluation_accepts_nonzero_baseline_torques():
         nonzero_baseline.control_effectiveness,
     )
 
+    zero_vector = evaluate_control_effectiveness_vector(
+        dynamics,
+        PlantView(),
+        np.zeros(2),
+        np.zeros(2),
+    )
+    nonzero_vector = evaluate_control_effectiveness_vector(
+        dynamics,
+        PlantView(),
+        np.zeros(2),
+        np.zeros(2),
+        baseline_torques=np.array([5.0, -3.0]),
+    )
+    np.testing.assert_allclose(
+        zero_vector.effectiveness,
+        nonzero_vector.effectiveness,
+    )
+
 
 def test_evaluation_rejects_zero_control_effectiveness():
     with pytest.raises(ValueError, match="zero central-attitude"):
@@ -152,6 +271,35 @@ def test_evaluation_rejects_torque_dependent_mass_matrix():
             dynamics,
             PlantView(),
             np.array([1.0, 0.0]),
+            np.zeros(2),
+            np.zeros(2),
+        )
+
+
+def test_vector_evaluation_rejects_zero_control_effectiveness():
+    class ZeroCentralEffectivenessDynamics(CoupledDynamics):
+        @staticmethod
+        def evaluate_differentials(q, u, torques):
+            del q, u
+            mass_matrix = np.eye(2)
+            base_forcing = np.array([[2.0], [-1.0]])
+            torque_map = np.array(
+                [
+                    [0.0, 0.0],
+                    [3.0, 1.0],
+                ]
+            )
+            forcing = (
+                base_forcing
+                + torque_map
+                @ np.asarray(torques, dtype=float).reshape(2, 1)
+            )
+            return mass_matrix, forcing
+
+    with pytest.raises(ValueError, match="zero central-attitude"):
+        evaluate_control_effectiveness_vector(
+            ZeroCentralEffectivenessDynamics(),
+            PlantView(),
             np.zeros(2),
             np.zeros(2),
         )
