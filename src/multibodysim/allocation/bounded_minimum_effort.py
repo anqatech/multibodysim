@@ -69,13 +69,20 @@ def solve_bounded_minimum_effort_allocation(
     lower_bounds,
     upper_bounds,
     *,
+    preferred_weights=None,
+    preferred_penalty_matrix=None,
     tolerance=1e-10,
 ) -> BoundedMinimumEffortAllocation:
     """Return the bounded minimum-effort torque increments.
 
     The bounded solve enumerates all lower/free/upper active-set patterns.
     This is intentionally limited to small allocations with at most five
-    torque channels.
+    torque channels.  When preferred weights and a preferred penalty matrix are
+    supplied, the objective becomes
+
+        0.5 * tau.T @ R @ tau + 0.5 * (tau - tau_pref).T @ P @ (tau - tau_pref)
+
+    with tau_pref built from the commanded acceleration and preferred weights.
     """
 
     acceleration = _finite_scalar(
@@ -100,6 +107,18 @@ def solve_bounded_minimum_effort_allocation(
         "effort_penalty_matrix",
     )
     tolerance = _positive_tolerance(tolerance)
+    (
+        objective_matrix,
+        objective_linear,
+        objective_constant,
+    ) = _objective_terms(
+        acceleration,
+        effectiveness,
+        penalty_matrix,
+        preferred_weights,
+        preferred_penalty_matrix,
+        tolerance,
+    )
 
     feasible_interval = evaluate_feasible_acceleration_interval(
         effectiveness,
@@ -122,7 +141,9 @@ def solve_bounded_minimum_effort_allocation(
             pattern,
             acceleration,
             effectiveness,
-            penalty_matrix,
+            objective_matrix,
+            objective_linear,
+            objective_constant,
             lower,
             upper,
             tolerance,
@@ -155,7 +176,9 @@ def _solve_active_set_pattern(
     pattern,
     commanded_acceleration,
     effectiveness,
-    penalty_matrix,
+    objective_matrix,
+    objective_linear,
+    objective_constant,
     lower_bounds,
     upper_bounds,
     tolerance,
@@ -185,7 +208,8 @@ def _solve_active_set_pattern(
             torque_increments[active_indices],
             commanded_acceleration,
             effectiveness,
-            penalty_matrix,
+            objective_matrix,
+            objective_linear,
             tolerance,
         )
         if free_torques is None:
@@ -200,7 +224,8 @@ def _solve_active_set_pattern(
             pattern,
             torque_increments,
             effectiveness,
-            penalty_matrix,
+            objective_matrix,
+            objective_linear,
             tolerance,
         )
         if interval is None:
@@ -213,7 +238,9 @@ def _solve_active_set_pattern(
         lagrange_multiplier,
         commanded_acceleration,
         effectiveness,
-        penalty_matrix,
+        objective_matrix,
+        objective_linear,
+        objective_constant,
         lower_bounds,
         upper_bounds,
         tolerance,
@@ -226,22 +253,23 @@ def _solve_free_components(
     active_torques,
     commanded_acceleration,
     effectiveness,
-    penalty_matrix,
+    objective_matrix,
+    objective_linear,
     tolerance,
 ):
     free_effectiveness = effectiveness[free_indices]
-    free_penalty = penalty_matrix[np.ix_(free_indices, free_indices)]
+    free_penalty = objective_matrix[np.ix_(free_indices, free_indices)]
+    effort_shift = objective_linear[free_indices].copy()
 
     if active_indices.size:
-        free_active_penalty = penalty_matrix[
+        free_active_penalty = objective_matrix[
             np.ix_(free_indices, active_indices)
         ]
-        active_effort_shift = free_active_penalty @ active_torques
+        effort_shift += free_active_penalty @ active_torques
         residual_acceleration = commanded_acceleration - float(
             effectiveness[active_indices] @ active_torques
         )
     else:
-        active_effort_shift = np.zeros(free_indices.size, dtype=float)
         residual_acceleration = commanded_acceleration
 
     weighted_effectiveness = np.linalg.solve(
@@ -252,17 +280,17 @@ def _solve_free_components(
     if denominator <= tolerance:
         return None, None
 
-    weighted_active_shift = np.linalg.solve(
+    weighted_effort_shift = np.linalg.solve(
         free_penalty,
-        active_effort_shift,
+        effort_shift,
     )
     lagrange_multiplier = (
         residual_acceleration
-        + float(free_effectiveness @ weighted_active_shift)
+        + float(free_effectiveness @ weighted_effort_shift)
     ) / denominator
     free_torques = np.linalg.solve(
         free_penalty,
-        lagrange_multiplier * free_effectiveness - active_effort_shift,
+        lagrange_multiplier * free_effectiveness - effort_shift,
     )
     return free_torques, float(lagrange_multiplier)
 
@@ -273,7 +301,9 @@ def _evaluate_candidate(
     lagrange_multiplier,
     commanded_acceleration,
     effectiveness,
-    penalty_matrix,
+    objective_matrix,
+    objective_linear,
+    objective_constant,
     lower_bounds,
     upper_bounds,
     tolerance,
@@ -290,7 +320,8 @@ def _evaluate_candidate(
     equality_ok = abs(residual) <= tolerance
 
     stationarity_residual = (
-        penalty_matrix @ torque_increments
+        objective_matrix @ torque_increments
+        + objective_linear
         - lagrange_multiplier * effectiveness
     )
     lower_multipliers = np.zeros(channel_count, dtype=float)
@@ -321,7 +352,11 @@ def _evaluate_candidate(
         torque_increments=torque_increments.copy(),
         achieved_acceleration=achieved_acceleration,
         residual=residual,
-        cost=0.5 * float(torque_increments @ penalty_matrix @ torque_increments),
+        cost=(
+            0.5 * float(torque_increments @ objective_matrix @ torque_increments)
+            + float(objective_linear @ torque_increments)
+            + float(objective_constant)
+        ),
         active_set=tuple(pattern),
         lagrange_multiplier=float(lagrange_multiplier),
         lower_multipliers=lower_multipliers,
@@ -334,10 +369,14 @@ def _all_active_lagrange_multiplier_interval(
     pattern,
     torque_increments,
     effectiveness,
-    penalty_matrix,
+    objective_matrix,
+    objective_linear,
     tolerance,
 ):
-    residual_without_multiplier = penalty_matrix @ torque_increments
+    residual_without_multiplier = (
+        objective_matrix @ torque_increments
+        + objective_linear
+    )
     lower_limit = -np.inf
     upper_limit = np.inf
 
@@ -407,6 +446,60 @@ def _choose_lagrange_multiplier(interval):
     return float(upper_limit)
 
 
+def _objective_terms(
+    commanded_acceleration,
+    effectiveness,
+    effort_penalty_matrix,
+    preferred_weights,
+    preferred_penalty_matrix,
+    tolerance,
+):
+    channel_count = effectiveness.size
+    if preferred_weights is None and preferred_penalty_matrix is None:
+        return (
+            effort_penalty_matrix,
+            np.zeros(channel_count, dtype=float),
+            0.0,
+        )
+    if preferred_weights is None or preferred_penalty_matrix is None:
+        raise ValueError(
+            "preferred_weights and preferred_penalty_matrix must be supplied "
+            "together."
+        )
+
+    weights = _nonnegative_weight_vector(
+        preferred_weights,
+        channel_count,
+        "preferred_weights",
+        tolerance,
+    )
+    preferred_penalty = _symmetric_positive_semidefinite_matrix(
+        preferred_penalty_matrix,
+        channel_count,
+        "preferred_penalty_matrix",
+        tolerance,
+    )
+
+    preferred_acceleration_gain = float(effectiveness @ weights)
+    if abs(preferred_acceleration_gain) <= tolerance:
+        raise ValueError(
+            "preferred_weights must satisfy "
+            "abs(control_effectiveness @ preferred_weights) > tolerance."
+        )
+
+    preferred_torques = (
+        commanded_acceleration
+        / preferred_acceleration_gain
+        * weights
+    )
+    objective_matrix = effort_penalty_matrix + preferred_penalty
+    objective_linear = -(preferred_penalty @ preferred_torques)
+    objective_constant = (
+        0.5 * float(preferred_torques @ preferred_penalty @ preferred_torques)
+    )
+    return objective_matrix, objective_linear, objective_constant
+
+
 def _invalid_candidate(pattern, channel_count):
     return _Candidate(
         torque_increments=np.full(channel_count, np.nan),
@@ -437,6 +530,22 @@ def _finite_vector(values, name):
         raise ValueError(f"{name} must contain at least one value.")
     if not np.all(np.isfinite(vector)):
         raise ValueError(f"{name} must contain only finite values.")
+    if not np.any(vector):
+        raise ValueError(f"{name} must not be the zero vector.")
+    return vector
+
+
+def _nonnegative_weight_vector(values, expected_size, name, tolerance):
+    vector = np.asarray(values, dtype=float).reshape(-1)
+    if vector.size != expected_size:
+        raise ValueError(
+            f"{name} must contain {expected_size} values; got {vector.size}."
+        )
+    if not np.all(np.isfinite(vector)):
+        raise ValueError(f"{name} must contain only finite values.")
+    if np.any(vector < -tolerance):
+        raise ValueError(f"{name} must contain only non-negative values.")
+    vector = np.maximum(vector, 0.0)
     if not np.any(vector):
         raise ValueError(f"{name} must not be the zero vector.")
     return vector
@@ -479,6 +588,28 @@ def _symmetric_positive_definite_matrix(matrix, expected_size, name):
         np.linalg.cholesky(matrix)
     except np.linalg.LinAlgError as error:
         raise ValueError(f"{name} must be positive definite.") from error
+    return matrix
+
+
+def _symmetric_positive_semidefinite_matrix(
+    matrix,
+    expected_size,
+    name,
+    tolerance,
+):
+    matrix = np.asarray(matrix, dtype=float)
+    if matrix.shape != (expected_size, expected_size):
+        raise ValueError(
+            f"{name} must have shape ({expected_size}, {expected_size}); "
+            f"got {matrix.shape}."
+        )
+    if not np.all(np.isfinite(matrix)):
+        raise ValueError(f"{name} must contain only finite values.")
+    if not np.allclose(matrix, matrix.T, rtol=0.0, atol=tolerance):
+        raise ValueError(f"{name} must be symmetric.")
+    eigenvalues = np.linalg.eigvalsh(matrix)
+    if float(np.min(eigenvalues)) < -tolerance:
+        raise ValueError(f"{name} must be positive semidefinite.")
     return matrix
 
 

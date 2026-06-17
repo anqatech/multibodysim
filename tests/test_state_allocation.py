@@ -131,3 +131,50 @@ def test_state_bounded_allocation_passes_baseline_torques_to_effectiveness():
         nonzero_baseline.torque_increments,
         atol=1e-12,
     )
+
+
+def test_state_bounded_allocation_forwards_preference_arguments():
+    dynamics = ThreeBusCoupledDynamics()
+    plant_view = PlantView()
+    q = np.array([0.2, -0.1])
+    u = np.array([0.3, -0.4])
+    commanded_acceleration = 0.1
+    effort_penalty_matrix = np.eye(3)
+    lower_bounds = np.full(3, -0.5)
+    upper_bounds = np.full(3, 0.5)
+    preferred_weights = np.array([0.0, 0.56, 0.44])
+    preferred_penalty_matrix = np.diag([0.0, 5.0, 5.0])
+
+    result = allocate_bounded_minimum_effort_at_state(
+        dynamics,
+        plant_view,
+        q,
+        u,
+        commanded_acceleration,
+        effort_penalty_matrix,
+        lower_bounds,
+        upper_bounds,
+        preferred_weights=preferred_weights,
+        preferred_penalty_matrix=preferred_penalty_matrix,
+    )
+    effectiveness = evaluate_control_effectiveness_vector(
+        dynamics,
+        plant_view,
+        q,
+        u,
+    )
+    expected = solve_bounded_minimum_effort_allocation(
+        commanded_acceleration,
+        effectiveness.effectiveness,
+        effort_penalty_matrix,
+        lower_bounds,
+        upper_bounds,
+        preferred_weights=preferred_weights,
+        preferred_penalty_matrix=preferred_penalty_matrix,
+    )
+
+    np.testing.assert_allclose(
+        result.torque_increments,
+        expected.torque_increments,
+    )
+    assert result.allocation.active_set == expected.active_set

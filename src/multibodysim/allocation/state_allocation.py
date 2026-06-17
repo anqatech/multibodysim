@@ -34,6 +34,8 @@ def allocate_bounded_minimum_effort_at_state(
     upper_bounds,
     *,
     baseline_torques=None,
+    preferred_weights=None,
+    preferred_penalty_matrix=None,
     tolerance=1e-10,
 ) -> StateBoundedMinimumEffortAllocation:
     """Allocate bounded minimum-effort torques at one state."""
@@ -51,6 +53,8 @@ def allocate_bounded_minimum_effort_at_state(
         effort_penalty_matrix,
         lower_bounds,
         upper_bounds,
+        preferred_weights=preferred_weights,
+        preferred_penalty_matrix=preferred_penalty_matrix,
         tolerance=tolerance,
     )
     return StateBoundedMinimumEffortAllocation(

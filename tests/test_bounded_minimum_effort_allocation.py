@@ -72,6 +72,60 @@ def test_bounded_solution_matches_unconstrained_when_bounds_inactive():
     )
 
 
+def test_bounded_solution_prefers_weighted_split_when_bounds_inactive():
+    result = solve_bounded_minimum_effort_allocation(
+        1.0,
+        np.array([1.0, 1.0]),
+        np.eye(2),
+        np.full(2, -10.0),
+        np.full(2, 10.0),
+        preferred_weights=np.array([1.0, 0.0]),
+        preferred_penalty_matrix=np.diag([10.0, 0.0]),
+    )
+
+    np.testing.assert_allclose(
+        result.torque_increments,
+        np.array([11.0 / 12.0, 1.0 / 12.0]),
+    )
+    assert result.active_set == ("F", "F")
+    assert np.isclose(result.achieved_acceleration, 1.0)
+
+
+def test_bounded_solution_rejects_incomplete_preference_arguments():
+    with pytest.raises(ValueError, match="must be supplied together"):
+        solve_bounded_minimum_effort_allocation(
+            1.0,
+            np.array([1.0, 1.0]),
+            np.eye(2),
+            np.full(2, -10.0),
+            np.full(2, 10.0),
+            preferred_weights=np.array([1.0, 0.0]),
+        )
+
+    with pytest.raises(ValueError, match="must be supplied together"):
+        solve_bounded_minimum_effort_allocation(
+            1.0,
+            np.array([1.0, 1.0]),
+            np.eye(2),
+            np.full(2, -10.0),
+            np.full(2, 10.0),
+            preferred_penalty_matrix=np.eye(2),
+        )
+
+
+def test_bounded_solution_rejects_unreachable_preferred_direction():
+    with pytest.raises(ValueError, match="control_effectiveness @ preferred_weights"):
+        solve_bounded_minimum_effort_allocation(
+            1.0,
+            np.array([1.0, -1.0]),
+            np.eye(2),
+            np.full(2, -10.0),
+            np.full(2, 10.0),
+            preferred_weights=np.array([1.0, 1.0]),
+            preferred_penalty_matrix=np.eye(2),
+        )
+
+
 def test_bounded_solution_matches_three_bus_notebook_case():
     lower_bounds = np.full(3, -0.05)
     upper_bounds = np.full(3, 0.05)
