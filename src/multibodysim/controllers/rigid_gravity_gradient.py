@@ -285,7 +285,7 @@ def prepare_rigid_gravity_gradient_feedforward(
         weights,
         mapped.q,
         mapped.u,
-        baseline_torques=simulator.initial_torque_values,
+        baseline_torques=simulator.zero_torque_values,
     )
     nominal_inertia = compute_nominal_rigid_inertia(dynamics)
     estimator = RigidGravityGradientTorqueEstimator(

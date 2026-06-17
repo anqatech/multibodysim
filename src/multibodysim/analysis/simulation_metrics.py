@@ -19,7 +19,7 @@ def diagnostic_context_from_simulator(simulator: Any) -> MultiAngleDiagnosticCon
     return MultiAngleDiagnosticContext(
         dynamics=simulator.dynamics,
         parameter_values=np.asarray(simulator.parameter_values, dtype=float).copy(),
-        torque_values=np.asarray(simulator.initial_torque_values, dtype=float).copy(),
+        torque_values=np.asarray(simulator.get_torque_values(), dtype=float).copy(),
     )
 
 

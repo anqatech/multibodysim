@@ -33,11 +33,8 @@ class FakeSimulator:
         self.config = config
         self.dynamics = FakeDynamics(config)
         self.parameter_values = np.array([1.0, 2.0], dtype=float)
-        self.initial_torque_values = np.array(
-            self.dynamics.get_torque_values(),
-            dtype=float,
-        )
-        self.torque_values = self.initial_torque_values.copy()
+        self.zero_torque_values = np.zeros(3, dtype=float)
+        self.torque_values = self.zero_torque_values.copy()
         self.torque_weights = np.array(
             self.dynamics.get_torque_weights(),
             dtype=float,
@@ -49,7 +46,10 @@ class FakeSimulator:
         self.controller = controller
 
     def reset_torque_values(self):
-        self.torque_values = self.initial_torque_values.copy()
+        self.torque_values = self.zero_torque_values.copy()
+
+    def get_torque_values(self):
+        return self.torque_values.copy()
 
     def run_simulation(self, eval_flag=True, verbose=False):
         self.results = {
@@ -65,9 +65,7 @@ class FakeSimulator:
             "torque_weights_snapshot": copy.deepcopy(
                 self.config["torque_weights"],
             ),
-            "initial_torque_values_snapshot": (
-                self.initial_torque_values.copy()
-            ),
+            "torque_values_snapshot": self.torque_values.copy(),
             "torque_weights_values_snapshot": self.torque_weights.copy(),
             "controller_snapshot": self.controller,
             "eval_flag": eval_flag,
@@ -175,7 +173,7 @@ def test_run_scenarios_resets_torque_weights_between_scenarios():
     )
 
 
-def test_run_scenarios_keeps_zero_initial_torque_values():
+def test_run_scenarios_keeps_zero_torque_values():
     simulator = FakeSimulator(_base_config())
 
     runs = run_scenarios(
@@ -195,7 +193,7 @@ def test_run_scenarios_keeps_zero_initial_torque_values():
         [0.0, 0.0, 0.0],
     )
     np.testing.assert_allclose(
-        simulator.initial_torque_values,
+        simulator.get_torque_values(),
         [0.0, 0.0, 0.0],
     )
 

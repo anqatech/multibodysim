@@ -66,7 +66,7 @@ def test_multiangle_simulator_builds_from_multiangle_config(
     assert simulator.parameter_values.shape == (
         len(simulator.dynamics.parameter_symbols),
     )
-    assert simulator.initial_torque_values.shape == (
+    assert simulator.zero_torque_values.shape == (
         len(simulator.dynamics.rigid_body_names),
     )
 
@@ -76,7 +76,7 @@ def test_multiangle_simulator_builds_from_multiangle_config(
     assert simulator.codegen_metadata["differentials"]["success"]
     np.testing.assert_allclose(
         simulator.get_torque_values(),
-        simulator.initial_torque_values,
+        simulator.zero_torque_values,
     )
 
     initial_conditions = simulator.setup_initial_conditions(verbose=False)
@@ -101,10 +101,7 @@ def test_multiangle_simulator_builds_from_multiangle_config(
     simulator.evaluate_rhs(0.0, initial_conditions)
     simulator.evaluate_rhs(1.0, initial_conditions)
 
-    expected_torques = (
-        simulator.initial_torque_values
-        + 0.02 * simulator.torque_weights
-    )
+    expected_torques = 0.02 * simulator.torque_weights
     np.testing.assert_allclose(simulator.get_torque_values(), expected_torques)
     assert np.isclose(simulator.plant_view.theta(q), theta_initial)
     assert np.isclose(simulator.plant_view.theta_dot(u), u[3])

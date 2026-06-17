@@ -35,7 +35,10 @@ class FakeSimulator:
     def __init__(self):
         self.dynamics = FakeDynamics()
         self.parameter_values = np.array([10.0])
-        self.initial_torque_values = np.array([0.0])
+        self.torque_values = np.array([0.0])
+
+    def get_torque_values(self):
+        return self.torque_values.copy()
 
 
 class FakeAngularMomentumDynamics:
@@ -67,7 +70,10 @@ class FakeAngularMomentumSimulator:
     def __init__(self):
         self.dynamics = FakeAngularMomentumDynamics()
         self.parameter_values = np.array([])
-        self.initial_torque_values = np.array([])
+        self.torque_values = np.array([])
+
+    def get_torque_values(self):
+        return self.torque_values.copy()
 
 
 def test_compute_angular_momentum_diagnostics_returns_momentum_and_drift():
@@ -175,7 +181,7 @@ def test_diagnostic_context_from_simulator_copies_numerical_arrays():
     context = diagnostic_context_from_simulator(simulator)
 
     simulator.parameter_values[0] = 99.0
-    simulator.initial_torque_values[0] = 88.0
+    simulator.torque_values[0] = 88.0
 
     assert context.dynamics is simulator.dynamics
     np.testing.assert_allclose(context.parameter_values, [10.0])

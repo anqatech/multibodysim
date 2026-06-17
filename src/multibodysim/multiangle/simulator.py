@@ -32,11 +32,11 @@ class MultiAngleFlexibleSimulator:
             self.dynamics.get_parameter_values(),
             dtype=float,
         )
-        self.initial_torque_values = np.array(
-            self.dynamics.get_torque_values(),
+        self.zero_torque_values = np.zeros(
+            len(self.dynamics.rigid_body_names),
             dtype=float,
         )
-        self.torque_values = self.initial_torque_values.copy()
+        self.torque_values = self.zero_torque_values.copy()
         self.torque_weights = np.array(
             self.dynamics.get_torque_weights(),
             dtype=float,
@@ -53,7 +53,7 @@ class MultiAngleFlexibleSimulator:
         return self.torque_values.copy()
 
     def reset_torque_values(self):
-        self.torque_values = self.initial_torque_values.copy()
+        self.torque_values = self.zero_torque_values.copy()
 
     def set_controller(self, controller: AttitudeController | None):
         self.controller = controller
@@ -83,7 +83,7 @@ class MultiAngleFlexibleSimulator:
         state_dimension = self.dynamics.state_dimension
         q = state[:state_dimension]
         u = state[state_dimension:]
-        torques = self.initial_torque_values.copy()
+        torques = self.zero_torque_values.copy()
         if torque_values is not None:
             torques = np.asarray(torque_values, dtype=float).copy()
 
@@ -271,7 +271,7 @@ class MultiAngleFlexibleSimulator:
             mass_matrix, _ = self.dynamics._eval_differentials(
                 qk,
                 uk,
-                self.initial_torque_values,
+                self.zero_torque_values,
             )
             mass_matrix = np.asarray(mass_matrix, dtype=float)
             J_eff[index] = abs(mass_matrix[theta_index, theta_index])

@@ -123,10 +123,6 @@ def _restore_baseline(
     simulator.config["torque_weights"] = deepcopy(
         baseline["torque_weights"],
     )
-    simulator.initial_torque_values = np.array(
-        simulator.dynamics.get_torque_values(),
-        dtype=float,
-    )
     simulator.torque_weights = np.array(
         simulator.dynamics.get_torque_weights(),
         dtype=float,
