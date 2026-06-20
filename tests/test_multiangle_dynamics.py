@@ -1384,6 +1384,41 @@ def test_multiangle_external_bus_torques_create_distinct_generalised_forces(seve
         assert_symbolic_equal(actual_without_gravity, expected[i])
 
 
+def test_multiangle_direct_control_force_matrix_matches_torque_differences(seven_part_dynamics):
+    dynamics = seven_part_dynamics
+    initial_state = dynamics.get_initial_conditions(verbose=False)
+    state_dimension = dynamics.state_dimension
+    q = initial_state[:state_dimension]
+    u = initial_state[state_dimension:]
+    baseline_torques = np.zeros(len(dynamics.rigid_body_names), dtype=float)
+    eval_differentials = make_numpy_eval_differentials_reference(dynamics)
+
+    _, baseline_forcing = eval_differentials(
+        q,
+        u,
+        baseline_torques,
+    )
+    control_columns = []
+    for torque_index in range(baseline_torques.size):
+        unit_torques = baseline_torques.copy()
+        unit_torques[torque_index] = 1.0
+        _, unit_forcing = eval_differentials(q, u, unit_torques)
+        control_columns.append(
+            (
+                np.asarray(unit_forcing, dtype=float)
+                - np.asarray(baseline_forcing, dtype=float)
+            ).reshape(-1)
+        )
+
+    expected = np.column_stack(control_columns)
+    actual = np.asarray(
+        dynamics._eval_control_force_matrix(q, u),
+        dtype=float,
+    )
+
+    np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=1e-12)
+
+
 def test_multiangle_generalised_active_forces_match_implemented_force_blocks(seven_part_dynamics):
     dynamics = seven_part_dynamics
 

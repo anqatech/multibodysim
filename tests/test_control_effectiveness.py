@@ -44,6 +44,27 @@ class CoupledDynamics:
         return mass_matrix, forcing
 
 
+class DirectControlMatrixDynamics(CoupledDynamics):
+    def __init__(self):
+        super().__init__()
+        self.differential_call_count = 0
+        self.control_force_matrix_call_count = 0
+
+    def evaluate_differentials(self, q, u, torques):
+        self.differential_call_count += 1
+        return super().evaluate_differentials(q, u, torques)
+
+    def evaluate_control_force_matrix(self, q, u):
+        del q, u
+        self.control_force_matrix_call_count += 1
+        return np.array(
+            [
+                [1.0, -2.0],
+                [3.0, 1.0],
+            ]
+        )
+
+
 class PlantView:
     i_theta_u = 0
 
@@ -87,6 +108,51 @@ def test_vector_evaluation_returns_per_bus_control_effectiveness():
     )
 
     assert isinstance(result, ControlEffectivenessVector)
+    np.testing.assert_allclose(
+        result.control_generalised_force_directions,
+        expected_control_directions,
+    )
+    np.testing.assert_allclose(
+        result.unit_control_accelerations,
+        expected_accelerations,
+    )
+    np.testing.assert_allclose(
+        result.effectiveness,
+        expected_accelerations[0, :],
+    )
+
+
+def test_vector_evaluation_uses_direct_control_force_matrix_when_available():
+    dynamics = DirectControlMatrixDynamics()
+    dynamics._eval_control_force_matrix = dynamics.evaluate_control_force_matrix
+    q = np.array([0.2, -0.1])
+    u = np.array([0.3, -0.4])
+
+    result = evaluate_control_effectiveness_vector(
+        dynamics,
+        PlantView(),
+        q,
+        u,
+    )
+
+    expected_control_directions = np.array(
+        [
+            [1.0, -2.0],
+            [3.0, 1.0],
+        ]
+    )
+    mass_matrix, _ = CoupledDynamics.evaluate_differentials(
+        q,
+        u,
+        np.zeros(2),
+    )
+    expected_accelerations = np.linalg.solve(
+        mass_matrix,
+        expected_control_directions,
+    )
+
+    assert dynamics.differential_call_count == 1
+    assert dynamics.control_force_matrix_call_count == 1
     np.testing.assert_allclose(
         result.control_generalised_force_directions,
         expected_control_directions,

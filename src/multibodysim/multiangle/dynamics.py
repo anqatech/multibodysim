@@ -1552,6 +1552,18 @@ class MultiAngleFlexibleDynamics:
 
     def _create_lambdified_functions(self):
         inertial_frame = self.frames["inertial"]
+        control_force_matrix = self._with_specialised_parameters(
+            self.forcing.jacobian(self.tau),
+        )
+        remaining_torque_symbols = (
+            set(control_force_matrix.free_symbols)
+            & set(self.bus_torque_symbols.values())
+        )
+        if remaining_torque_symbols:
+            raise RuntimeError(
+                "The control-force matrix depends on bus torque symbols; "
+                "the current evaluator assumes affine bus torques."
+            )
 
         self._eval_kinematics = None
         self.eval_kinematics_backend = "unprepared"
@@ -1561,6 +1573,14 @@ class MultiAngleFlexibleDynamics:
         self.eval_differentials_backend = "unprepared"
         self.eval_differentials_generated_metadata = None
         self.eval_differentials_codegen_timing = None
+        self.control_force_matrix = control_force_matrix
+        self._eval_control_force_matrix = self._lambdify_numpy(
+            (
+                self.q,
+                self.u,
+            ),
+            control_force_matrix,
+        )
         self.autowrap_codegen_metadata = None
         self.rG_func = self._lambdify_numpy(
             (

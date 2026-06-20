@@ -58,49 +58,36 @@ def evaluate_control_effectiveness_vector(
     if not 0 <= central_speed_index < state_dimension:
         raise ValueError("The plant view has an invalid central-speed index.")
 
-    control_directions = np.zeros(
-        (state_dimension, torque_count),
-        dtype=float,
+    control_matrix_evaluator = getattr(
+        dynamics,
+        "_eval_control_force_matrix",
+        None,
     )
-    unit_control_accelerations = np.zeros(
-        (state_dimension, torque_count),
-        dtype=float,
-    )
-    effectiveness = np.zeros(torque_count, dtype=float)
-
-    for torque_index in range(torque_count):
-        unit_torques = baseline.copy()
-        unit_torques[torque_index] += 1.0
-        unit_mass_matrix, unit_forcing = _evaluate_differentials(
+    if callable(control_matrix_evaluator):
+        control_directions = _evaluate_control_force_matrix(
+            control_matrix_evaluator,
+            q_values,
+            u_values,
+            state_dimension,
+            torque_count,
+        )
+    else:
+        control_directions = _evaluate_control_force_matrix_by_differences(
             evaluator,
             q_values,
             u_values,
-            unit_torques,
+            baseline,
+            mass_matrix,
+            baseline_forcing,
             state_dimension,
+            torque_count,
         )
-        if not np.allclose(
-            mass_matrix,
-            unit_mass_matrix,
-            rtol=1e-12,
-            atol=1e-12,
-        ):
-            raise RuntimeError(
-                "The differential mass matrix changed with applied torque; "
-                "the forcing difference cannot be interpreted as B(q)."
-            )
 
-        control_direction = unit_forcing - baseline_forcing
-        unit_control_acceleration = np.linalg.solve(
-            mass_matrix,
-            control_direction,
-        )
-        control_directions[:, torque_index] = control_direction.reshape(-1)
-        unit_control_accelerations[:, torque_index] = (
-            unit_control_acceleration.reshape(-1)
-        )
-        effectiveness[torque_index] = float(
-            unit_control_acceleration[central_speed_index, 0]
-        )
+    unit_control_accelerations = np.linalg.solve(
+        mass_matrix,
+        control_directions,
+    )
+    effectiveness = unit_control_accelerations[central_speed_index, :].copy()
 
     if not np.any(effectiveness):
         raise ValueError(
@@ -148,6 +135,70 @@ def _evaluate_differentials(
             "The differential evaluator returned non-finite forcing."
         )
     return mass_matrix, forcing
+
+
+def _evaluate_control_force_matrix(
+    evaluator,
+    q,
+    u,
+    state_dimension,
+    torque_count,
+):
+    control_directions = np.asarray(evaluator(q, u), dtype=float)
+    if control_directions.shape != (state_dimension, torque_count):
+        raise ValueError(
+            "The control-force matrix evaluator returned shape "
+            f"{control_directions.shape}; expected "
+            f"({state_dimension}, {torque_count})."
+        )
+    if not np.all(np.isfinite(control_directions)):
+        raise ValueError(
+            "The control-force matrix evaluator returned non-finite values."
+        )
+    return control_directions
+
+
+def _evaluate_control_force_matrix_by_differences(
+    differential_evaluator,
+    q,
+    u,
+    baseline_torques,
+    mass_matrix,
+    baseline_forcing,
+    state_dimension,
+    torque_count,
+):
+    control_directions = np.zeros(
+        (state_dimension, torque_count),
+        dtype=float,
+    )
+
+    for torque_index in range(torque_count):
+        unit_torques = baseline_torques.copy()
+        unit_torques[torque_index] += 1.0
+        unit_mass_matrix, unit_forcing = _evaluate_differentials(
+            differential_evaluator,
+            q,
+            u,
+            unit_torques,
+            state_dimension,
+        )
+        if not np.allclose(
+            mass_matrix,
+            unit_mass_matrix,
+            rtol=1e-12,
+            atol=1e-12,
+        ):
+            raise RuntimeError(
+                "The differential mass matrix changed with applied torque; "
+                "the forcing difference cannot be interpreted as B(q)."
+            )
+
+        control_directions[:, torque_index] = (
+            unit_forcing - baseline_forcing
+        ).reshape(-1)
+
+    return control_directions
 
 
 def _finite_vector(values, expected_size, name):
