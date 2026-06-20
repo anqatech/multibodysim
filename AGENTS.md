@@ -27,6 +27,16 @@ For new control, allocation, or optimisation ideas:
 - After each slice, stop for review before adding the next conceptual layer.
 - Distinguish clearly between "the code solves the stated problem" and "the
   control design is physically good."
+- For actuator-limited control work, explicitly check whether the reference
+  trajectory is feasible under the available torque/acceleration bounds before
+  judging allocator or controller performance.
+- If a fixed manoeuvre duration produces infeasible acceleration commands, do
+  not treat saturation/runaway behaviour as an allocator bug by default; first
+  consider redesigning the reference trajectory, manoeuvre duration, or adding a
+  reference-governor/manoeuvre-manager layer.
+- Keep separate: "the allocator respects bounds for a requested command", "the
+  requested command is feasible", and "the closed-loop manoeuvre is well
+  designed."
 
 ## Working Style
 

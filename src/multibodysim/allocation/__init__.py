@@ -7,6 +7,10 @@ from .bounded_minimum_effort import (
     evaluate_feasible_acceleration_interval,
     solve_bounded_minimum_effort_allocation,
 )
+from .controllers import (
+    AllocatedPlanarAttitudeController,
+    AllocatedPlanarAttitudeDiagnostics,
+)
 from .minimum_effort import (
     solve_unconstrained_minimum_effort_allocation,
 )
@@ -16,6 +20,8 @@ from .state_allocation import (
 )
 
 __all__ = [
+    "AllocatedPlanarAttitudeController",
+    "AllocatedPlanarAttitudeDiagnostics",
     "BoundedMinimumEffortAllocation",
     "ControlEffectivenessVector",
     "StateBoundedMinimumEffortAllocation",
