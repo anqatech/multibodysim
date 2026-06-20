@@ -16,8 +16,8 @@ from .bounded_minimum_effort import (
     solve_bounded_minimum_effort_allocation,
 )
 from .effectiveness import (
+    ControlEffectivenessEvaluator,
     ControlEffectivenessVector,
-    evaluate_control_effectiveness_vector,
 )
 
 
@@ -50,12 +50,15 @@ class AllocatedPlanarAttitudeController:
         upper_bounds,
         preferred_weights=None,
         preferred_penalty_matrix=None,
-        baseline_torques=None,
         tolerance=1e-10,
     ):
         self.dynamics = dynamics
         self.plant_view = plant_view
         self.reference_tracker = PlanarAttitudeReferenceTracker(plant_view)
+        self.control_effectiveness_evaluator = ControlEffectivenessEvaluator(
+            dynamics,
+            plant_view,
+        )
 
         self.effort_penalty_matrix = np.asarray(
             effort_penalty_matrix,
@@ -67,7 +70,6 @@ class AllocatedPlanarAttitudeController:
         self.preferred_penalty_matrix = _optional_matrix(
             preferred_penalty_matrix,
         )
-        self.baseline_torques = _optional_vector(baseline_torques)
         self.tolerance = float(tolerance)
 
         self.Kp_acceleration = 0.0
@@ -161,8 +163,12 @@ class AllocatedPlanarAttitudeController:
         )
 
     def compute(self, t, q, u, Md=None):
-        del Md
-        diagnostics = self.evaluate_allocation(t, q, u)
+        if Md is None:
+            raise ValueError(
+                "AllocatedPlanarAttitudeController requires Md="
+                "mass_matrix from the simulator."
+            )
+        diagnostics = self.evaluate_allocation(t, q, u, mass_matrix=Md)
         self.last_diagnostics = diagnostics
         return ControlOutput(bus_torques=diagnostics.allocation.torque_increments)
 
@@ -171,6 +177,8 @@ class AllocatedPlanarAttitudeController:
         t,
         q,
         u,
+        *,
+        mass_matrix,
     ) -> AllocatedPlanarAttitudeDiagnostics:
         command_state = self.reference_tracker.evaluate(t, q, u)
         reference_acceleration = float(command_state.theta_ddot_ref)
@@ -196,12 +204,10 @@ class AllocatedPlanarAttitudeController:
             + gravity_gradient_acceleration
         )
 
-        effectiveness = evaluate_control_effectiveness_vector(
-            self.dynamics,
-            self.plant_view,
+        effectiveness = self.control_effectiveness_evaluator.evaluate(
             q,
             u,
-            baseline_torques=self.baseline_torques,
+            mass_matrix,
         )
         feasible_interval = evaluate_feasible_acceleration_interval(
             effectiveness.effectiveness,

@@ -8,8 +8,8 @@ from .bounded_minimum_effort import (
     solve_bounded_minimum_effort_allocation,
 )
 from .effectiveness import (
+    ControlEffectivenessEvaluator,
     ControlEffectivenessVector,
-    evaluate_control_effectiveness_vector,
 )
 
 
@@ -28,24 +28,25 @@ def allocate_bounded_minimum_effort_at_state(
     plant_view: Any,
     q,
     u,
+    mass_matrix,
     commanded_acceleration,
     effort_penalty_matrix,
     lower_bounds,
     upper_bounds,
     *,
-    baseline_torques=None,
     preferred_weights=None,
     preferred_penalty_matrix=None,
     tolerance=1e-10,
 ) -> StateBoundedMinimumEffortAllocation:
     """Allocate bounded minimum-effort torques at one state."""
 
-    effectiveness = evaluate_control_effectiveness_vector(
+    effectiveness = ControlEffectivenessEvaluator(
         dynamics,
         plant_view,
+    ).evaluate(
         q,
         u,
-        baseline_torques=baseline_torques,
+        mass_matrix,
     )
     allocation = solve_bounded_minimum_effort_allocation(
         commanded_acceleration,

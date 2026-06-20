@@ -5,7 +5,7 @@ from typing import Any
 
 import numpy as np
 
-from ..allocation import evaluate_control_effectiveness_vector
+from ..allocation.effectiveness import ControlEffectivenessEvaluator
 
 
 @dataclass(frozen=True)
@@ -26,7 +26,7 @@ def evaluate_scalar_control_effectiveness(
     q,
     u,
     *,
-    baseline_torques=None,
+    mass_matrix,
 ) -> ScalarControlEffectiveness:
     """Evaluate the local central-acceleration control channel.
 
@@ -51,12 +51,13 @@ def evaluate_scalar_control_effectiveness(
             "torque_weights must define a non-zero control direction."
         )
 
-    vector_result = evaluate_control_effectiveness_vector(
+    vector_result = ControlEffectivenessEvaluator(
         dynamics,
         plant_view,
+    ).evaluate(
         q,
         u,
-        baseline_torques=baseline_torques,
+        mass_matrix,
     )
     control_effectiveness = float(
         vector_result.effectiveness @ weights

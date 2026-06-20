@@ -278,6 +278,11 @@ def prepare_rigid_gravity_gradient_feedforward(
         centre_of_mass_position=centre_position,
         centre_of_mass_velocity=centre_velocity,
     )
+    mass_matrix, _ = dynamics._eval_differentials(
+        mapped.q,
+        mapped.u,
+        simulator.zero_torque_values,
+    )
 
     effectiveness = evaluate_scalar_control_effectiveness(
         dynamics,
@@ -285,7 +290,7 @@ def prepare_rigid_gravity_gradient_feedforward(
         weights,
         mapped.q,
         mapped.u,
-        baseline_torques=simulator.zero_torque_values,
+        mass_matrix=mass_matrix,
     )
     nominal_inertia = compute_nominal_rigid_inertia(dynamics)
     estimator = RigidGravityGradientTorqueEstimator(

@@ -11,16 +11,24 @@ class OneDofThreeBusDynamics:
 
     def __init__(self):
         self._eval_differentials = self.evaluate_differentials
+        self._eval_control_force_matrix = self.evaluate_control_force_matrix
 
     @staticmethod
     def evaluate_differentials(q, u, torques):
-        del q, u
         torques = np.asarray(torques, dtype=float)
         mass_matrix = np.array([[2.0]])
+        control_force_matrix = (
+            OneDofThreeBusDynamics.evaluate_control_force_matrix(q, u)
+        )
         forcing = np.array(
-            [[torques @ np.array([1.0, 2.0, -1.0])]]
+            [[torques @ control_force_matrix.reshape(-1)]]
         )
         return mass_matrix, forcing
+
+    @staticmethod
+    def evaluate_control_force_matrix(q, u):
+        del q, u
+        return np.array([[1.0, 2.0, -1.0]])
 
 
 class PlantView:
@@ -75,7 +83,6 @@ def make_controller(
             if upper_bounds is None
             else upper_bounds
         ),
-        baseline_torques=np.zeros(3),
     )
     controller.configure_inertial_pd(
         theta_target=1.0,
@@ -85,7 +92,12 @@ def make_controller(
         gravity_gradient_feedforward=gravity_gradient_feedforward,
         gravity_gradient_acceleration_gain=gravity_gradient_acceleration_gain,
     )
-    controller.compute(0.0, np.array([0.0]), np.array([0.0]))
+    controller.compute(
+        0.0,
+        np.array([0.0]),
+        np.array([0.0]),
+        Md=np.array([[2.0]]),
+    )
     return controller
 
 
@@ -96,6 +108,7 @@ def test_allocated_controller_returns_direct_bus_torques_for_feasible_command():
         10.0,
         np.array([0.0]),
         np.array([0.0]),
+        Md=np.array([[2.0]]),
     )
     diagnostics = controller.last_diagnostics
 
@@ -125,6 +138,7 @@ def test_allocated_controller_clips_infeasible_acceleration_command():
         10.0,
         np.array([0.0]),
         np.array([0.0]),
+        Md=np.array([[2.0]]),
     )
     diagnostics = controller.last_diagnostics
 
@@ -155,6 +169,7 @@ def test_allocated_controller_includes_gravity_gradient_acceleration_term():
         10.0,
         np.array([1.0]),
         np.array([0.0]),
+        Md=np.array([[2.0]]),
     )
     diagnostics = controller.last_diagnostics
 

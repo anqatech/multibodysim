@@ -3,9 +3,9 @@ from __future__ import annotations
 import numpy as np
 
 from multibodysim.allocation import (
+    ControlEffectivenessEvaluator,
     StateBoundedMinimumEffortAllocation,
     allocate_bounded_minimum_effort_at_state,
-    evaluate_control_effectiveness_vector,
     solve_bounded_minimum_effort_allocation,
 )
 
@@ -16,10 +16,10 @@ class ThreeBusCoupledDynamics:
 
     def __init__(self):
         self._eval_differentials = self.evaluate_differentials
+        self._eval_control_force_matrix = self.evaluate_control_force_matrix
 
     @staticmethod
     def evaluate_differentials(q, u, torques):
-        del u
         mass_matrix = np.array(
             [
                 [4.0 + 0.1 * q[0], 1.0],
@@ -27,22 +27,35 @@ class ThreeBusCoupledDynamics:
             ]
         )
         base_forcing = np.array([[2.0], [-1.0]])
-        torque_map = np.array(
+        forcing = (
+            base_forcing
+            + ThreeBusCoupledDynamics.evaluate_control_force_matrix(q, u)
+            @ np.asarray(torques, dtype=float).reshape(3, 1)
+        )
+        return mass_matrix, forcing
+
+    @staticmethod
+    def evaluate_control_force_matrix(q, u):
+        del q, u
+        return np.array(
             [
                 [1.0, -2.0, 0.5],
                 [3.0, 1.0, -1.5],
             ]
         )
-        forcing = (
-            base_forcing
-            + torque_map
-            @ np.asarray(torques, dtype=float).reshape(3, 1)
-        )
-        return mass_matrix, forcing
 
 
 class PlantView:
     i_theta_u = 0
+
+
+def mass_matrix_for(dynamics, q, u):
+    mass_matrix, _ = dynamics._eval_differentials(
+        q,
+        u,
+        np.zeros(len(dynamics.rigid_body_names)),
+    )
+    return mass_matrix
 
 
 def test_state_bounded_allocation_matches_separate_helper_calls():
@@ -50,6 +63,7 @@ def test_state_bounded_allocation_matches_separate_helper_calls():
     plant_view = PlantView()
     q = np.array([0.2, -0.1])
     u = np.array([0.3, -0.4])
+    mass_matrix = mass_matrix_for(dynamics, q, u)
     commanded_acceleration = 0.1
     effort_penalty_matrix = np.diag([1.0, 2.0, 3.0])
     lower_bounds = np.full(3, -0.5)
@@ -60,16 +74,19 @@ def test_state_bounded_allocation_matches_separate_helper_calls():
         plant_view,
         q,
         u,
+        mass_matrix,
         commanded_acceleration,
         effort_penalty_matrix,
         lower_bounds,
         upper_bounds,
     )
-    effectiveness = evaluate_control_effectiveness_vector(
+    effectiveness = ControlEffectivenessEvaluator(
         dynamics,
         plant_view,
+    ).evaluate(
         q,
         u,
+        mass_matrix,
     )
     allocation = solve_bounded_minimum_effort_allocation(
         commanded_acceleration,
@@ -99,16 +116,18 @@ def test_state_bounded_allocation_matches_separate_helper_calls():
     )
 
 
-def test_state_bounded_allocation_passes_baseline_torques_to_effectiveness():
+def test_state_bounded_allocation_is_repeatable_with_explicit_mass_matrix():
     dynamics = ThreeBusCoupledDynamics()
     plant_view = PlantView()
     q = np.zeros(2)
     u = np.zeros(2)
+    mass_matrix = mass_matrix_for(dynamics, q, u)
     common = dict(
         dynamics=dynamics,
         plant_view=plant_view,
         q=q,
         u=u,
+        mass_matrix=mass_matrix,
         commanded_acceleration=0.05,
         effort_penalty_matrix=np.eye(3),
         lower_bounds=np.full(3, -0.5),
@@ -116,19 +135,16 @@ def test_state_bounded_allocation_passes_baseline_torques_to_effectiveness():
     )
 
     zero_baseline = allocate_bounded_minimum_effort_at_state(**common)
-    nonzero_baseline = allocate_bounded_minimum_effort_at_state(
-        **common,
-        baseline_torques=np.array([0.2, -0.1, 0.05]),
-    )
+    repeated = allocate_bounded_minimum_effort_at_state(**common)
 
     np.testing.assert_allclose(
         zero_baseline.control_effectiveness.effectiveness,
-        nonzero_baseline.control_effectiveness.effectiveness,
+        repeated.control_effectiveness.effectiveness,
         atol=1e-12,
     )
     np.testing.assert_allclose(
         zero_baseline.torque_increments,
-        nonzero_baseline.torque_increments,
+        repeated.torque_increments,
         atol=1e-12,
     )
 
@@ -138,6 +154,7 @@ def test_state_bounded_allocation_forwards_preference_arguments():
     plant_view = PlantView()
     q = np.array([0.2, -0.1])
     u = np.array([0.3, -0.4])
+    mass_matrix = mass_matrix_for(dynamics, q, u)
     commanded_acceleration = 0.1
     effort_penalty_matrix = np.eye(3)
     lower_bounds = np.full(3, -0.5)
@@ -150,6 +167,7 @@ def test_state_bounded_allocation_forwards_preference_arguments():
         plant_view,
         q,
         u,
+        mass_matrix,
         commanded_acceleration,
         effort_penalty_matrix,
         lower_bounds,
@@ -157,11 +175,13 @@ def test_state_bounded_allocation_forwards_preference_arguments():
         preferred_weights=preferred_weights,
         preferred_penalty_matrix=preferred_penalty_matrix,
     )
-    effectiveness = evaluate_control_effectiveness_vector(
+    effectiveness = ControlEffectivenessEvaluator(
         dynamics,
         plant_view,
+    ).evaluate(
         q,
         u,
+        mass_matrix,
     )
     expected = solve_bounded_minimum_effort_allocation(
         commanded_acceleration,

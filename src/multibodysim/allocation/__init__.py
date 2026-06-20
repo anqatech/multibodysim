@@ -1,6 +1,6 @@
 from .effectiveness import (
+    ControlEffectivenessEvaluator,
     ControlEffectivenessVector,
-    evaluate_control_effectiveness_vector,
 )
 from .bounded_minimum_effort import (
     BoundedMinimumEffortAllocation,
@@ -24,10 +24,10 @@ __all__ = [
     "AllocatedPlanarAttitudeDiagnostics",
     "BoundedMinimumEffortAllocation",
     "ControlEffectivenessVector",
+    "ControlEffectivenessEvaluator",
     "StateBoundedMinimumEffortAllocation",
     "allocate_bounded_minimum_effort_at_state",
     "evaluate_feasible_acceleration_interval",
-    "evaluate_control_effectiveness_vector",
     "solve_bounded_minimum_effort_allocation",
     "solve_unconstrained_minimum_effort_allocation",
 ]
