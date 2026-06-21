@@ -6,6 +6,8 @@ import sympy as sm
 
 from multibodysim.analysis import gravity_gradient_control_diagnostic
 from multibodysim.controllers.gravity_gradient import (
+    FullStateGravityGradientAccelerationFeedforward,
+    FullStateGravityGradientAccelerationResult,
     GravityGradientCompensationResult,
     GravityGradientCompensator,
     ReferenceGravityGradientCompensationResult,
@@ -142,6 +144,47 @@ def test_compensator_matches_independent_analysis_diagnostic(q, u):
         result.central_cancellation_residual_acceleration,
         0.0,
         atol=1e-15,
+    )
+
+
+def test_full_state_acceleration_feedforward_cancels_central_gg_acceleration():
+    simulator = FakeSimulator()
+    feedforward = FullStateGravityGradientAccelerationFeedforward(
+        simulator.dynamics,
+        simulator.plant_view,
+        prepared_evaluator=prepared_evaluator(),
+    )
+    q = np.array([0.2, -0.1])
+    u = np.array([0.3, -0.4])
+    mass_matrix, _ = simulator.dynamics.eval_differentials(
+        q,
+        u,
+        np.zeros(2),
+    )
+    gravity_gradient_forces = prepared_evaluator()["function"](q)
+    expected_acceleration = np.linalg.solve(
+        mass_matrix,
+        gravity_gradient_forces,
+    )
+
+    result = feedforward.evaluate(q, u, mass_matrix)
+
+    assert isinstance(result, FullStateGravityGradientAccelerationResult)
+    np.testing.assert_allclose(
+        result.gravity_gradient_generalised_forces,
+        gravity_gradient_forces,
+    )
+    np.testing.assert_allclose(
+        result.gravity_gradient_acceleration,
+        expected_acceleration,
+    )
+    assert np.isclose(
+        result.central_gravity_gradient_acceleration,
+        expected_acceleration[0, 0],
+    )
+    assert np.isclose(
+        result.cancellation_acceleration,
+        -expected_acceleration[0, 0],
     )
 
 

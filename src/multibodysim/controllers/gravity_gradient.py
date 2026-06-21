@@ -59,6 +59,120 @@ class ReferenceGravityGradientCompensationResult:
         return self.compensation.central_cancellation_residual_acceleration
 
 
+@dataclass(frozen=True)
+class FullStateGravityGradientAccelerationResult:
+    q: np.ndarray
+    u: np.ndarray
+    central_speed_index: int
+    mass_matrix: np.ndarray
+    gravity_gradient_generalised_forces: np.ndarray
+    gravity_gradient_acceleration: np.ndarray
+    central_gravity_gradient_acceleration: float
+    cancellation_acceleration: float
+
+
+class FullStateGravityGradientAccelerationFeedforward:
+    """Oracle acceleration-level GG feedforward for simulation studies."""
+
+    def __init__(
+        self,
+        dynamics: Any,
+        plant_view: Any,
+        *,
+        cache_root: Path | None = None,
+        prepared_evaluator: dict | None = None,
+    ):
+        self.dynamics = dynamics
+        self.plant_view = plant_view
+        self.central_speed_index = self._central_speed_index()
+        self.prepared_evaluator = self._prepare_evaluator(
+            cache_root=cache_root,
+            prepared_evaluator=prepared_evaluator,
+        )
+
+    @property
+    def evaluator_metadata(self):
+        return self.prepared_evaluator.get("metadata")
+
+    @property
+    def evaluator_timing(self):
+        return self.prepared_evaluator.get("timing")
+
+    @property
+    def evaluator_artifact_dir(self):
+        return self.prepared_evaluator.get("artifact_dir")
+
+    def evaluate(
+        self,
+        q: np.ndarray,
+        u: np.ndarray,
+        mass_matrix: np.ndarray,
+    ) -> FullStateGravityGradientAccelerationResult:
+        q_values = _state_vector(self.dynamics, q, "q")
+        u_values = _state_vector(self.dynamics, u, "u")
+        mass = _mass_matrix(self.dynamics, mass_matrix)
+        gravity_gradient_forces = _column_vector(
+            self.dynamics,
+            self.prepared_evaluator["function"](q_values),
+            "gravity-gradient evaluator output",
+        )
+        gravity_gradient_acceleration = np.linalg.solve(
+            mass,
+            gravity_gradient_forces,
+        )
+        central_gg_acceleration = float(
+            gravity_gradient_acceleration[self.central_speed_index, 0]
+        )
+
+        return FullStateGravityGradientAccelerationResult(
+            q=q_values.copy(),
+            u=u_values.copy(),
+            central_speed_index=self.central_speed_index,
+            mass_matrix=mass.copy(),
+            gravity_gradient_generalised_forces=gravity_gradient_forces.copy(),
+            gravity_gradient_acceleration=gravity_gradient_acceleration.copy(),
+            central_gravity_gradient_acceleration=central_gg_acceleration,
+            cancellation_acceleration=-central_gg_acceleration,
+        )
+
+    def _prepare_evaluator(
+        self,
+        *,
+        cache_root: Path | None,
+        prepared_evaluator: dict | None,
+    ) -> dict:
+        if not getattr(self.dynamics, "enable_gravity_gradient", False):
+            raise ValueError(
+                "FullStateGravityGradientAccelerationFeedforward requires "
+                "enable_gravity_gradient=True."
+            )
+
+        if prepared_evaluator is None:
+            prepared_evaluator = (
+                prepare_autowrap_gravity_gradient_evaluator(
+                    self.dynamics,
+                    cache_root=cache_root,
+                )
+            )
+        if not isinstance(prepared_evaluator, dict):
+            raise TypeError(
+                "prepared_evaluator must be a prepared evaluator dictionary."
+            )
+        if not callable(prepared_evaluator.get("function")):
+            raise ValueError(
+                "prepared_evaluator must contain a callable 'function'."
+            )
+        return prepared_evaluator
+
+    def _central_speed_index(self) -> int:
+        index = int(self.plant_view.i_theta_u)
+        if not 0 <= index < self.dynamics.state_dimension:
+            raise ValueError(
+                "The plant view has an invalid central-speed index."
+            )
+        return index
+
+
 class GravityGradientCompensator:
     """Evaluate gravity-gradient loading in a scalar control channel."""
 
@@ -342,3 +456,43 @@ class ReferenceGravityGradientCompensator:
             reference_state=reference_state,
             compensation=compensation,
         )
+
+
+def _state_vector(dynamics: Any, values: np.ndarray, name: str) -> np.ndarray:
+    vector = np.asarray(values, dtype=float).reshape(-1)
+    expected_size = dynamics.state_dimension
+    if vector.size != expected_size:
+        raise ValueError(
+            f"{name} must contain {expected_size} values; "
+            f"got {vector.size}."
+        )
+    if not np.all(np.isfinite(vector)):
+        raise ValueError(f"{name} must contain only finite values.")
+    return vector
+
+
+def _mass_matrix(dynamics: Any, values: np.ndarray) -> np.ndarray:
+    matrix = np.asarray(values, dtype=float)
+    expected_shape = (dynamics.state_dimension, dynamics.state_dimension)
+    if matrix.shape != expected_shape:
+        raise ValueError(
+            "mass_matrix must have shape "
+            f"{expected_shape}; got {matrix.shape}."
+        )
+    if not np.all(np.isfinite(matrix)):
+        raise ValueError("mass_matrix must contain only finite values.")
+    return matrix
+
+
+def _column_vector(dynamics: Any, values, name: str) -> np.ndarray:
+    vector = np.asarray(values, dtype=float)
+    expected_size = dynamics.state_dimension
+    if vector.size != expected_size:
+        raise ValueError(
+            f"{name} must contain {expected_size} values; "
+            f"got {vector.size}."
+        )
+    vector = vector.reshape(expected_size, 1)
+    if not np.all(np.isfinite(vector)):
+        raise ValueError(f"{name} must contain only finite values.")
+    return vector

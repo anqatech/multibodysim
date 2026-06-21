@@ -62,11 +62,26 @@ class RecordingGravityGradientFeedforward:
         )()
 
 
+class RecordingGravityGradientAccelerationFeedforward:
+    def __init__(self, cancellation_acceleration):
+        self.cancellation_acceleration = float(cancellation_acceleration)
+        self.calls = []
+
+    def evaluate(self, q, u, mass_matrix):
+        self.calls.append((q.copy(), u.copy(), mass_matrix.copy()))
+        return type(
+            "GravityGradientAccelerationFeedforwardResult",
+            (),
+            {"cancellation_acceleration": self.cancellation_acceleration},
+        )()
+
+
 def make_controller(
     *,
     lower_bounds=None,
     upper_bounds=None,
     gravity_gradient_feedforward=None,
+    gravity_gradient_acceleration_feedforward=None,
     gravity_gradient_acceleration_gain=0.0,
 ):
     controller = AllocatedPlanarAttitudeController(
@@ -90,6 +105,9 @@ def make_controller(
         Kd_acceleration=0.0,
         manoeuvre_duration=10.0,
         gravity_gradient_feedforward=gravity_gradient_feedforward,
+        gravity_gradient_acceleration_feedforward=(
+            gravity_gradient_acceleration_feedforward
+        ),
         gravity_gradient_acceleration_gain=gravity_gradient_acceleration_gain,
     )
     controller.compute(
@@ -182,4 +200,37 @@ def test_allocated_controller_includes_gravity_gradient_acceleration_term():
         diagnostics.control_effectiveness.effectiveness
         @ output.bus_torques,
         0.2,
+    )
+
+
+def test_allocated_controller_uses_acceleration_feedforward_directly():
+    feedforward = RecordingGravityGradientAccelerationFeedforward(
+        cancellation_acceleration=-0.3,
+    )
+    controller = make_controller(
+        gravity_gradient_acceleration_feedforward=feedforward,
+    )
+    controller.Kp_acceleration = 0.0
+
+    mass_matrix = np.array([[2.0]])
+    output = controller.compute(
+        10.0,
+        np.array([1.0]),
+        np.array([0.25]),
+        Md=mass_matrix,
+    )
+    diagnostics = controller.last_diagnostics
+
+    q_call, u_call, mass_call = feedforward.calls[-1]
+    np.testing.assert_allclose(q_call, [1.0])
+    np.testing.assert_allclose(u_call, [0.25])
+    np.testing.assert_allclose(mass_call, mass_matrix)
+    assert diagnostics is not None
+    assert np.isclose(diagnostics.gravity_gradient_torque, 0.0)
+    assert np.isclose(diagnostics.gravity_gradient_acceleration, -0.3)
+    assert np.isclose(diagnostics.requested_acceleration, -0.3)
+    assert np.isclose(
+        diagnostics.control_effectiveness.effectiveness
+        @ output.bus_torques,
+        -0.3,
     )

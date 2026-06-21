@@ -10,6 +10,10 @@ from .controllers.control_effectiveness import (
     ScalarControlEffectiveness,
     evaluate_scalar_control_effectiveness,
 )
+from .controllers.gravity_gradient import (
+    FullStateGravityGradientAccelerationFeedforward,
+    FullStateGravityGradientAccelerationResult,
+)
 from .controllers.pd_attitude import PlanarAttitudeController
 from .controllers.rigid_gravity_gradient import (
     RigidGravityGradientTorqueEstimator,

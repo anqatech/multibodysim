@@ -75,6 +75,7 @@ class AllocatedPlanarAttitudeController:
         self.Kp_acceleration = 0.0
         self.Kd_acceleration = 0.0
         self.gravity_gradient_feedforward = None
+        self.gravity_gradient_acceleration_feedforward = None
         self.gravity_gradient_acceleration_gain = 0.0
         self.last_diagnostics: AllocatedPlanarAttitudeDiagnostics | None = None
 
@@ -102,6 +103,7 @@ class AllocatedPlanarAttitudeController:
         omega=None,
         zeta=None,
         gravity_gradient_feedforward=None,
+        gravity_gradient_acceleration_feedforward=None,
         gravity_gradient_acceleration_gain=0.0,
     ):
         self.Kp_acceleration = _finite_scalar(
@@ -112,14 +114,12 @@ class AllocatedPlanarAttitudeController:
             Kd_acceleration,
             "Kd_acceleration",
         )
-        self.gravity_gradient_feedforward = (
-            _validated_gravity_gradient_feedforward(
-                gravity_gradient_feedforward,
-            )
-        )
-        self.gravity_gradient_acceleration_gain = _finite_scalar(
-            gravity_gradient_acceleration_gain,
-            "gravity_gradient_acceleration_gain",
+        self._configure_gravity_gradient_feedforward(
+            gravity_gradient_feedforward=gravity_gradient_feedforward,
+            gravity_gradient_acceleration_feedforward=(
+                gravity_gradient_acceleration_feedforward
+            ),
+            gravity_gradient_acceleration_gain=gravity_gradient_acceleration_gain,
         )
         self.reference_tracker.configure_inertial(
             theta_target=theta_target,
@@ -138,6 +138,7 @@ class AllocatedPlanarAttitudeController:
         manoeuvre_duration,
         offset=-0.5 * np.pi,
         gravity_gradient_feedforward=None,
+        gravity_gradient_acceleration_feedforward=None,
         gravity_gradient_acceleration_gain=0.0,
     ):
         self.Kp_acceleration = _finite_scalar(
@@ -148,14 +149,12 @@ class AllocatedPlanarAttitudeController:
             Kd_acceleration,
             "Kd_acceleration",
         )
-        self.gravity_gradient_feedforward = (
-            _validated_gravity_gradient_feedforward(
-                gravity_gradient_feedforward,
-            )
-        )
-        self.gravity_gradient_acceleration_gain = _finite_scalar(
-            gravity_gradient_acceleration_gain,
-            "gravity_gradient_acceleration_gain",
+        self._configure_gravity_gradient_feedforward(
+            gravity_gradient_feedforward=gravity_gradient_feedforward,
+            gravity_gradient_acceleration_feedforward=(
+                gravity_gradient_acceleration_feedforward
+            ),
+            gravity_gradient_acceleration_gain=gravity_gradient_acceleration_gain,
         )
         self.reference_tracker.configure_nadir(
             manoeuvre_duration=manoeuvre_duration,
@@ -188,14 +187,13 @@ class AllocatedPlanarAttitudeController:
         derivative_acceleration = float(
             self.Kd_acceleration * command_state.error_dot
         )
-        gravity_gradient_torque = self._gravity_gradient_feedforward_torque(
-            q,
-            u,
-            command_state.theta,
-        )
-        gravity_gradient_acceleration = float(
-            self.gravity_gradient_acceleration_gain
-            * gravity_gradient_torque
+        gravity_gradient_torque, gravity_gradient_acceleration = (
+            self._gravity_gradient_feedforward_terms(
+                q,
+                u,
+                command_state.theta,
+                mass_matrix,
+            )
         )
         requested_acceleration = float(
             reference_acceleration
@@ -271,6 +269,66 @@ class AllocatedPlanarAttitudeController:
             )
         return torque
 
+    def _gravity_gradient_feedforward_terms(self, q, u, theta, mass_matrix):
+        if self.gravity_gradient_acceleration_feedforward is not None:
+            result = self.gravity_gradient_acceleration_feedforward.evaluate(
+                q,
+                u,
+                mass_matrix,
+            )
+            acceleration = float(result.cancellation_acceleration)
+            if not np.isfinite(acceleration):
+                raise ValueError(
+                    "gravity-gradient acceleration feedforward returned a "
+                    "non-finite cancellation acceleration."
+                )
+            return 0.0, acceleration
+
+        torque = self._gravity_gradient_feedforward_torque(q, u, theta)
+        acceleration = float(
+            self.gravity_gradient_acceleration_gain
+            * torque
+        )
+        return torque, acceleration
+
+    def _configure_gravity_gradient_feedforward(
+        self,
+        *,
+        gravity_gradient_feedforward,
+        gravity_gradient_acceleration_feedforward,
+        gravity_gradient_acceleration_gain,
+    ):
+        if (
+            gravity_gradient_feedforward is not None
+            and gravity_gradient_acceleration_feedforward is not None
+        ):
+            raise ValueError(
+                "Use either gravity_gradient_feedforward or "
+                "gravity_gradient_acceleration_feedforward, not both."
+            )
+        if (
+            gravity_gradient_acceleration_feedforward is not None
+            and float(gravity_gradient_acceleration_gain) != 0.0
+        ):
+            raise ValueError(
+                "gravity_gradient_acceleration_gain is only used with "
+                "gravity_gradient_feedforward."
+            )
+        self.gravity_gradient_feedforward = (
+            _validated_gravity_gradient_feedforward(
+                gravity_gradient_feedforward,
+            )
+        )
+        self.gravity_gradient_acceleration_feedforward = (
+            _validated_gravity_gradient_acceleration_feedforward(
+                gravity_gradient_acceleration_feedforward,
+            )
+        )
+        self.gravity_gradient_acceleration_gain = _finite_scalar(
+            gravity_gradient_acceleration_gain,
+            "gravity_gradient_acceleration_gain",
+        )
+
 
 def _optional_vector(values):
     if values is None:
@@ -295,5 +353,14 @@ def _validated_gravity_gradient_feedforward(value):
     if value is not None and not callable(getattr(value, "evaluate", None)):
         raise TypeError(
             "gravity_gradient_feedforward must expose an evaluate() method."
+        )
+    return value
+
+
+def _validated_gravity_gradient_acceleration_feedforward(value):
+    if value is not None and not callable(getattr(value, "evaluate", None)):
+        raise TypeError(
+            "gravity_gradient_acceleration_feedforward must expose an "
+            "evaluate() method."
         )
     return value
