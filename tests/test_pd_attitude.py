@@ -30,17 +30,17 @@ class GeneralOrbitPlantView(FakePlantView):
         return 2.0, 1.0, -0.2, 0.7
 
 
-class RecordingGravityGradientFeedforward:
-    def __init__(self, cancellation_torque):
-        self.cancellation_torque = float(cancellation_torque)
+class RecordingGravityGradientAccelerationFeedforward:
+    def __init__(self, cancellation_acceleration):
+        self.cancellation_acceleration = float(cancellation_acceleration)
         self.calls = []
 
-    def evaluate(self, *, centre_of_mass_position, central_attitude):
-        self.calls.append((centre_of_mass_position, central_attitude))
+    def evaluate(self, q, u, mass_matrix):
+        self.calls.append((q.copy(), u.copy(), mass_matrix.copy()))
         return type(
-            "GravityGradientFeedforwardResult",
+            "GravityGradientAccelerationFeedforwardResult",
             (),
-            {"cancellation_torque": self.cancellation_torque},
+            {"cancellation_acceleration": self.cancellation_acceleration},
         )()
 
 
@@ -141,8 +141,8 @@ def test_reference_acceleration_gain_must_be_finite():
 
 
 def test_inertial_pd_separates_reference_and_gg_feedforward():
-    feedforward = RecordingGravityGradientFeedforward(
-        cancellation_torque=-0.25,
+    feedforward = RecordingGravityGradientAccelerationFeedforward(
+        cancellation_acceleration=-0.05,
     )
     controller = PlanarAttitudeController(GeneralOrbitPlantView())
     controller.configure_inertial_pd(
@@ -151,14 +151,28 @@ def test_inertial_pd_separates_reference_and_gg_feedforward():
         Kd=3.0,
         manoeuvre_duration=10.0,
         reference_acceleration_gain=5.0,
-        gravity_gradient_feedforward=feedforward,
+        gravity_gradient_acceleration_feedforward=feedforward,
     )
 
-    controller.compute(t=0.0, q=np.array([0.0]), u=np.array([0.0]))
-    output = controller.compute(t=5.0, q=np.array([0.25]), u=np.array([0.1]))
+    mass_matrix = np.array([[2.0]])
+    controller.compute(
+        t=0.0,
+        q=np.array([0.0]),
+        u=np.array([0.0]),
+        Md=mass_matrix,
+    )
+    output = controller.compute(
+        t=5.0,
+        q=np.array([0.25]),
+        u=np.array([0.1]),
+        Md=mass_matrix,
+    )
 
     assert len(feedforward.calls) == 2
-    assert feedforward.calls[-1] == ((2.0, 1.0), 0.25)
+    q_call, u_call, mass_call = feedforward.calls[-1]
+    np.testing.assert_allclose(q_call, [0.25])
+    np.testing.assert_allclose(u_call, [0.1])
+    np.testing.assert_allclose(mass_call, mass_matrix)
     assert np.isclose(output.tau_gravity_gradient_ff, -0.25)
     assert np.isclose(
         output.tau_reference_ff,
@@ -191,26 +205,58 @@ def test_nadir_pd_returns_finite_feedforward_and_feedback():
 
 
 def test_nadir_pd_uses_observable_gg_feedforward_inputs():
-    feedforward = RecordingGravityGradientFeedforward(
-        cancellation_torque=0.125,
+    feedforward = RecordingGravityGradientAccelerationFeedforward(
+        cancellation_acceleration=0.125,
     )
     controller = PlanarAttitudeController(GeneralOrbitPlantView())
     controller.configure_nadir_pd(
         Kp=2.0,
         Kd=3.0,
         manoeuvre_duration=10.0,
-        gravity_gradient_feedforward=feedforward,
+        reference_acceleration_gain=1.0,
+        gravity_gradient_acceleration_feedforward=feedforward,
     )
 
+    mass_matrix = np.array([[3.0]])
     output = controller.compute(
         t=0.0,
         q=np.array([0.3]),
         u=np.array([0.1]),
+        Md=mass_matrix,
     )
 
-    assert feedforward.calls == [((2.0, 1.0), 0.3)]
+    assert len(feedforward.calls) == 1
+    q_call, u_call, mass_call = feedforward.calls[-1]
+    np.testing.assert_allclose(q_call, [0.3])
+    np.testing.assert_allclose(u_call, [0.1])
+    np.testing.assert_allclose(mass_call, mass_matrix)
     assert np.isclose(output.tau_gravity_gradient_ff, 0.125)
-    assert np.isclose(output.tau_ff, 0.125)
+    assert np.isclose(
+        output.tau_ff,
+        output.tau_reference_ff + output.tau_gravity_gradient_ff,
+    )
+
+
+def test_pd_requires_mass_matrix_for_gg_acceleration_feedforward():
+    feedforward = RecordingGravityGradientAccelerationFeedforward(
+        cancellation_acceleration=0.125,
+    )
+    controller = PlanarAttitudeController(FakePlantView())
+    controller.configure_inertial_pd(
+        theta_target=1.0,
+        Kp=2.0,
+        Kd=3.0,
+        manoeuvre_duration=10.0,
+        reference_acceleration_gain=1.0,
+        gravity_gradient_acceleration_feedforward=feedforward,
+    )
+
+    with pytest.raises(ValueError, match="requires Md=mass_matrix"):
+        controller.compute(
+            t=0.0,
+            q=np.array([0.0]),
+            u=np.array([0.0]),
+        )
 
 
 def test_nadir_pd_accepts_reference_offset():

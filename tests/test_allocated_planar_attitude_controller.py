@@ -48,20 +48,6 @@ class PlantView:
         return 2.0, 1.0, -0.1, 0.3
 
 
-class RecordingGravityGradientFeedforward:
-    def __init__(self, cancellation_torque):
-        self.cancellation_torque = float(cancellation_torque)
-        self.calls = []
-
-    def evaluate(self, *, centre_of_mass_position, central_attitude):
-        self.calls.append((centre_of_mass_position, central_attitude))
-        return type(
-            "GravityGradientFeedforwardResult",
-            (),
-            {"cancellation_torque": self.cancellation_torque},
-        )()
-
-
 class RecordingGravityGradientAccelerationFeedforward:
     def __init__(self, cancellation_acceleration):
         self.cancellation_acceleration = float(cancellation_acceleration)
@@ -80,9 +66,7 @@ def make_controller(
     *,
     lower_bounds=None,
     upper_bounds=None,
-    gravity_gradient_feedforward=None,
     gravity_gradient_acceleration_feedforward=None,
-    gravity_gradient_acceleration_gain=0.0,
 ):
     controller = AllocatedPlanarAttitudeController(
         OneDofThreeBusDynamics(),
@@ -104,11 +88,9 @@ def make_controller(
         Kp_acceleration=0.2,
         Kd_acceleration=0.0,
         manoeuvre_duration=10.0,
-        gravity_gradient_feedforward=gravity_gradient_feedforward,
         gravity_gradient_acceleration_feedforward=(
             gravity_gradient_acceleration_feedforward
         ),
-        gravity_gradient_acceleration_gain=gravity_gradient_acceleration_gain,
     )
     controller.compute(
         0.0,
@@ -174,26 +156,28 @@ def test_allocated_controller_clips_infeasible_acceleration_command():
 
 
 def test_allocated_controller_includes_gravity_gradient_acceleration_term():
-    feedforward = RecordingGravityGradientFeedforward(
-        cancellation_torque=0.4,
+    feedforward = RecordingGravityGradientAccelerationFeedforward(
+        cancellation_acceleration=0.2,
     )
     controller = make_controller(
-        gravity_gradient_feedforward=feedforward,
-        gravity_gradient_acceleration_gain=0.5,
+        gravity_gradient_acceleration_feedforward=feedforward,
     )
     controller.Kp_acceleration = 0.0
 
+    mass_matrix = np.array([[2.0]])
     output = controller.compute(
         10.0,
         np.array([1.0]),
         np.array([0.0]),
-        Md=np.array([[2.0]]),
+        Md=mass_matrix,
     )
     diagnostics = controller.last_diagnostics
 
-    assert feedforward.calls[-1] == ((2.0, 1.0), 1.0)
+    q_call, u_call, mass_call = feedforward.calls[-1]
+    np.testing.assert_allclose(q_call, [1.0])
+    np.testing.assert_allclose(u_call, [0.0])
+    np.testing.assert_allclose(mass_call, mass_matrix)
     assert diagnostics is not None
-    assert np.isclose(diagnostics.gravity_gradient_torque, 0.4)
     assert np.isclose(diagnostics.gravity_gradient_acceleration, 0.2)
     assert np.isclose(diagnostics.requested_acceleration, 0.2)
     assert np.isclose(
@@ -226,7 +210,6 @@ def test_allocated_controller_uses_acceleration_feedforward_directly():
     np.testing.assert_allclose(u_call, [0.25])
     np.testing.assert_allclose(mass_call, mass_matrix)
     assert diagnostics is not None
-    assert np.isclose(diagnostics.gravity_gradient_torque, 0.0)
     assert np.isclose(diagnostics.gravity_gradient_acceleration, -0.3)
     assert np.isclose(diagnostics.requested_acceleration, -0.3)
     assert np.isclose(
