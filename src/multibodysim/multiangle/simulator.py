@@ -285,6 +285,29 @@ class MultiAngleFlexibleSimulator:
         tau_reference_ff = np.zeros_like(times)
         tau_gravity_gradient_ff = np.zeros_like(times)
         tau_pd = np.zeros_like(times)
+        theta_reference = np.full_like(times, np.nan)
+        theta_dot_reference = np.full_like(times, np.nan)
+        theta_ddot_reference = np.full_like(times, np.nan)
+        attitude_error = np.full_like(times, np.nan)
+        attitude_error_dot = np.full_like(times, np.nan)
+        central_acceleration_reference = np.full_like(times, np.nan)
+        central_acceleration_proportional = np.full_like(times, np.nan)
+        central_acceleration_derivative = np.full_like(times, np.nan)
+        central_acceleration_gravity_gradient = np.full_like(times, np.nan)
+        central_acceleration_requested = np.full_like(times, np.nan)
+        central_acceleration_saturated = np.full_like(times, np.nan)
+        central_acceleration_achieved = np.full_like(times, np.nan)
+        central_acceleration_feasible_min = np.full_like(times, np.nan)
+        central_acceleration_feasible_max = np.full_like(times, np.nan)
+        allocation_clipped = np.zeros_like(times, dtype=bool)
+        bus_torques = np.full(
+            (len(times), len(self.dynamics.rigid_body_names)),
+            np.nan,
+            dtype=float,
+        )
+        reference_diagnostics_present = False
+        allocation_diagnostics_present = False
+        direct_bus_torques_present = False
         rG_x = np.zeros_like(times)
         rG_y = np.zeros_like(times)
         rG_z = np.zeros_like(times)
@@ -315,6 +338,62 @@ class MultiAngleFlexibleSimulator:
                 control_output.tau_gravity_gradient_ff
             )
             tau_pd[index] = control_output.tau_fb
+            if control_output.bus_torques is not None:
+                bus_torques[index, :] = self._validated_bus_torques(
+                    control_output.bus_torques,
+                )
+                direct_bus_torques_present = True
+
+            diagnostics = getattr(self.controller, "last_diagnostics", None)
+            command_state = getattr(diagnostics, "command_state", None)
+            if command_state is None and hasattr(
+                self.controller,
+                "reference_tracker",
+            ):
+                command_state = self.controller.reference_tracker.evaluate(
+                    time,
+                    qk,
+                    uk,
+                )
+
+            if command_state is not None:
+                theta_reference[index] = command_state.theta_ref
+                theta_dot_reference[index] = command_state.theta_dot_ref
+                theta_ddot_reference[index] = command_state.theta_ddot_ref
+                attitude_error[index] = command_state.error
+                attitude_error_dot[index] = command_state.error_dot
+                reference_diagnostics_present = True
+
+            if diagnostics is not None and hasattr(diagnostics, "allocation"):
+                central_acceleration_reference[index] = (
+                    diagnostics.reference_acceleration
+                )
+                central_acceleration_proportional[index] = (
+                    diagnostics.proportional_acceleration
+                )
+                central_acceleration_derivative[index] = (
+                    diagnostics.derivative_acceleration
+                )
+                central_acceleration_gravity_gradient[index] = (
+                    diagnostics.gravity_gradient_acceleration
+                )
+                central_acceleration_requested[index] = (
+                    diagnostics.requested_acceleration
+                )
+                central_acceleration_saturated[index] = (
+                    diagnostics.saturated_acceleration
+                )
+                central_acceleration_achieved[index] = (
+                    diagnostics.allocation.achieved_acceleration
+                )
+                central_acceleration_feasible_min[index] = (
+                    diagnostics.feasible_acceleration_interval[0]
+                )
+                central_acceleration_feasible_max[index] = (
+                    diagnostics.feasible_acceleration_interval[1]
+                )
+                allocation_clipped[index] = diagnostics.clipped
+                allocation_diagnostics_present = True
 
             rG = np.asarray(
                 self.dynamics.rG_func(qk, uk),
@@ -333,6 +412,44 @@ class MultiAngleFlexibleSimulator:
         self.results["tau_reference_FF"] = tau_reference_ff
         self.results["tau_GG_FF"] = tau_gravity_gradient_ff
         self.results["tau_PD"] = tau_pd
+        if reference_diagnostics_present:
+            self.results["theta_reference"] = theta_reference
+            self.results["theta_dot_reference"] = theta_dot_reference
+            self.results["theta_ddot_reference"] = theta_ddot_reference
+            self.results["attitude_error"] = attitude_error
+            self.results["attitude_error_dot"] = attitude_error_dot
+        if allocation_diagnostics_present:
+            self.results["central_acceleration_reference"] = (
+                central_acceleration_reference
+            )
+            self.results["central_acceleration_proportional"] = (
+                central_acceleration_proportional
+            )
+            self.results["central_acceleration_derivative"] = (
+                central_acceleration_derivative
+            )
+            self.results["central_acceleration_gravity_gradient"] = (
+                central_acceleration_gravity_gradient
+            )
+            self.results["central_acceleration_requested"] = (
+                central_acceleration_requested
+            )
+            self.results["central_acceleration_saturated"] = (
+                central_acceleration_saturated
+            )
+            self.results["central_acceleration_achieved"] = (
+                central_acceleration_achieved
+            )
+            self.results["central_acceleration_feasible_min"] = (
+                central_acceleration_feasible_min
+            )
+            self.results["central_acceleration_feasible_max"] = (
+                central_acceleration_feasible_max
+            )
+            self.results["allocation_clipped"] = allocation_clipped
+        if direct_bus_torques_present:
+            for index, bus_name in enumerate(self.dynamics.rigid_body_names):
+                self.results[f"tau_{bus_name}"] = bus_torques[:, index]
         self.results["rG_x"] = rG_x
         self.results["rG_y"] = rG_y
         self.results["rG_z"] = rG_z

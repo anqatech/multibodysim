@@ -1,5 +1,11 @@
-from .allocation_metrics import allocation_metrics, allocation_metrics_table
-from .controller_metrics import attitude_control_metrics, control_metrics_table
+from .allocation_metrics import (
+    allocated_control_metrics,
+    allocated_control_metrics_table,
+)
+from .controller_metrics import (
+    reference_tracking_metrics,
+    reference_tracking_metrics_table,
+)
 from .gravity_gradient_control import gravity_gradient_control_diagnostic
 from .simulation_metrics import (
     MultiAngleDiagnosticContext,
@@ -12,10 +18,10 @@ from .simulation_metrics import (
 )
 
 __all__ = [
-    "allocation_metrics",
-    "allocation_metrics_table",
-    "attitude_control_metrics",
-    "control_metrics_table",
+    "allocated_control_metrics",
+    "allocated_control_metrics_table",
+    "reference_tracking_metrics",
+    "reference_tracking_metrics_table",
     "gravity_gradient_control_diagnostic",
     "MultiAngleDiagnosticContext",
     "compute_angular_momentum_diagnostics",

@@ -1,92 +1,125 @@
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 
 
-def attitude_control_metrics(
-    results: dict,
-    theta_target: float,
-    theta_initial: float,
-    Tr: float | None = None,
-    settle_band_deg: float = 0.5,
-) -> dict[str, float]:
-    """Compute scalar quality metrics for an attitude slew maneuver."""
-    t = np.asarray(results["time"], dtype=float)
+def _wrap_to_pi(angle):
+    return (angle + np.pi) % (2 * np.pi) - np.pi
+
+
+def _rms(values) -> float:
+    values = np.asarray(values, dtype=float)
+    return float(np.sqrt(np.mean(values**2))) if len(values) else np.nan
+
+
+def _add_signal_metrics(
+    metrics: dict[str, Any],
+    prefix: str,
+    values,
+    *,
+    suffix: str = "",
+) -> None:
+    values = np.asarray(values, dtype=float)
+    metrics[f"{prefix}_final{suffix}"] = float(values[-1])
+    metrics[f"{prefix}_rms{suffix}"] = _rms(values)
+    metrics[f"{prefix}_peak_abs{suffix}"] = (
+        float(np.max(np.abs(values))) if len(values) else np.nan
+    )
+
+
+def _add_torque_metrics(metrics: dict[str, Any], prefix: str, torque, time) -> None:
+    torque = np.asarray(torque, dtype=float)
+    time = np.asarray(time, dtype=float)
+    metrics[f"{prefix}_peak_abs_Nm"] = float(np.max(np.abs(torque)))
+    metrics[f"{prefix}_rms_Nm"] = _rms(torque)
+    metrics[f"{prefix}_impulse_abs_Nms"] = float(np.trapezoid(np.abs(torque), time))
+    metrics[f"{prefix}_energy_N2m2s"] = float(np.trapezoid(torque**2, time))
+
+
+def _add_flexible_metrics(
+    metrics: dict[str, Any],
+    results: dict[str, Any],
+    *,
+    post_window_start: float | None = None,
+) -> None:
+    time = np.asarray(results["time"], dtype=float)
+    post_mask = None
+    if post_window_start is not None:
+        post_mask = time >= float(post_window_start)
+
+    for key in sorted(results):
+        if not key.startswith(("eta", "zeta")):
+            continue
+
+        values = np.asarray(results[key], dtype=float)
+        metrics[f"{key}_peak_abs"] = float(np.max(np.abs(values)))
+        metrics[f"{key}_rms"] = _rms(values)
+        metrics[f"{key}_final_abs"] = float(abs(values[-1]))
+
+        if post_mask is not None:
+            metrics[f"{key}_post_window_rms"] = _rms(values[post_mask])
+
+
+def reference_tracking_metrics(
+    results: dict[str, Any],
+    *,
+    post_window_start: float | None = None,
+) -> dict[str, Any]:
+    """Compute controller-neutral planar reference-tracking metrics."""
     theta = np.asarray(results["q_central_angle"], dtype=float)
-    central_angle_speed = np.asarray(results["u_central_angle"], dtype=float)
-    tau = np.asarray(results["tau_PD"], dtype=float)
+    theta_dot = np.asarray(results["u_central_angle"], dtype=float)
+    theta_reference = np.asarray(results["theta_reference"], dtype=float)
+    theta_dot_reference = np.asarray(results["theta_dot_reference"], dtype=float)
 
-    step = float(theta_target - theta_initial)
-    if np.isclose(step, 0.0):
-        raise ValueError("theta_target and theta_initial must define a non-zero maneuver.")
+    attitude_error = _wrap_to_pi(theta_reference - theta)
+    attitude_error_dot = theta_dot_reference - theta_dot
 
-    theta_err = theta_target - theta
-    progress = (theta - theta_initial) / step
-
-    def first_crossing(level: float) -> float:
-        if step > 0.0:
-            indices = np.where(progress >= level)[0]
-        else:
-            indices = np.where(progress <= level)[0]
-        return float(t[indices[0]]) if len(indices) else np.nan
-
-    t10 = first_crossing(0.10)
-    t90 = first_crossing(0.90)
-
-    signed_overshoot = step * (progress - 1.0)
-    overshoot = max(0.0, float(np.max(signed_overshoot)))
-    overshoot_percent = 100.0 * overshoot / abs(step)
-
-    band = np.deg2rad(settle_band_deg)
-    outside = np.where(np.abs(theta_err) > band)[0]
-    if len(outside) == 0:
-        settling_time = float(t[0])
-    elif outside[-1] + 1 < len(t):
-        settling_time = float(t[outside[-1] + 1])
-    else:
-        settling_time = np.nan
-
-    metrics = {
-        "rise_time_10_90_s": t90 - t10,
-        "settling_time_s": settling_time,
-        "overshoot_deg": np.rad2deg(overshoot),
-        "overshoot_percent": overshoot_percent,
-        "steady_state_error_deg": np.rad2deg(float(theta_err[-1])),
-        "peak_central_angle_speed_deg_s": np.rad2deg(
-            float(np.max(np.abs(central_angle_speed)))
-        ),
-        "peak_tau_PD": float(np.max(np.abs(tau))),
-        "rms_tau_PD": float(np.sqrt(np.mean(tau**2))),
-        "impulse_abs_tau_PD": float(np.trapezoid(np.abs(tau), t)),
-        "energy_tau_PD_sq": float(np.trapezoid(tau**2, t)),
-    }
-
-    for eta_key in sorted(key for key in results if key.startswith("eta")):
-        eta = np.asarray(results[eta_key], dtype=float)
-        metrics[f"peak_{eta_key}"] = float(np.max(np.abs(eta)))
-
-        if Tr is not None:
-            post = eta[t >= Tr]
-            metrics[f"post_Tr_rms_{eta_key}"] = (
-                float(np.sqrt(np.mean(post**2))) if len(post) else np.nan
-            )
-
+    metrics: dict[str, Any] = {}
+    _add_signal_metrics(
+        metrics,
+        "attitude_error",
+        np.rad2deg(attitude_error),
+        suffix="_deg",
+    )
+    _add_signal_metrics(
+        metrics,
+        "attitude_error_dot",
+        np.rad2deg(attitude_error_dot),
+        suffix="_deg_s",
+    )
+    _add_signal_metrics(
+        metrics,
+        "central_angle_speed",
+        np.rad2deg(theta_dot),
+        suffix="_deg_s",
+    )
+    _add_flexible_metrics(
+        metrics,
+        results,
+        post_window_start=post_window_start,
+    )
     return metrics
 
 
-def control_metrics_table(metrics: dict[str, float]) -> tuple[list[tuple[str, str, float]], list[str]]:
-    """Convert control metrics to display-ready rows and column names."""
+def reference_tracking_metrics_table(
+    metrics: dict[str, Any],
+) -> tuple[list[tuple[str, str, Any]], list[str]]:
+    """Convert reference-tracking metrics to display-ready rows."""
     labels = {
-        "rise_time_10_90_s": ("Rise time 10-90%", "s"),
-        "settling_time_s": ("Settling time", "s"),
-        "overshoot_deg": ("Overshoot", "deg"),
-        "overshoot_percent": ("Overshoot", "%"),
-        "steady_state_error_deg": ("Steady-state error", "deg"),
-        "peak_central_angle_speed_deg_s": ("Peak angular velocity", "deg/s"),
-        "peak_tau_PD": ("Peak PD torque", "N.m"),
-        "rms_tau_PD": ("RMS PD torque", "N.m"),
-        "impulse_abs_tau_PD": ("PD torque impulse", "N.m.s"),
-        "energy_tau_PD_sq": ("PD torque squared integral", "N^2.m^2.s"),
+        "attitude_error_final_deg": ("Final attitude error", "deg"),
+        "attitude_error_rms_deg": ("RMS attitude error", "deg"),
+        "attitude_error_peak_abs_deg": ("Peak abs attitude error", "deg"),
+        "attitude_error_dot_final_deg_s": ("Final attitude-rate error", "deg/s"),
+        "attitude_error_dot_rms_deg_s": ("RMS attitude-rate error", "deg/s"),
+        "attitude_error_dot_peak_abs_deg_s": (
+            "Peak abs attitude-rate error",
+            "deg/s",
+        ),
+        "central_angle_speed_final_deg_s": ("Final angular velocity", "deg/s"),
+        "central_angle_speed_rms_deg_s": ("RMS angular velocity", "deg/s"),
+        "central_angle_speed_peak_abs_deg_s": ("Peak angular velocity", "deg/s"),
     }
 
     rows = []

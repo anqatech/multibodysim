@@ -1,105 +1,83 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
-from multibodysim.analysis import allocation_metrics, allocation_metrics_table
+from multibodysim.analysis import (
+    allocated_control_metrics,
+    allocated_control_metrics_table,
+)
 
 
-def allocation_results():
+def allocated_results():
     return {
-        "success": True,
-        "nfev": 12,
         "time": np.array([0.0, 1.0, 2.0]),
-        "q_central_angle": np.deg2rad(np.array([90.0, 91.0, 92.0])),
-        "u_central_angle": np.deg2rad(np.array([0.0, 1.0, -2.0])),
-        "rG_x": np.array([1.0, 1.0, 1.0]),
-        "rG_y": np.array([0.0, 0.0, 0.0]),
-        "tau_PD": np.array([0.0, 2.0, -2.0]),
-        "tau_FF": np.array([1.0, 1.0, 1.0]),
+        "central_acceleration_requested": np.array([0.0, 2.0, -1.0]),
+        "central_acceleration_saturated": np.array([0.0, 0.5, -0.5]),
+        "central_acceleration_achieved": np.array([0.0, 0.5, -0.49]),
+        "central_acceleration_feasible_min": np.array([-0.4, -0.5, -0.6]),
+        "central_acceleration_feasible_max": np.array([0.4, 0.5, 0.6]),
+        "allocation_clipped": np.array([False, True, True]),
+        "tau_bus_1": np.array([0.0, 0.2, -0.1]),
+        "tau_bus_2": np.array([0.0, 0.1, -0.3]),
         "eta1_1": np.array([0.0, 0.2, -0.4]),
         "zeta1_1": np.array([0.0, -0.1, 0.3]),
     }
 
 
-def test_allocation_metrics_compute_tracking_flex_and_torque_metrics():
-    results = allocation_results()
-    torque_weights = {"bus_1": 0.25, "bus_2": 0.75}
+def test_allocated_control_metrics_compute_acceleration_and_torque_metrics():
+    results = allocated_results()
 
-    metrics = allocation_metrics(
-        results,
-        torque_weights,
-        pointing_axis="y",
-        post_window_start=1.0,
-        theta_target=np.deg2rad(93.0),
+    metrics = allocated_control_metrics(results, post_window_start=1.0)
+
+    assert metrics["allocation_clipped_count"] == 2
+    assert np.isclose(metrics["allocation_clipped_fraction"], 2.0 / 3.0)
+    assert np.isclose(
+        metrics["central_acceleration_requested_peak_abs_rad_s2"],
+        2.0,
     )
-
-    assert metrics["success"] is True
-    assert metrics["nfev"] == 12
-    assert np.isclose(metrics["torque_weight_sum"], 1.0)
-    assert np.isclose(metrics["central_angle_final_deg"], 92.0)
-    assert np.isclose(metrics["central_angle_speed_peak_abs_deg_s"], 2.0)
-    assert np.isclose(metrics["attitude_error_final_deg"], 1.0)
-    assert np.isclose(metrics["attitude_error_peak_abs_deg"], 3.0)
-
-    # Nadir is along -x, so body y-axis at 180/181/182 deg has errors 0/1/2 deg.
-    assert np.isclose(metrics["nadir_y_error_final_deg"], 2.0)
-    assert np.isclose(metrics["nadir_y_error_peak_abs_deg"], 2.0)
-
-    tau_cmd = results["tau_PD"] + results["tau_FF"]
-    assert np.isclose(metrics["tau_cmd_peak_abs_Nm"], np.max(np.abs(tau_cmd)))
-    assert np.isclose(metrics["tau_cmd_impulse_abs_Nms"], np.trapezoid(np.abs(tau_cmd), results["time"]))
-    assert np.isclose(metrics["tau_bus_1_peak_abs_Nm"], 0.25 * np.max(np.abs(tau_cmd)))
+    assert np.isclose(
+        metrics["central_acceleration_saturated_final_rad_s2"],
+        -0.5,
+    )
+    assert np.isclose(
+        metrics["central_acceleration_achieved_minus_saturated_peak_abs_rad_s2"],
+        0.01,
+    )
+    assert np.isclose(
+        metrics["central_acceleration_feasible_min_min_rad_s2"],
+        -0.6,
+    )
+    assert np.isclose(
+        metrics["central_acceleration_feasible_max_max_rad_s2"],
+        0.6,
+    )
+    assert np.isclose(metrics["tau_bus_1_peak_abs_Nm"], 0.2)
     assert np.isclose(
         metrics["tau_bus_2_energy_N2m2s"],
-        np.trapezoid((0.75 * tau_cmd) ** 2, results["time"]),
+        np.trapezoid(results["tau_bus_2"] ** 2, results["time"]),
     )
-
     assert np.isclose(metrics["eta1_1_peak_abs"], 0.4)
-    assert np.isclose(metrics["eta1_1_post_window_rms"], np.sqrt((0.2**2 + 0.4**2) / 2.0))
+    assert np.isclose(
+        metrics["eta1_1_post_window_rms"],
+        np.sqrt((0.2**2 + 0.4**2) / 2.0),
+    )
     assert np.isclose(metrics["zeta1_1_final_abs"], 0.3)
 
 
-def test_allocation_metrics_table_formats_known_and_dynamic_labels():
+def test_allocated_control_metrics_table_formats_known_and_dynamic_labels():
     metrics = {
-        "torque_weight_sum": 1.0,
-        "nadir_y_error_rms_deg": 2.0,
-        "tau_cmd_peak_abs_Nm": 0.3,
-        "bus_1_torque_weight": 0.25,
+        "allocation_clipped_fraction": 0.25,
+        "central_acceleration_requested_peak_abs_rad_s2": 1.2,
         "tau_bus_1_peak_abs_Nm": 0.1,
-        "eta1_1_peak_abs": 0.2,
+        "tau_bus_2_impulse_abs_Nms": 0.4,
+        "custom_metric": 3.0,
     }
 
-    rows, columns = allocation_metrics_table(metrics)
+    rows, columns = allocated_control_metrics_table(metrics)
 
     assert columns == ["Metric", "Unit", "Value"]
-    assert rows[0] == ("Torque-weight sum", "-", 1.0)
-    assert rows[1] == ("RMS body y-axis nadir error", "deg", 2.0)
-    assert rows[2] == ("Peak abs commanded torque", "N.m", 0.3)
-    assert rows[3] == ("bus 1 torque weight", "-", 0.25)
-    assert rows[4] == ("tau bus 1 peak abs Nm", "N.m", 0.1)
-    assert rows[5] == ("eta1_1_peak_abs", "-", 0.2)
-
-
-def test_allocation_metrics_reports_feedforward_components_when_present():
-    results = {
-        "time": np.array([0.0, 1.0, 2.0]),
-        "success": True,
-        "q_central_angle": np.zeros(3),
-        "u_central_angle": np.zeros(3),
-        "tau_PD": np.array([0.0, 0.1, 0.0]),
-        "tau_reference_FF": np.array([0.0, 0.2, 0.0]),
-        "tau_GG_FF": np.array([0.0, -0.05, 0.0]),
-        "tau_FF": np.array([0.0, 0.15, 0.0]),
-    }
-
-    metrics = allocation_metrics(results, {"bus_1": 1.0})
-
-    assert np.isclose(metrics["tau_reference_FF_peak_abs_Nm"], 0.2)
-    assert np.isclose(metrics["tau_GG_FF_peak_abs_Nm"], 0.05)
-    assert np.isclose(metrics["tau_FF_peak_abs_Nm"], 0.15)
-
-
-def test_allocation_metrics_rejects_invalid_pointing_axis():
-    with pytest.raises(ValueError, match="pointing_axis"):
-        allocation_metrics(allocation_results(), {"bus_1": 1.0}, pointing_axis="z")
+    assert rows[0] == ("Clipped allocation fraction", "-", 0.25)
+    assert rows[1] == ("Peak abs requested acceleration", "rad/s^2", 1.2)
+    assert rows[2] == ("Peak abs tau bus 1", "N.m", 0.1)
+    assert rows[3] == ("Impulse abs tau bus 2", "N.m.s", 0.4)
+    assert rows[4] == ("custom_metric", "-", 3.0)

@@ -5,6 +5,7 @@ import copy
 import numpy as np
 import pytest
 
+from multibodysim.allocation import AllocatedPlanarAttitudeController
 from multibodysim.controllers.base import ControlOutput
 from multibodysim.controllers.pd_attitude import PlanarAttitudeController
 from multibodysim.multiangle import (
@@ -266,3 +267,89 @@ def test_multiangle_simulator_runs_short_integration(
     assert results["vG_y"].shape == (3,)
     assert np.all(np.isfinite(results["J_eff"]))
     assert simulator.get_results() is results
+
+
+def test_multiangle_simulator_records_scalar_controller_reference_diagnostics(
+    distributed_7part_zf_gg_off_multiangle_config,
+):
+    config = copy.deepcopy(distributed_7part_zf_gg_off_multiangle_config)
+    config["sim_parameters"]["t_end"] = 0.1
+    config["sim_parameters"]["nb_timesteps"] = 3
+    config["sim_parameters"]["method"] = "DOP853"
+
+    simulator = MultiAngleFlexibleSimulator(config)
+    initial_conditions = simulator.setup_initial_conditions(verbose=False)
+    q0 = initial_conditions[:simulator.dynamics.state_dimension]
+    theta0 = simulator.plant_view.theta(q0)
+
+    controller = PlanarAttitudeController(simulator.plant_view)
+    controller.configure_inertial_pd(
+        theta_target=theta0 + 0.1,
+        Kp=2.0,
+        Kd=0.1,
+        manoeuvre_duration=0.1,
+    )
+    simulator.set_controller(controller)
+
+    results = simulator.run_simulation(eval_flag=True, verbose=False)
+
+    assert results["tau_PD"].shape == (3,)
+    assert results["tau_reference_FF"].shape == (3,)
+    assert results["tau_GG_FF"].shape == (3,)
+    assert results["tau_FF"].shape == (3,)
+    assert results["theta_reference"].shape == (3,)
+    assert results["theta_dot_reference"].shape == (3,)
+    assert results["theta_ddot_reference"].shape == (3,)
+    assert results["attitude_error"].shape == (3,)
+    assert results["attitude_error_dot"].shape == (3,)
+    assert "central_acceleration_requested" not in results
+    assert "tau_bus_1" not in results
+
+
+def test_multiangle_simulator_records_allocated_controller_diagnostics(
+    distributed_7part_zf_gg_off_multiangle_config,
+):
+    config = copy.deepcopy(distributed_7part_zf_gg_off_multiangle_config)
+    config["sim_parameters"]["t_end"] = 0.1
+    config["sim_parameters"]["nb_timesteps"] = 3
+    config["sim_parameters"]["method"] = "DOP853"
+
+    simulator = MultiAngleFlexibleSimulator(config)
+    initial_conditions = simulator.setup_initial_conditions(verbose=False)
+    q0 = initial_conditions[:simulator.dynamics.state_dimension]
+    theta0 = simulator.plant_view.theta(q0)
+    bus_count = len(simulator.dynamics.rigid_body_names)
+
+    controller = AllocatedPlanarAttitudeController(
+        simulator.dynamics,
+        simulator.plant_view,
+        effort_penalty_matrix=np.eye(bus_count),
+        lower_bounds=np.full(bus_count, -1.0),
+        upper_bounds=np.full(bus_count, 1.0),
+    )
+    controller.configure_inertial_pd(
+        theta_target=theta0 + 0.1,
+        Kp_acceleration=0.2,
+        Kd_acceleration=0.0,
+        manoeuvre_duration=0.1,
+    )
+    simulator.set_controller(controller)
+
+    results = simulator.run_simulation(eval_flag=True, verbose=False)
+
+    assert results["theta_reference"].shape == (3,)
+    assert results["attitude_error"].shape == (3,)
+    assert results["central_acceleration_reference"].shape == (3,)
+    assert results["central_acceleration_proportional"].shape == (3,)
+    assert results["central_acceleration_derivative"].shape == (3,)
+    assert results["central_acceleration_gravity_gradient"].shape == (3,)
+    assert results["central_acceleration_requested"].shape == (3,)
+    assert results["central_acceleration_saturated"].shape == (3,)
+    assert results["central_acceleration_achieved"].shape == (3,)
+    assert results["central_acceleration_feasible_min"].shape == (3,)
+    assert results["central_acceleration_feasible_max"].shape == (3,)
+    assert results["allocation_clipped"].shape == (3,)
+    assert results["allocation_clipped"].dtype == bool
+
+    for bus_name in simulator.dynamics.rigid_body_names:
+        assert results[f"tau_{bus_name}"].shape == (3,)
