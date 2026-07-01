@@ -3,6 +3,7 @@ from .allocation_metrics import (
     allocated_control_metrics_table,
 )
 from .controller_metrics import (
+    attitude_acquisition_metrics,
     reference_tracking_metrics,
     reference_tracking_metrics_table,
 )
@@ -20,6 +21,7 @@ from .simulation_metrics import (
 __all__ = [
     "allocated_control_metrics",
     "allocated_control_metrics_table",
+    "attitude_acquisition_metrics",
     "reference_tracking_metrics",
     "reference_tracking_metrics_table",
     "gravity_gradient_control_diagnostic",
