@@ -61,6 +61,7 @@ docs/PHASE_2_ALLOCATOR_IMPLEMENTATION_PLAN.md
 docs/EULER_BERNOULLI_BEAM_REFERENCE.md
 docs/FLIGHT_PROVEN_SPACECRAFT_ATTITUDE_CONTROL.md
 docs/rigid-gravity-gradient-feedforward-integration-plan.md
+docs/CLASSICAL_PRIMAL_ACTIVE_SET_ALLOCATOR.md
 
 # JetBrains (if someone opens in PyCharm)
 .idea/
